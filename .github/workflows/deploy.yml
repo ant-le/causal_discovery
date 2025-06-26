@@ -1,0 +1,46 @@
+# Simple workflow for deploying static content to GitHub Pages
+name: Deploy Svelte App to GitHub Pages
+
+# Run this workflow every time a new commit is pushed to the `main` branch
+on:
+  push:
+    branches: ["main"]
+
+# Allow this job to clone the repo and create a page deployment
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20 # Or the Node.js version you use
+
+      - name: Install dependencies
+        # Use 'npm ci' for faster, more reliable installs in CI environments
+        run: npm ci
+
+      - name: Build the Svelte app
+        # The 'base' path in vite.config.js is used here
+        run: npm run build
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload build artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # This should match the 'outDir' in your vite.config.js (default is 'dist')
+          path: './dist'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
