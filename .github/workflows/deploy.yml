@@ -22,15 +22,15 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20 # Or the Node.js version you use
+          node-version: 11.4.2
 
       - name: Install dependencies
-        # Use 'npm ci' for faster, more reliable installs in CI environments
         run: npm ci
+        working-directory: ./client 
 
       - name: Build the Svelte app
-        # The 'base' path in vite.config.js is used here
         run: npm run build
+        working-directory: ./client
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
@@ -38,8 +38,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # This should match the 'outDir' in your vite.config.js (default is 'dist')
-          path: './dist'
+          path: './client/dist'
 
       - name: Deploy to GitHub Pages
         id: deployment
