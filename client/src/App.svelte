@@ -1,13 +1,12 @@
 <script lang="ts">
-    import "@picocss/pico";
-    import Counter from "./lib/Counter.svelte";
     import Navbar from "./lib/Navbar.svelte";
     import Content from "./lib/Content.svelte";
+    import Home from "./lib/Home.svelte";
+    import Motivation from "./lib/Motivation.svelte";
     import { setContext } from "svelte";
+    import Background from "./lib/Background.svelte";
+    import type { AppStates } from "./types";
 
-    interface AppStates {
-        name: "home" | "motivation" | "background" | "content";
-    }
     let appState: AppStates = $state({
         name: "home",
     });
@@ -19,21 +18,11 @@
 </header>
 <main>
     {#if appState.name === "home"}
-        <div class="card">
-            <Counter />
-        </div>
+        <Home />
     {:else if appState.name === "motivation"}
-        <p>
-            Check out <a
-                href="https://github.com/sveltejs/kit#readme"
-                target="_blank"
-                rel="noreferrer">SvelteKit</a
-            >, the official Svelte app framework powered by Vite!
-        </p>
+        <Motivation />
     {:else if appState.name === "background"}
-        <p class="read-the-docs">
-            Click on the Vite and Svelte logos to learn more
-        </p>
+        <Background />
     {:else if appState.name === "content"}
         <Content />
     {:else}
@@ -43,7 +32,7 @@
 </main>
 
 <style>
-    .read-the-docs {
-        color: #888;
+    header {
+        margin-bottom: 2em;
     }
 </style>
