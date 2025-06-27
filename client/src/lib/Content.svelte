@@ -1,9 +1,9 @@
 <script lang="ts">
-    import { researchData } from '../data/researchData';
-    import type { ResearchTopic } from '../types';
+    import { researchData } from "../data/textData";
+    import type { TextData } from "../types";
 
     // The data for "My Thesis Topic" is directly assigned
-    const myThesisTopicData: ResearchTopic = researchData['My Thesis Topic'];
+    const myThesisTopicData: TextData = researchData["My Thesis Topic"];
 
     // All Gemini-related state variables removed
 </script>
@@ -23,7 +23,10 @@
 
         <div class="thesis-content-note">
             <p>
-                This section details the full proposal for my Master's thesis. It covers the problem context, the proposed LLM-guided probabilistic causal discovery solution, its intersections with current AI frontiers, and potential contributions.
+                This section details the full proposal for my Master's thesis.
+                It covers the problem context, the proposed LLM-guided
+                probabilistic causal discovery solution, its intersections with
+                current AI frontiers, and potential contributions.
             </p>
         </div>
     </section>

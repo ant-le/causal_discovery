@@ -26,9 +26,8 @@
                 on:click={() => (appState.name = "motivation")}
                 class="outline">Why this matters</button
             >
-            <button
-                on:click={() => (appState.name = "content")}
-                class="outline">Explore My Thesis</button
+            <button on:click={() => (appState.name = "content")} class="outline"
+                >Explore My Thesis</button
             >
         </div>
     </footer>
@@ -40,11 +39,6 @@
         text-align: center;
         max-width: 880px;
         margin: 15vh auto;
-    }
-
-    header h1 {
-        font-size: 2rem;
-        color: var(--pico-primary);
     }
     div {
         width: 70%;
