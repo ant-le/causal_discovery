@@ -2,9 +2,14 @@ name: Deploy Svelte App to GitHub Pages
 
 on:
   push:
-    branches: ["*"] 
+    branches: 
+      - "*" 
   pull_request:
-    branches: ["main"]
+    types:
+      - closed
+      - merged
+    branches:
+      - "main"
 
 permissions:
   contents: read
@@ -38,7 +43,7 @@ jobs:
 
   deploy: # only deploy on pull request to main
     needs: build
-    if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.event.pull_request.merged == true
+    if: ${{ github.event.pull_request.merged == true }}
     runs-on: ubuntu-latest
 
     permissions:
