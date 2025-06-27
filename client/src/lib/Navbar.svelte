@@ -1,7 +1,8 @@
-<script>
-    import "@picocss/pico";
+<script lang="ts">
     import { getContext } from "svelte";
-    const appState = getContext("appState");
+    import type { AppStates } from "../types";
+
+    const appState: AppStates = getContext("appState");
 </script>
 
 <nav>
@@ -48,3 +49,4 @@
         </li>
     </ul>
 </nav>
+<hr />
