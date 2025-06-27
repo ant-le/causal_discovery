@@ -5,9 +5,6 @@ on:
     branches: 
       - "*" 
   pull_request:
-    types:
-      - closed
-      - merged
     branches:
       - "main"
 
@@ -43,7 +40,7 @@ jobs:
 
   deploy: # only deploy on pull request to main
     needs: build
-    if: ${{ github.event.pull_request.merged == true }}
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
 
     permissions:
