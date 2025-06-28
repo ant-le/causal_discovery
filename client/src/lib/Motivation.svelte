@@ -1,108 +1,90 @@
 <script lang="ts">
-    import { challengeData } from "../data/textData";
-    import type { TextData } from "../types";
+    import { motivationData } from "../data/textData";
 
-    const challenges: TextData[] = challengeData;
+    let activeView: "practical" | "theoretical" = "practical";
 </script>
 
 <article>
     <header>
-        <h1>The Need for Intelligible & Generalizable AI</h1>
+        <h1>Motivation: From Correlational Patterns to Causal Understanding</h1>
     </header>
     <section>
-        <h2>Beyond Correlation: The Quest for True Intelligence</h2>
         <p>
-            While current AI excels in pattern recognition and prediction, it
-            often operates as a 'black box,' struggling with transparency,
-            robustness, and generalization to unseen scenarios. True
-            intelligence, and the next frontier of AI, demands an understanding
-            of *causality*—the underlying mechanisms and 'why' behind observed
-            phenomena. This thesis is driven by the imperative to build systems
-            that can not only predict but also reason, intervene, and learn from
-            cause-and-effect.
-        </p>
-        <p>
-            From a theoretical standpoint, enabling AI to perform causal
-            discovery is a fundamental step towards mimicking human-like
-            learning and scientific reasoning. Practically, this translates into
-            more reliable, fair, and actionable insights in domains where
-            understanding interventions and counterfactuals is critical.
+            The current paradigm of artificial intelligence, while powerful, is
+            largely built on correlation. Models excel at learning
+            statistical patterns from data but often fail when deployed in new
+            environments where those patterns no longer hold.
+            This brittleness stems from a lack of understanding of
+            the underlying causal mechanisms that generate the data. This thesis is motivated by the conviction that the
+            next frontier for AI is the development of systems that can reason
+            about cause and effect, enabling them to be more robust,
+            explainable, and generalizable.
         </p>
 
-        <h2>Addressing Core Challenges in AI Development</h2>
-        <p>
-            The journey towards building such advanced AI systems is fraught
-            with challenges. My Master's thesis, **"LLM(Agent)-enhanced
-            Structural Causal Model discovery within a probabilistic programming
-            framework where the information from the LLM serves as a prior for
-            the model,"** is specifically designed to tackle these head-on.
-        </p>
+        <div class="tabs">
+            <button
+                class:active={activeView === "practical"}
+                on:click={() => (activeView = "practical")}
+            >
+                Practical Applications
+            </button>
+            <button
+                class:active={activeView === "theoretical"}
+                on:click={() => (activeView = "theoretical")}
+            >
+                Key Theoretical Challenges
+            </button>
+        </div>
 
         <div class="grid">
-            {#each challenges as challenge}
-                <div>
-                    <summary>
-                        <span class="icon">{challenge.icon}</span>
-                        {challenge.title}</summary
-                    >
-                    <p>{challenge.content}</p>
+            {#each motivationData[activeView] as item}
+                <div class="card">
+                    <div class="card-header">
+                        <span class="icon">{item.icon}</span>
+                        <h4>{item.title}</h4>
+                    </div>
+                    <p>{@html item.content}</p>
                 </div>
             {/each}
         </div>
 
-        <h2>My Thesis: A Strategic Approach to Building Better AI</h2>
+        <h2>Thesis Contribution: A Principled Fusion of Knowledge and Data</h2>
         <p>
-            This thesis proposes a synergistic approach that leverages the
-            strengths of multiple cutting-edge fields to overcome the
-            aforementioned challenges:
+            This thesis, <strong
+                >"LLM-enhanced Structural Causal Model Discovery within a
+                Probabilistic Programming Framework,"</strong
+            > directly confronts these challenges to unlock the aforementioned applications.
+            The core contribution is a framework that treats LLM-generated knowledge
+            not as infallible truth, but as a "soft" probabilistic prior within a
+            fully Bayesian discovery process. This approach is designed to:
         </p>
         <ul>
             <li>
-                <strong>Mitigating Data Limitations & Confounding:</strong> Traditional
-                causal discovery often requires vast amounts of high-quality data.
-                By using Large Language Models (LLMs) as 'expert agents' to generate
-                informed priors, my approach reduces the reliance on purely data-driven
-                methods. This is particularly vital for domains with sparse, noisy,
-                or confounded observational data, where human (or LLM-encoded) intuition
-                can provide crucial initial guidance.
+                <strong>Robustly Handle Uncertainty:</strong> By encoding LLM output
+                as a formal Bayesian prior, we can reason about uncertainty in a
+                principled way. The framework allows observational data
+                to override parts of the prior that it strongly contradicts, providing
+                a safeguard against LLM fallibility.
             </li>
             <li>
-                <strong>Improving Identifiability & Scalability:</strong> Encoding
-                causal knowledge as priors within a probabilistic programming framework
-                allows for principled Bayesian inference. This provides a structured
-                way to quantify uncertainty about the causal graph and can significantly
-                prune the search space for causal discovery, enhancing both the identifiability
-                of complex models and the scalability of the discovery process.
+                <strong>Address the Tooling Gap:</strong> This work pioneers the
+                use of Probabilistic Programming Languages (PPLs) for the structural
+                discovery task itself, moving beyond their common application in
+                inference on pre-defined models and addressing a key gap in the current
+                landscape.
             </li>
             <li>
-                <strong>Enhancing Trustworthiness & Interpretability:</strong> The
-                explicit discovery of Structural Causal Models (SCMs) inherently
-                leads to more interpretable AI. Furthermore, integrating LLM-derived
-                knowledge fosters transparent and explainable causal insights. By
-                quantifiably modeling uncertainty, the system becomes more accountable,
-                contributing to the development of fairer and more traceable AI systems.
+                <strong>Enhance Discovery in Low-Data Regimes:</strong> By integrating
+                large-scale knowledge from LLMs, this method aims to significantly
+                improve the accuracy and efficiency of causal discovery, especially
+                when high-quality observational data is scarce or expensive to obtain.
             </li>
         </ul>
         <p>
-            This work aims to be a step towards constructing the next generation
-            of AI: systems that are not just powerful predictors but also
-            intelligent reasoners, transparent in their operations, and truly
-            capable of generalizing to the complexities of the real world.
+            Ultimately, this research seeks to develop a more robust and
+            principled methodology for causal inquiry, contributing to the
+            development of AI systems that are not just powerful predictors but
+            also trustworthy reasoning engines.
         </p>
     </section>
 </article>
-
-<style>
-    .grid div {
-        border-radius: 2em;
-        padding: 1.2em;
-        background-color: var(--pico-background-color);
-        box-shadow: var(--pico-box-shadow);
-        transition: transform 0.2s ease-in-out;
-    }
-    summary {
-        color: var(--pico-primary);
-        font-size: 1.1em;
-        margin-bottom: 0.5em;
-    }
-</style>
