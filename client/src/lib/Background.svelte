@@ -1,18 +1,12 @@
 <script lang="ts">
     import { conceptData } from "../data/textData";
-    import type { TextData } from "../types";
-
-    // Extracting relevant background content for the thesis
-    const scmConcept: TextData = conceptData["scm"];
-    const dagConcept: TextData = conceptData["dag"];
-    const hierarchyConcept: TextData = conceptData["hierarchy"];
 </script>
 
 <article>
     <header>
-        <h2>
+        <h1>
             Background: Pillars of LLM-Guided Probabilistic Causal Discovery
-        </h2>
+        </h1>
     </header>
     <section>
         <p>
@@ -23,72 +17,22 @@
             probabilistic programming is essential.
         </p>
 
-        <h3>1. Causal Inference and Structural Causal Models (SCMs)</h3>
+        <h3>1. Causal Inference</h3>
         <p>
             At the heart of understanding 'why' lies Causal Inference. It's
             distinct from mere correlation, aiming to identify true
-            cause-and-effect. My work focuses on discovering **Structural Causal
-            Models (SCMs)**, which are the blueprint of causal systems.
+            cause-and-effect. My work focuses on discovering <b>Structural Causal
+            Models (SCMs)</b>, which are the blueprint of causal systems.
         </p>
-        <details>
-            <summary
-                ><strong>What are Structural Causal Models (SCMs)?</strong
-                ></summary
-            >
-            <p>
-                {scmConcept.content} In the context of my thesis, discovering these
-                explicit structures from data is the primary objective, allowing
-                us to build interpretable and interventional AI.
-            </p>
-        </details>
-        <details>
-            <summary
-                ><strong
-                    >Directed Acyclic Graphs (DAGs): The Visual Language</strong
-                ></summary
-            >
-            <p>
-                {dagConcept.content} My thesis aims to infer these DAGs as part of
-                the SCM discovery process.
-            </p>
-        </details>
-        <details>
-            <summary
-                ><strong
-                    >Pearl's Causal Hierarchy: Levels of Understanding</strong
-                ></summary
-            >
-            <p>
-                {hierarchyConcept.content} My thesis operates largely at Level 2
-                (Intervention) and aims to provide foundational models for Level
-                3 (Counterfactuals) by correctly identifying causal mechanisms.
-            </p>
-        </details>
-
-        <h4>Causal Discovery: Learning the SCM from Data</h4>
-        <p>
-            While SCMs define causal systems, <strong>Causal Discovery</strong> is
-            the discipline of *learning* these SCMs (specifically, their underlying
-            DAGs and functional relationships) from observed data. This is often
-            an automated process, but challenging, especially in complex, high-dimensional
-            scenarios.
-        </p>
-        <p>Key aspects relevant to my thesis include:</p>
-        <ul>
-            <li>
-                <strong>The Challenge of Automated Discovery:</strong> Traditional
-                methods often struggle with unobserved confounders and identifiability.
-            </li>
-            <li>
-                <strong>Differentiable Causal Discovery:</strong> Modern approaches
-                often frame discovery as an optimization problem, which my thesis
-                will build upon.
-            </li>
-            <li>
-                <strong>Limitations of Purely Data-Driven Methods:</strong> A core
-                motivation for integrating external knowledge.
-            </li>
-        </ul>
+        {#each conceptData as concept}
+            <details>
+                <summary><strong>{concept.title}</strong></summary>
+                <p>
+                    {@html concept.content}
+                </p>
+            </details>
+            <hr />
+        {/each}
 
         <h3>
             2. AI Agents as Domain Experts (Leveraging Large Language Models)
@@ -124,15 +68,15 @@
 
         <h3>3. Probabilistic Programming</h3>
         <p>
-            **Probabilistic Programming (PP)** provides the essential framework
+            <b>Probabilistic Programming (PP)</b> provides the essential framework
             for formally integrating the LLM's knowledge with observed data. It
             allows us to define generative models of causal systems and then
             perform robust, uncertainty-aware inference.
         </p>
         <ul>
             <li>
-                <strong>Flexible Model Specification:</strong> PP languages (like
-                Pyro, Stan) allow for expressing complex Structural Causal Models,
+                <strong>Flexible Model Specification:</strong> PP languages like
+                <kbd>Pyro</kbd> or <kbd>Stan</kbd> allow for expressing complex Structural Causal Models,
                 including their parameters and graph structure, as probabilistic
                 programs.
             </li>
@@ -165,57 +109,5 @@
 </article>
 
 <style>
-    /* Component-specific styles for Background.svelte (Pico.css based) */
-    article {
-        margin-bottom: 4rem;
-    }
-    h2 {
-        font-size: 2rem;
-        margin-bottom: 1.5rem;
-        color: var(--pico-primary);
-    }
-    h3 {
-        font-size: 1.5rem;
-        margin-top: 2rem;
-        margin-bottom: 1rem;
-        color: var(--pico-secondary-hover);
-    }
-    h4 {
-        font-size: 1.25rem;
-        margin-top: 1.5rem;
-        margin-bottom: 0.8rem;
-        color: var(--pico-primary-focus);
-    }
-    p {
-        margin-bottom: 1rem;
-        line-height: 1.6;
-        color: var(--pico-secondary);
-    }
-    ul {
-        list-style: disc;
-        padding-left: 1.5rem;
-        margin-bottom: 1rem;
-    }
-    li {
-        margin-bottom: 0.5rem;
-        color: var(--pico-secondary);
-    }
-    /* Pico.css details/summary styling */
-    details {
-        margin-bottom: 1rem;
-    }
-    details summary {
-        font-weight: bold;
-        cursor: pointer;
-        color: var(--pico-primary);
-        padding: 0.5rem 0;
-    }
-    details[open] summary {
-        color: var(--pico-primary-hover);
-    }
-    details p {
-        margin-top: 0.5rem;
-        padding-left: 1rem;
-        border-left: 3px solid var(--pico-mark-background-color);
-    }
+
 </style>

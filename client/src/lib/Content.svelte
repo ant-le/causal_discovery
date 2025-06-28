@@ -1,10 +1,10 @@
 <script lang="ts">
     import { researchData } from "../data/textData";
+
+    import Math from "./Math.svelte";
     import type { TextData } from "../types";
 
-    // The data for "My Thesis Topic" is directly assigned
     const myThesisTopicData: TextData = researchData["My Thesis Topic"];
-
 </script>
 
 <article>
@@ -22,6 +22,7 @@
                 It covers the problem context, the proposed LLM-guided
                 probabilistic causal discovery solution, its intersections with
                 current AI frontiers, and potential contributions.
+                <Math expression="2 \cdot 5 = \pi" inline={false} />
             </p>
         </div>
     </section>

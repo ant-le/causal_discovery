@@ -1,32 +1,52 @@
 import type { TextData } from '../types';
 
-export const conceptData: Record<string, TextData> = {
-    scm: {
-        title: 'In-Depth: Structural Causal Models (SCMs)',
-        content: "SCMs formalize causal assumptions about a system. Each variable in the model is defined by a 'structural equation' that expresses it as a function of its direct causes and an independent error term. This explicit structure is what allows for reasoning about interventions and counterfactuals, as one can surgically modify a single equation (an intervention) and compute the downstream effects."
+export const conceptData: TextData[] = [
+    {
+        title: 'Potential Outcomes Framework',
+        content: `Also known as the Neyman-Rubin Potential Outcomes or the Rubin Causal Model, this framework conceptualizes causal effects by comparing hypothetical outcomes for the same individual under different treatment or intervention scenarios. The core challenge, the "fundamental problem of causal inference," is the inherent impossibility of observing both these potential outcomes simultaneously for any single individual.`
     },
-    dag: {
+    {
+        title: 'Pearl\'s Causal Hierarchy',
+        content: `This framework organizes causal reasoning into three distinct levels:
+<ul>
+<li><strong>L1: Association (Seeing):</strong> P(Y|X). Finding statistical correlations. This is the domain of most traditional machine learning.</li>
+<li><strong>L2: Intervention (Doing):</strong> P(Y|do(X)). Predicting the effect of an action. This is crucial for policy making and A/B testing.</li>
+<li><strong>L3: Counterfactuals (Imagining):</strong> P(Yx|X=x', Y=y'). Reasoning about what would have happened in a different world. This is essential for personalized medicine, fairness analysis, and deep explanation.</li>
+</ul>`
+    },
+    {
         title: 'In-Depth: Directed Acyclic Graphs (DAGs)',
         content: "DAGs are the graphical counterparts to SCMs. Nodes represent variables, and directed edges (arrows) from X to Y signify that X is a direct cause of Y. The 'acyclic' property is crucial: it means there are no feedback loops (a variable cannot be its own ancestor). DAGs are powerful for identifying confounding variables (common causes) and instrumental variables, which are essential for unbiased causal effect estimation from observational data."
     },
-    hierarchy: {
-        title: 'In-Depth: Pearl\'s Causal Hierarchy',
-        content: `This framework organizes causal reasoning into three distinct levels:
-        <ul class='list-disc list-inside mt-2 space-y-1'>
-            <li><strong>L1: Association (Seeing):</strong> P(Y|X). Finding statistical correlations. This is the domain of most traditional machine learning.</li>
-            <li><strong>L2: Intervention (Doing):</strong> P(Y|do(X)). Predicting the effect of an action. This is crucial for policy making and A/B testing.</li>
-            <li><strong>L3: Counterfactuals (Imagining):</strong> P(Yx|X=x', Y=y'). Reasoning about what would have happened in a different world. This is essential for personalized medicine, fairness analysis, and deep explanation.</li>
-        </ul>`
+    {
+        title: 'Structural Causal Models (SCMs)',
+        content: "SCMs formalize causal assumptions about a system. Each variable in the model is defined by a 'structural equation' that expresses it as a function of its direct causes and an independent error term. This explicit structure is what allows for reasoning about interventions and counterfactuals, as one can surgically modify a single equation (an intervention) and compute the downstream effects."
     },
-    po: {
-        title: 'In-Depth: Potential Outcomes Framework',
-        content: `Also known as the Neyman-Rubin Potential Outcomes or the Rubin Causal Model, this framework conceptualizes causal effects by comparing hypothetical outcomes for the same individual under different treatment or intervention scenarios. The core challenge, the "fundamental problem of causal inference," is the inherent impossibility of observing both these potential outcomes simultaneously for any single individual.`
-    },
-    roadmap: {
-        title: 'In-Depth: The Causal Roadmap',
+    {
+        title: 'The Causal Roadmap',
         content: `This is a systematic, itemized, and iterative process designed to guide investigators through the rigorous steps of prespecifying study design and analysis plans for causal questions. It involves defining the precise causal question, specifying a causal model, defining the causal effect of interest, describing the observed data, and meticulously assessing the plausibility of necessary assumptions.`
+    },
+    {
+        title: 'Causal Discovery',
+        content: `While SCMs define causal systems, <strong>Causal Discovery</strong> is the discipline of learning these SCMs (specifically, their underlying DAGs and functional relationships) from observed data. This is often an automated process, but challenging, especially in complex, high-dimensional scenarios. Key aspects relevant to my thesis include:
+        <ul>
+            <li>
+                <strong>The Challenge of Automated Discovery:</strong> Traditional
+                methods often struggle with unobserved confounders and identifiability.
+            </li>
+            <li>
+                <strong>Differentiable Causal Discovery:</strong> Modern approaches
+                often frame discovery as an optimization problem, which my thesis
+                will build upon.
+            </li>
+            <li>
+                <strong>Limitations of Purely Data-Driven Methods:</strong> A core
+                motivation for integrating external knowledge.
+            </li>
+        </ul>
+        `
     }
-};
+];
 
 export const motivationData: TextData[] = [
     {
