@@ -1,7 +1,5 @@
 // src/types.ts
-export interface AppStates {
-    name: "home" | "motivation" | "background" | "content";
-}
+export type AppStates = "home" | "motivation" | "background" | "content";
 
 export interface TextData{
     title: string;
@@ -9,4 +7,5 @@ export interface TextData{
     category?: string;
     icon?: string;
     topics?: string[];
+    citations?: string[];
 }

@@ -1,38 +1,58 @@
 <script lang="ts">
+    import { fade } from "svelte/transition";
+    import type { AppStates } from "./types";
+
     import Navbar from "./lib/Navbar.svelte";
     import Content from "./lib/Content.svelte";
     import Home from "./lib/Home.svelte";
     import Motivation from "./lib/Motivation.svelte";
-    import { setContext } from "svelte";
     import Background from "./lib/Background.svelte";
-    import type { AppStates } from "./types";
 
-    let appState: AppStates = $state({
-        name: "home",
-    });
-    setContext("appState", appState);
+    let appState: AppStates = $state("home");
+    function updateState(newState: AppStates) {
+        appState = newState;
+    }
+
+    let theme = $state<"light" | "dark">("dark");
+    function toggleTheme(newState: string) {
+        theme = theme === "dark" ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", theme);
+    }
 </script>
 
 <header>
-    <Navbar />
+    <Navbar {appState} {updateState} {theme} {toggleTheme} />
+    <hr />
 </header>
-<main>
-    {#if appState.name === "home"}
-        <Home />
-    {:else if appState.name === "motivation"}
-        <Motivation />
-    {:else if appState.name === "background"}
-        <Background />
-    {:else if appState.name === "content"}
-        <Content />
-    {:else}
-        <button class="secondary">Secondary</button>
-        <button class="contrast">Contrast</button>
+
+{#key appState}
+    <main transition:fade={{ duration: 250 }}>
+        {#if appState === "motivation"}
+            <Motivation />
+        {:else if appState === "background"}
+            <Background />
+        {:else if appState === "content"}
+            <Content />
+        {:else}
+            <Home {updateState} {theme} />
+        {/if}
+    </main>
+    {#if appState !== "home"}
+        <footer>
+            <hr />
+            Code licenced by
+        </footer>
     {/if}
-</main>
+{/key}
 
 <style>
     header {
-        margin-bottom: 2em;
+        background-color: var(--pico-background-color);
+    }
+    main {
+        padding: 2rem 1rem;
+    }
+    footer {
+        padding-bottom: 1rem;
     }
 </style>
