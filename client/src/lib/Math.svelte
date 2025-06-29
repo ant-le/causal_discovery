@@ -20,6 +20,4 @@
     }
 </script>
 
-<span class="katex-container">
-    {@html renderedHtml}
-</span>
+<code>{@html renderedHtml}</code>

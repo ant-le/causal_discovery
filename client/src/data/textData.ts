@@ -76,9 +76,9 @@ export const backgroundData: TextData[] = [
         content:
             "To formally reason about cause and effect, several key mathematical and conceptual frameworks are employed. These provide the language and structure needed to move beyond statistical association and model the real-world processes that generate data.",
         topics: [
-            "<strong>Structural Causal Models (SCMs):</strong> An SCM is a complete mathematical specification of a causal system. It consists of variables and structural equations of the form <code>Xᵢ := fᵢ(Pa(Xᵢ), Uᵢ)</code>, which define how each variable is causally determined by its parents (direct causes) and an independent noise term. SCMs model the actual data-generating process, enabling interventional and counterfactual queries.",
+            "<strong>Structural Causal Models (SCMs):</strong> An SCM is a complete mathematical specification of a causal system. It consists of variables and structural equations of the form <code>X<sub>i</sub> := f<sub>i</sub>(Pa(X<sub>i</sub>, U<sub>i</sub>)</code>, which define how each variable is causally determined by its parents (direct causes) and an independent noise term. SCMs model the actual data-generating process, enabling interventional and counterfactual queries.",
             "<strong>Directed Acyclic Graphs (DAGs):</strong> DAGs are graphical representations of SCMs, where nodes are variables and directed edges signify direct causal influence. The 'acyclic' nature ensures no variable can be its own cause. They are indispensable for visualizing causal assumptions and identifying confounding variables.",
-            "<strong>Pearl's Causal Hierarchy:</strong> This framework delineates three levels of causal reasoning: <strong>L1: Association (Seeing)</strong>, which involves observing statistical correlations (the domain of traditional ML); <strong>L2: Intervention (Doing)</strong>, which predicts the effects of actions (e.g., P(Y|do(X))); and <strong>L3: Counterfactuals (Imagining)</strong>, which reasons about hypothetical scenarios ('what would have happened if...').",
+            "<strong>Pearl's Causal Hierarchy:</strong> This framework delineates three levels of causal reasoning: <ul><li><strong>L1: Association (Seeing)</strong>, which involves observing statistical correlations (the domain of traditional ML); </li><li><strong>L2: Intervention (Doing)</strong>, which predicts the effects of actions <code>P(Y|do(X))</code>;</li><li><strong>L3: Counterfactuals (Imagining)</strong>, which reasons about hypothetical scenarios ('what would have happened if...').</li></ul>",
         ],
     },
     {
@@ -108,7 +108,7 @@ export const backgroundData: TextData[] = [
         content:
             "To formally integrate the imperfect knowledge from LLMs with observational data, we turn to Probabilistic Programming Languages (PPLs). PPLs provide a framework for defining probabilistic models and performing Bayesian inference, which is mathematically suited for reasoning under uncertainty.",
         topics: [
-            "<strong>Bayesian Inference:</strong> The core of the approach is Bayes' rule: <code>P(G|Data) ∝ P(Data|G) × P(G)</code>. We combine a <strong>prior belief</strong> about the causal graph structure (P(G)) with the <strong>likelihood</strong> of the observed data given that graph (P(Data|G)) to compute an updated <strong>posterior belief</strong> (P(G|Data)).",
+            "<strong>Bayesian Inference:</strong> The core of the approach is Bayes' rule: <code>P(G|data) &Proportional; P(data|G) + P(G)</code>. We combine a <strong>prior belief</strong> about the causal graph structure (P(G)) with the <strong>likelihood</strong> of the observed data given that graph (P(Data|G)) to compute an updated <strong>posterior belief</strong> (P(G|Data)).",
             "<strong>LLM Knowledge as a 'Soft' Prior:</strong> The central hypothesis is to translate the LLM's textual output into a formal, mathematical prior distribution over graph structures, P(G). This treats the LLM's knowledge not as infallible truth, but as an informative—yet uncertain—belief.",
             "<strong>Robustness Through Updating:</strong> By implementing this in a PPL, the framework can use observational data to update the LLM-derived prior. If the data strongly contradicts the prior, the prior's influence is naturally down-weighted, providing a safeguard against LLM fallibility.",
             "<strong>A Research Gap:</strong> While PPLs are mature tools for causal *inference* (calculating effects on a *known* graph), their use for the more fundamental problem of causal *discovery* (learning the graph itself) is a nascent and underexplored field. This thesis aims to fill that gap.",
@@ -118,7 +118,7 @@ export const backgroundData: TextData[] = [
 
 
 export const thesisData: TextData = {
-    title: "LLM(Agent)-enhanced Structural Causal Model discovery within a probabilistic programming framework where the info of the LLM serve as a prior for the model.", // EXACT TITLE HERE
+    title: "LLM-enhanced Structural Causal Model Discovery within a Probabilistic Programming Framework",
     content: "This Master's thesis proposes a novel approach at the intersection of large language models, causal inference, and probabilistic programming to enhance the discovery of Structural Causal Models (SCMs). The core idea is to leverage the vast, latent knowledge within LLMs to inform the causal discovery process, moving towards more robust and generalizable AI systems.",
     topics: [
         "<h4 class='font-semibold text-lg text-slate-800 mb-2'>The Research Problem: Limitations of Current Causal Discovery</h4>",
