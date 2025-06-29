@@ -1,6 +1,6 @@
 <script lang="ts">
     import { fade } from "svelte/transition";
-    import type { AppStates } from "./types";
+    import type { AppStates } from "./types.ts";
 
     import Navbar from "./lib/Navbar.svelte";
     import Content from "./lib/Content.svelte";
@@ -14,7 +14,7 @@
     }
 
     let theme = $state<"light" | "dark">("dark");
-    function toggleTheme(newState: string) {
+    function toggleTheme() {
         theme = theme === "dark" ? "light" : "dark";
         document.documentElement.setAttribute("data-theme", theme);
     }
