@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount, onDestroy } from "svelte";
-    import { thesisData } from "../data/textData";
+    import { thesisData } from "../assets/data/textData";
     import { loadSlim } from "@tsparticles/slim";
     import type { Container } from "@tsparticles/engine";
 
@@ -15,7 +15,6 @@
         if (particlesContainer && particlesEl) {
             const styles = getComputedStyle(particlesEl);
             const newColor = styles.getPropertyValue(colorName).trim();
-            console.log(newColor);
             particlesContainer.options.particles.color.value = newColor;
             particlesContainer.options.particles.links.color = newColor;
             particlesContainer.refresh();
@@ -114,10 +113,10 @@
             <cite>{thesisData.title}</cite>
         </hgroup>
         <div role="group">
-            <button onclick={() => updateState("motivation")} class="outline"
+            <button onclick={() => updateState("Motivation")} class="outline"
                 >Why this matters</button
             >
-            <button onclick={() => updateState("content")} class="outline"
+            <button onclick={() => updateState("Content")} class="outline"
                 >Explore My Thesis</button
             >
         </div>
@@ -132,12 +131,15 @@
         z-index: -2;
     }
     section {
-        height: 74vh;
+        height: 80%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
     }
     .round {
         position: relative;
-        max-width: 680px;
-        margin: 10vh auto;
+        max-width: 480px;
+        margin: 5vh auto;
         border-radius: 50%;
         aspect-ratio: 1 / 1;
         display: flex;
@@ -189,6 +191,6 @@
     }
 
     div button {
-        font-size: 0.8em;
+        font-size: 0.6em;
     }
 </style>

@@ -1,12 +1,14 @@
 <script lang="ts">
-    import { backgroundData } from "../data/textData";
+    // TODO: change to causal and DL data
+    import { backgroundData } from "../assets/data/textData.ts";
+    import PageTitle from "../lib/PageTitle.svelte";
+    import type { SideBarData } from "../types.ts";
 </script>
 
-<hgroup>
-    <h1>Pillars of LLM-Guided Probabilistic Causal Discovery</h1>
-</hgroup>
-<section>
-    <p>
+<PageTitle
+    title="Background"
+    subscript="The path to Strong AI"
+    desc="
         This Master's thesis is positioned at the convergence of several
         cutting-edge fields in artificial intelligence. To fully appreciate its
         core contributions, a foundational understanding of Causal Inference and
@@ -15,8 +17,11 @@
         (LLMs) as both powerful knowledge repositories and non-causal reasoners,
         and the pivotal function of Probabilistic Programming as the framework
         for a principled, Bayesian synthesis of knowledge and data.
-    </p>
+    "
+/>
 
+
+<section>
     <article>
         {#each backgroundData as section, i}
             <details name="example">

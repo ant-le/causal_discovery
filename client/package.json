@@ -21,6 +21,7 @@
     "@picocss/pico": "^2.1.1",
     "@tsparticles/engine": "^3.8.1",
     "@tsparticles/slim": "^3.8.1",
-    "katex": "^0.16.22"
+    "katex": "^0.16.22",
+    "sass": "^1.89.2"
   }
 }
