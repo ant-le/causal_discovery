@@ -1,4 +1,4 @@
-import type { TextData } from '../types';
+import type { TextData, ExplainContent } from '../types.ts';
 
 export const motivationData: Record<string, TextData[]> = {
     practical: [
@@ -129,5 +129,18 @@ export const thesisData: TextData = {
         "This research contributes significantly to building next-generation AI by addressing critical gaps: <ul class='list-disc list-inside ml-4 mt-2 space-y-1'><li><strong>Enhanced Interpretability:</strong> Explicit SCMs are inherently interpretable, providing clear cause-and-effect relationships. The LLM's role in guiding this process adds a layer of human-understandable rationale.</li><li><strong>Improved Generalization (OOD Robustness):</strong> Causal models, once correctly discovered, are known to generalize better to out-of-distribution (OOD) scenarios and under interventions, leading to more robust AI decisions.</li><li><strong>Quantified Uncertainty:</strong> The probabilistic framework provides confidence measures for causal claims, crucial for critical applications where decisions have high stakes.</li><li><strong>Bridging Symbolic & Sub-symbolic AI:</strong> This approach offers a concrete method to combine the pattern recognition capabilities of deep learning (in LLMs) with the structured reasoning of causal inference.</li></ul>",
         "<h4 class='font-semibold text-lg text-slate-800 mt-6 mb-2'>Key Research Avenues / Thesis Chapters (Proposed)</h4>",
         "<ul class='list-disc list-inside ml-4 mt-2 space-y-1'><li><strong>Formalizing LLM-Derived Priors:</strong> Develop methodologies to convert natural language causal statements or structured outputs from LLMs into mathematically rigorous prior distributions for SCMs (e.g., over graph adjacency matrices, or functional forms).</li><li><strong>Probabilistic Model Design & Inference:</strong> Implement and evaluate the probabilistic programming model for SCM discovery using diverse synthetic and real-world datasets, demonstrating the impact of LLM priors on inference speed and accuracy.</li><li><strong>Uncertainty-Aware LLM Querying (Optional):</strong> Explore iterative methods where the probabilistic model can query the LLM for specific causal insights based on current uncertainty, allowing for active, data-efficient knowledge acquisition.</li><li><strong>Benchmarking & Evaluation:</strong> Conduct extensive experiments comparing the proposed framework against state-of-the-art causal discovery methods, particularly focusing on performance under data limitations, confounding, and OOD generalization.</li></ul>"
-    ]
+    ],
+    explanation: [{
+        title: "Creation of Domain Expert",
+        explainText: `Based on the task and data at hand, and 
+LLM-based  Agent</code> is created and initially tasked to retrieve relevant 
+(academic) information on the task`},
+    {
+        title: "Generation of Candidate Graphs",
+        explainText: `In order to account for unobserved variables, we use the 
+<code>Agent</code> to propose sets of latent variables 
+<Math expression="Y" /> based on domain knowledge.
+This gives us a set of candidate graphs 
+<Math expression="G= \lbrace G_1,G_2, \dots \rbrace"/>
+which will be explored.`}]
 };

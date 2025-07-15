@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { PageMetaData } from "../types.ts";
+    import type { PageMetaData, PageData } from "../assets/navigation.ts";
 
     interface Props {
         pageMetaData: PageMetaData;
@@ -10,7 +10,7 @@
     let { pageMetaData, pageState, updatePageState, isMobile }: Props =
         $props();
 
-    let sectionMetaData = $derived(pageMetaData[pageState]);
+    let sectionMetaData: PageData = $derived(pageMetaData[pageState]);
 </script>
 
 {#if isMobile}
@@ -35,9 +35,9 @@
         <nav>
             <h3>Contents</h3>
             <ul>
-                {#each Object.values(sectionMetaData) as section}
+                {#each sectionMetaData.sections as section}
                     <li>
-                        <a class="secondary" href={section.title}
+                        <a class="secondary" href="#{section.title}"
                             >{section.title}</a
                         >
                     </li>
@@ -49,8 +49,7 @@
     <aside>
         <nav>
             <h3>On this page</h3>
-            {#each Object.entries(pageMetaData) as [title, sections]}
-                <!-- TODO: Only open if selected  -->
+            {#each Object.entries(pageMetaData) as [title, pageData]}
                 <details open={pageState === title}>
                     <summary>
                         <a
@@ -64,7 +63,7 @@
                         </a>
                     </summary>
                     <ul>
-                        {#each sections as section}
+                        {#each pageData.sections as section}
                             <li>
                                 <a class="secondary" href="#{section.title}"
                                     >{section.title}</a
@@ -79,10 +78,13 @@
 {/if}
 
 <style>
-    aside {
-        position: sticky;
-        top: 0;
-        overflow-y: auto;
+    @media (min-width: 769px) {
+        aside {
+            position: fixed;
+            width: 250px;
+            height: 100vh;
+            z-index: 10;
+        }
     }
 
     summary {

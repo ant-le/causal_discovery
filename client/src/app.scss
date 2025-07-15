@@ -1,5 +1,11 @@
 @use "@picocss/pico/scss/pico" with (
-  $semantic-root-element: "#app",
-  $theme-color: "sand",
-  $enable-semantic-container: true,
+    $semantic-root-element: "#app",
+    $theme-color: "sand",
+    $enable-semantic-container: true,
 );
+
+#app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}

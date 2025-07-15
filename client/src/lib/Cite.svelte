@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { citations } from "..data/citations.ts";
+    import { citations } from "..data/citations";
 
     let { id }: { id: string } = $props();
 

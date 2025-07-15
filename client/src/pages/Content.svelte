@@ -1,32 +1,20 @@
 <script lang="ts">
     import { fly, fade } from "svelte/transition";
-    import type { Component } from "svelte";
     import {
         appMetaData,
         type AppStates,
+        type PageData,
         type PageMetaData,
-    } from "../types.ts";
+    } from "../assets/navigation.ts";
 
     import PageTitle from "../lib/PageTitle.svelte";
     import Sidebar from "../lib/Sidebar.svelte";
-    import Motivation from "../sections/motivation/Introduction.svelte";
-    import AGI from "../sections/motivation/AGI.svelte";
-    import Applications from "../sections/motivation/Applications.svelte";
 
-    // TODO: Component Mapping based on appStates
-    type CompMapping = Record <string, Component>;
-    const components: Record<string, CompMapping> = {
-        Motivation: {
-            Introduction: Motivation,
-            AGI: AGI,
-            Applications: Applications,
-        },
-    };
     // Define Page States (sections to be rendered)
     let { appState }: { appState: AppStates } = $props();
     let pageMetaData: PageMetaData = $derived(appMetaData[appState]);
     let pageState: string = $state("Introduction");
-    let currentPage = $derived(pageMetaData[pageState]);
+    let currentPage: PageData = $derived(pageMetaData[pageState]);
 
     function updatePageState(newState: string) {
         if (newState !== pageState) {
@@ -34,8 +22,8 @@
         }
     }
     // 3. Window Management
-    let innerWidth = $state(0);
-    let isMobile = $derived(innerWidth < 768);
+    let innerWidth: number = $state(0);
+    let isMobile: boolean = $derived(innerWidth < 768);
 </script>
 
 <svelte:window bind:innerWidth />
@@ -48,10 +36,10 @@
             out:fade={{ duration: 250 }}
         >
             <PageTitle title={pageState} />
-            {#each Object.entries(components[appState]) as [title, sections]}
-                <h3>{title}</h3>
+            {#each currentPage.sections as section}
+                <h3 id={section.title}>{section.title}</h3>
+                <section.component />
             {/each}
-            <Motivation />
         </div>
     {/key}
 </div>
@@ -60,19 +48,28 @@
     .container {
         display: flex;
         flex-direction: row;
-        gap: 2rem;
-        padding-left: 0;
-        padding-right: 4em;
         overflow: hidden;
     }
 
     .content-wrapper {
-        flex: 1;
+        width: 100%;
     }
 
+    /* --- Desktop Styles --- */
+    @media (min-width: 769px) {
+        .content-wrapper {
+            margin-left: 250px;
+            padding-right: 4em;
+        }
+    }
+
+    /* --- Mobile Styles --- */
+    /* This handles the layout when the sidebar is not fixed */
     @media (max-width: 768px) {
         .container {
+            display: flex;
             flex-direction: column;
+            gap: 1rem;
             padding: 1em;
         }
     }

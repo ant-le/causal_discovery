@@ -1,6 +1,6 @@
 <script lang="ts">
     import { fly, fade } from "svelte/transition";
-    import { appMetaData, type AppStates } from "./types.ts";
+    import { appMetaData, type AppStates } from "./assets/navigation.ts";
     import Navbar from "./lib/Navbar.svelte";
     import Content from "./pages/Content.svelte";
     import Home from "./pages/Home.svelte";
@@ -53,5 +53,8 @@
         position: sticky;
         top: 0;
         z-index: 100;
+    }
+    main {
+        flex-grow: 1;
     }
 </style>
