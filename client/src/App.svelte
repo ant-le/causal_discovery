@@ -1,18 +1,22 @@
 <script lang="ts">
-    import { fade } from "svelte/transition";
-    import type { AppStates } from "./types.ts";
-
+    import { fly, fade } from "svelte/transition";
+    import { appMetaData, type AppStates } from "./assets/navigation.ts";
     import Navbar from "./lib/Navbar.svelte";
-    import Content from "./lib/Content.svelte";
-    import Home from "./lib/Home.svelte";
-    import Motivation from "./lib/Motivation.svelte";
-    import Background from "./lib/Background.svelte";
+    import Content from "./pages/Content.svelte";
+    import Home from "./pages/Home.svelte";
+    import Footer from "./lib/Footer.svelte";
 
-    let appState: AppStates = $state("home");
-    function updateState(newState: AppStates) {
-        appState = newState;
+    // Define App States for navigation
+    let appState: AppStates | "Home" = $state("Home");
+    function updateState(newState: AppStates | "Home") {
+        if (newState !== appState) {
+            appState = newState;
+        }
     }
 
+    const appStates = Object.keys(appMetaData);
+
+    // Define Color Theme (global)
     let theme = $state<"light" | "dark">("dark");
     function toggleTheme() {
         theme = theme === "dark" ? "light" : "dark";
@@ -21,26 +25,24 @@
 </script>
 
 <header>
-    <Navbar {appState} {updateState} {theme} {toggleTheme} />
-    <hr />
+    <Navbar {appStates} {appState} {updateState} {theme} {toggleTheme} />
 </header>
+<hr style="margin:0;" />
 
 {#key appState}
-    <main transition:fade={{ duration: 250 }}>
-        {#if appState === "motivation"}
-            <Motivation />
-        {:else if appState === "background"}
-            <Background />
-        {:else if appState === "content"}
-            <Content />
+    <main
+        in:fly={{ y: -30, duration: 300, delay: 300 }}
+        out:fade={{ duration: 300 }}
+    >
+        {#if appState !== "Home"}
+            <Content {appState} />
         {:else}
             <Home {updateState} {theme} />
         {/if}
     </main>
-    {#if appState !== "home"}
+    {#if appState !== "Home"}
         <footer>
-            <hr />
-            Code licenced by
+            <Footer {updateState} />
         </footer>
     {/if}
 {/key}
@@ -48,11 +50,11 @@
 <style>
     header {
         background-color: var(--pico-background-color);
+        position: sticky;
+        top: 0;
+        z-index: 100;
     }
     main {
-        padding: 2rem 1rem;
-    }
-    footer {
-        padding-bottom: 1rem;
+        flex-grow: 1;
     }
 </style>

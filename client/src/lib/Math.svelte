@@ -1,9 +1,10 @@
 <script lang="ts">
+    // TODO: change to runes
     import katex from "katex";
     import "katex/dist/katex.min.css";
 
     export let expression: string;
-    export let inline: boolean = false;
+    export let inline: boolean = true;
 
     let renderedHtml: string = "";
 
@@ -20,4 +21,4 @@
     }
 </script>
 
-<code>{@html renderedHtml}</code>
+{@html renderedHtml}
