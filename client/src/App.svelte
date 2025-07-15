@@ -40,12 +40,12 @@
             <Home {updateState} {theme} />
         {/if}
     </main>
-    {#if appState !== "Home"}
-        <footer>
-            <Footer {updateState} />
-        </footer>
-    {/if}
 {/key}
+{#if appState !== "Home"}
+    <footer>
+        <Footer {updateState} />
+    </footer>
+{/if}
 
 <style>
     header {
