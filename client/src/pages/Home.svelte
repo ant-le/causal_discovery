@@ -112,14 +112,12 @@
             <h2>My Master Thesis</h2>
             <cite>{thesisData.title}</cite>
         </hgroup>
-        <div role="group">
-            <button onclick={() => updateState("Motivation")} class="outline"
-                >Why this matters</button
-            >
-            <button onclick={() => updateState("Content")} class="outline"
-                >Explore My Thesis</button
-            >
-        </div>
+        <button
+            onclick={() => updateState("Motivation")}
+            class="outline contrast"
+        >
+            Get Started!
+        </button>
     </article>
 </section>
 
@@ -130,12 +128,14 @@
         width: 100%;
         z-index: -2;
     }
+
     section {
-        height: 80%;
+        margin-top: 10vh;
         display: flex;
         justify-content: center;
         align-items: center;
     }
+
     .round {
         position: relative;
         max-width: 480px;
@@ -156,14 +156,17 @@
         from {
             transform: rotate(0deg);
         }
+
         to {
             transform: rotate(360deg);
         }
     }
+
     .round:hover::before {
         filter: blur(1.75rem);
         animation-duration: 5s;
     }
+
     .round::before {
         transition:
             filter 0.3s ease,
@@ -184,13 +187,5 @@
         filter: blur(1.25rem);
         z-index: -1;
         animation: rotate 10s linear infinite;
-    }
-
-    div {
-        width: 70%;
-    }
-
-    div button {
-        font-size: 0.6em;
     }
 </style>

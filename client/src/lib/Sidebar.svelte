@@ -19,8 +19,9 @@
             {#each Object.keys(pageMetaData) as title}
                 <li>
                     <a
+                        style="font-size: 13px;"
                         class:secondary={pageState !== title}
-                        href="nowthing"
+                        href={title}
                         onclick={(e) => {
                             e.preventDefault();
                             updatePageState(title);
@@ -31,14 +32,16 @@
             {/each}
         </ul>
     </nav>
-    <aside style="margin-top:0">
+    <aside style="margin-top:0; margin-bottom: 2em;">
         <nav>
             <h3>Contents</h3>
             <ul>
                 {#each sectionMetaData.sections as section}
                     <li>
-                        <a class="secondary" href="#{section.title}"
-                            >{section.title}</a
+                        <a
+                            style="font-size: 12px;"
+                            class="secondary"
+                            href="#{section.title}">{section.title}</a
                         >
                     </li>
                 {/each}
@@ -54,7 +57,7 @@
                     <summary>
                         <a
                             class:secondary={pageState !== title}
-                            href="nothing"
+                            href={title}
                             onclick={(e) => {
                                 e.preventDefault();
                                 updatePageState(title);
@@ -82,7 +85,7 @@
         aside {
             position: fixed;
             width: 250px;
-            height: 100vh;
+            height: 70vh;
             z-index: 10;
         }
     }
@@ -99,19 +102,22 @@
         margin-bottom: 0.5rem;
     }
 
-    aside summary > a {
+    a {
         text-decoration: none;
     }
 
     aside ul {
-        border-left: 1px solid var(--pico-muted-border-color);
         margin-left: 0.25rem;
-        padding-left: 1rem;
         line-height: 1.5;
     }
 
     aside ul > li {
+        border-left: 1px solid var(--pico-muted-border-color);
         margin: 0.1rem 0;
+    }
+
+    aside ul > li:hover {
+        border-left: 1px solid var(--pico-primary);
     }
 
     aside ul > li a {
@@ -120,9 +126,10 @@
         color: var(--pico-secondary);
         text-decoration: none;
         transition: color 0.2s ease-in-out;
+        margin-left: 0.2em;
     }
 
     aside ul > li a:hover {
-        color: var(--pico-primary);
+        filter: brightness(1.1);
     }
 </style>

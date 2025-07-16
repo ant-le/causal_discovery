@@ -8,6 +8,7 @@
 
     // Define App States for navigation
     let appState: AppStates | "Home" = $state("Home");
+    let displayFooter : boolean = $derived(appState !== "Home");
     function updateState(newState: AppStates | "Home") {
         if (newState !== appState) {
             appState = newState;
@@ -41,7 +42,7 @@
         {/if}
     </main>
 {/key}
-{#if appState !== "Home"}
+{#if displayFooter}
     <footer>
         <Footer {updateState} />
     </footer>

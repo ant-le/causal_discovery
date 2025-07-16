@@ -12,8 +12,8 @@
             aria-label="Email"
         >
             <svg
-                width="24"
-                height="24"
+                width="20"
+                height="20"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -33,8 +33,8 @@
             aria-label="GitHub"
         >
             <svg
-                width="24"
-                height="24"
+                width="20"
+                height="20"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -53,12 +53,12 @@
 <div class="desktop-footer container">
     <div class="grid">
         <hgroup>
-            <h4>Anton Lechuga</h4>
+            <h5>Anton Lechuga</h5>
             <p>Thesis on Causal Discovery</p>
         </hgroup>
         <div class="grid">
             <hgroup>
-                <h5>Links</h5>
+                <h6>Links</h6>
                 <p>
                     <a
                         href="prevented"
@@ -89,7 +89,7 @@
 
         <div class="grid">
             <hgroup>
-                <h5>Connect</h5>
+                <h6>Connect</h6>
                 <p>
                     <a href="mailto:anton.luis.lechuga@proton.me">Email</a> |
                     <a
@@ -102,7 +102,7 @@
         </div>
     </div>
     <hr />
-    <small>
+    <small style="font-size: 0.7em;">
         © {currentYear} Anton Lechuga. Code licensed under the {licenseType} License.
         Built with
         <a href="https://svelte.dev/" target="_blank" rel="noopener noreferrer"
@@ -128,6 +128,9 @@
     }
     .social-icons {
         margin-bottom: 1rem;
+    }
+    p > a {
+        font-size: 0.8em;
     }
 
     @media (min-width: 768px) {
