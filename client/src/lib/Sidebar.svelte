@@ -1,16 +1,22 @@
 <script lang="ts">
-    import type { PageMetaData, PageData } from "../assets/navigation.ts";
+    import type { PageMetaData, SectionsData} from "../assets/navigation.ts";
 
     interface Props {
         pageMetaData: PageMetaData;
         pageState: string;
-        updatePageState: (newState: string) => void;
+        updatePageState: (newstate: string) => void;
+        updateSectionState: (newstate: string) => void;
         isMobile: boolean;
     }
-    let { pageMetaData, pageState, updatePageState, isMobile }: Props =
-        $props();
+    let {
+        pageMetaData,
+        pageState,
+        updatePageState,
+        updateSectionState,
+        isMobile,
+    }: Props = $props();
 
-    let sectionMetaData: PageData = $derived(pageMetaData[pageState]);
+    let sectionMetaData: SectionsData = $derived(pageMetaData[pageState]);
 </script>
 
 {#if isMobile}
@@ -19,8 +25,9 @@
             {#each Object.keys(pageMetaData) as title}
                 <li>
                     <a
+                        style="font-size: 13px;"
                         class:secondary={pageState !== title}
-                        href="nowthing"
+                        href={title}
                         onclick={(e) => {
                             e.preventDefault();
                             updatePageState(title);
@@ -31,15 +38,22 @@
             {/each}
         </ul>
     </nav>
-    <aside style="margin-top:0">
+    <aside style="margin-top:0; margin-bottom: 2em;">
         <nav>
             <h3>Contents</h3>
             <ul>
-                {#each sectionMetaData.sections as section}
+                {#each Object.keys(sectionMetaData) as title}
                     <li>
-                        <a class="secondary" href="#{section.title}"
-                            >{section.title}</a
-                        >
+                        <a
+                            style="font-size: 12px;"
+                            class="secondary"
+                            href="#{title}"
+                            onclick={(e) => {
+                                e.preventDefault();
+                                updateSectionState(title);
+                            }}
+                            >{title}
+                        </a>
                     </li>
                 {/each}
             </ul>
@@ -54,7 +68,7 @@
                     <summary>
                         <a
                             class:secondary={pageState !== title}
-                            href="nothing"
+                            href={title}
                             onclick={(e) => {
                                 e.preventDefault();
                                 updatePageState(title);
@@ -63,11 +77,17 @@
                         </a>
                     </summary>
                     <ul>
-                        {#each pageData.sections as section}
+                        {#each Object.keys(pageData) as title}
                             <li>
-                                <a class="secondary" href="#{section.title}"
-                                    >{section.title}</a
-                                >
+                                <a
+                                    class="secondary"
+                                    href="#{title}"
+                                    onclick={(e) => {
+                                        e.preventDefault();
+                                        updateSectionState(title);
+                                    }}
+                                    >{title}
+                                </a>
                             </li>
                         {/each}
                     </ul>
@@ -82,8 +102,11 @@
         aside {
             position: fixed;
             width: 250px;
-            height: 100vh;
+            height: 70vh;
             z-index: 10;
+        }
+        a {
+            font-size: 14px;
         }
     }
 
@@ -99,19 +122,23 @@
         margin-bottom: 0.5rem;
     }
 
-    aside summary > a {
+    a {
+        font-size: 17px;
         text-decoration: none;
     }
 
     aside ul {
-        border-left: 1px solid var(--pico-muted-border-color);
         margin-left: 0.25rem;
-        padding-left: 1rem;
         line-height: 1.5;
     }
 
     aside ul > li {
+        border-left: 1px solid var(--pico-muted-border-color);
         margin: 0.1rem 0;
+    }
+
+    aside ul > li:hover {
+        border-left: 1px solid var(--pico-primary);
     }
 
     aside ul > li a {
@@ -120,9 +147,10 @@
         color: var(--pico-secondary);
         text-decoration: none;
         transition: color 0.2s ease-in-out;
+        margin-left: 0.2em;
     }
 
     aside ul > li a:hover {
-        color: var(--pico-primary);
+        filter: brightness(1.1);
     }
 </style>

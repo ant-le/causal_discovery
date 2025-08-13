@@ -1,26 +1,56 @@
 <script lang="ts">
     import { fly, fade } from "svelte/transition";
+    import { type Component } from "svelte";
+    import { setContext } from "svelte";
     import {
         appMetaData,
         type AppStates,
-        type PageData,
+        type SectionsData,
         type PageMetaData,
     } from "../assets/navigation.ts";
-
+    import { type CitationKey } from "../assets/citation.ts";
     import PageTitle from "../lib/PageTitle.svelte";
     import Sidebar from "../lib/Sidebar.svelte";
+    import Bibliography from "../lib/Bibliography.svelte";
 
-    // Define Page States (sections to be rendered)
+    // 1. Manage Citations
+    let citedKeys: CitationKey[] = $state([]);
+    function addCitation(key: CitationKey): number {
+        const index = citedKeys.indexOf(key);
+        if (index > -1) {
+            return index + 1;
+        }
+        citedKeys.push(key);
+        citedKeys = citedKeys;
+        return citedKeys.length;
+    }
+    setContext("addCitation", addCitation);
+
+    // 2. Define Page States (sections to be rendered)
     let { appState }: { appState: AppStates } = $props();
     let pageMetaData: PageMetaData = $derived(appMetaData[appState]);
     let pageState: string = $state("Introduction");
-    let currentPage: PageData = $derived(pageMetaData[pageState]);
+    let currentPage: SectionsData = $derived(pageMetaData[pageState]);
+    let sectionState: string = $state("Background");
+    let CurrentSection: Component = $derived(
+        currentPage[sectionState],
+    );
 
     function updatePageState(newState: string) {
         if (newState !== pageState) {
             pageState = newState;
+            sectionState = Object.keys(currentPage)[0];
+            citedKeys = [];
         }
     }
+
+    function updateSectionState(newState: string) {
+        if (newState !== sectionState) {
+            sectionState = newState;
+            citedKeys = [];
+        }
+    }
+
     // 3. Window Management
     let innerWidth: number = $state(0);
     let isMobile: boolean = $derived(innerWidth < 768);
@@ -28,18 +58,16 @@
 
 <svelte:window bind:innerWidth />
 <div class="container">
-    <Sidebar {pageMetaData} {pageState} {updatePageState} {isMobile} />
+    <Sidebar {pageMetaData} {pageState} {updatePageState} {updateSectionState} {isMobile} />
     {#key pageState}
         <div
             class="content-wrapper"
             in:fly={{ x: 50, duration: 300, delay: 300 }}
             out:fade={{ duration: 250 }}
         >
-            <PageTitle title={pageState} />
-            {#each currentPage.sections as section}
-                <h3 id={section.title}>{section.title}</h3>
-                <section.component />
-            {/each}
+            <PageTitle title={sectionState} />
+            <CurrentSection />
+            <Bibliography {citedKeys} />
         </div>
     {/key}
 </div>
@@ -69,8 +97,6 @@
         .container {
             display: flex;
             flex-direction: column;
-            gap: 1rem;
-            padding: 1em;
         }
     }
 </style>

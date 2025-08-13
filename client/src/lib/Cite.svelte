@@ -1,26 +1,11 @@
 <script lang="ts">
-    import { citations } from "..data/citations";
+    import { getContext } from "svelte";
+    import { type CitationKey } from "../assets/citation.ts";
 
-    let { id }: { id: string } = $props();
-
-    citations.add(id);
-
-    // Get the ordered list of all citations to find the index of this one.
-    const bibliographyOrder = citations.bibliographyOrder;
-    const citationNumber = $derived(bibliographyOrder().indexOf(id) + 1);
+    type AddCitationFn = (key: CitationKey) => number;
+    const addCitation = getContext<AddCitationFn>("addCitation");
+    let { key }: { key: CitationKey } = $props();
+    const citationNumber = addCitation(key);
 </script>
 
-<a href="#citation-{id}" class="citation-link">
-    <sup>[{citationNumber}]</sup>
-</a>
-
-<style>
-    .citation-link {
-        color: var(--pico-primary);
-        text-decoration: none;
-        font-weight: bold;
-    }
-    .citation-link:hover {
-        text-decoration: underline;
-    }
-</style>
+<sup class="citation">[{citationNumber}]</sup>
