@@ -1,10 +1,11 @@
 <script lang="ts">
     import { fly, fade } from "svelte/transition";
+    import { type Component } from "svelte";
     import { setContext } from "svelte";
     import {
         appMetaData,
         type AppStates,
-        type PageData,
+        type SectionsData,
         type PageMetaData,
     } from "../assets/navigation.ts";
     import { type CitationKey } from "../assets/citation.ts";
@@ -29,11 +30,23 @@
     let { appState }: { appState: AppStates } = $props();
     let pageMetaData: PageMetaData = $derived(appMetaData[appState]);
     let pageState: string = $state("Introduction");
-    let currentPage: PageData = $derived(pageMetaData[pageState]);
+    let currentPage: SectionsData = $derived(pageMetaData[pageState]);
+    let sectionState: string = $state("Background");
+    let CurrentSection: Component = $derived(
+        currentPage[sectionState],
+    );
 
     function updatePageState(newState: string) {
         if (newState !== pageState) {
             pageState = newState;
+            sectionState = Object.keys(currentPage)[0];
+            citedKeys = [];
+        }
+    }
+
+    function updateSectionState(newState: string) {
+        if (newState !== sectionState) {
+            sectionState = newState;
             citedKeys = [];
         }
     }
@@ -45,19 +58,15 @@
 
 <svelte:window bind:innerWidth />
 <div class="container">
-    <Sidebar {pageMetaData} {pageState} {updatePageState} {isMobile} />
+    <Sidebar {pageMetaData} {pageState} {updatePageState} {updateSectionState} {isMobile} />
     {#key pageState}
         <div
             class="content-wrapper"
             in:fly={{ x: 50, duration: 300, delay: 300 }}
             out:fade={{ duration: 250 }}
         >
-            <PageTitle title={pageState} />
-            {#each currentPage.sections as section}
-                <h3 id={section.title}>{section.title}</h3>
-                <!-- TODO: Add Section Title here -->
-                <section.component />
-            {/each}
+            <PageTitle title={sectionState} />
+            <CurrentSection />
             <Bibliography {citedKeys} />
         </div>
     {/key}

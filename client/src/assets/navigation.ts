@@ -5,49 +5,57 @@ import Generalisability from "../sections/motivation/Generalisability.svelte";
 import Introduction from "../sections/motivation/Introduction.svelte";
 import SCM from "../sections/background/SCM.svelte";
 import POF from "../sections/background/POF.svelte";
+import Calculus from "../sections/background/Calculus.svelte";
+import MeasureTheory from "../sections/background/MeasureTheory.svelte"
+import ProbTheory from "../sections/background/ProbTheory.svelte"
 
-export interface SectionMetaData {
-    title: string;
-    component: Component;
-}
 
-export interface PageData {
-    subscript?: string;
-    sections: SectionMetaData[]
+export type SectionsData = Record<string, Component>;
+export interface PageTitle {
+    name: string
+    subscript?: string
 }
-export type PageMetaData = Record<string, PageData>;
+export type PageMetaData = Record<string, SectionsData>;
 export type AppStates = "Motivation" | "Background" | "Thesis";
 export type AppMetaData = Record<AppStates, PageMetaData>;
 export const appMetaData: AppMetaData = {
     "Motivation": {
         "Introduction": {
-            sections: [
-                { title: "From Correlational Patterns to Causal Understanding", component: Introduction }],
+
+            "From Correlational Patterns to Causal Understanding": Introduction,
+
         },
         "A step towards AGI": {
-            sections: [
-                { title: "Generalisability", component: Generalisability },
-                { title: "Explainability", component: Explainability }
-            ]
+
+            "Generalisability": Generalisability,
+            "Explainability": Explainability,
+
         },
         "Applications": {
-            sections: [
-                { title: "Applications", component: Applications }
-            ],
+
+            "Applications": Applications,
+
         },
     },
     "Background": {
-        "Introduction": { sections: [] },
-        "Causal Inference": {
-            sections: [
-                { title: "SCM", component: SCM },
-                { title: "Potential Outcomes Framework", component: POF }
-            ]
+        "Introduction": {},
+        "Math": {
+
+            "Calculus": Calculus,
+            "Measure Theory": MeasureTheory,
+            "Probability Theory": ProbTheory,
+
         },
-        "Deep Learning": { sections: [] },
+        "Causal Inference": {
+
+            "SCM": SCM,
+            "Potential Outcomes Framework": POF,
+
+        },
+        "Deep Learning": {},
     },
     "Thesis": {
-        "Introduction": { sections: [] },
-        "Content": { sections: [] },
+        "Introduction": {},
+        "Content": {},
     },
 };

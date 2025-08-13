@@ -1,16 +1,22 @@
 <script lang="ts">
-    import type { PageMetaData, PageData } from "../assets/navigation.ts";
+    import type { PageMetaData, SectionsData} from "../assets/navigation.ts";
 
     interface Props {
         pageMetaData: PageMetaData;
         pageState: string;
-        updatePageState: (newState: string) => void;
+        updatePageState: (newstate: string) => void;
+        updateSectionState: (newstate: string) => void;
         isMobile: boolean;
     }
-    let { pageMetaData, pageState, updatePageState, isMobile }: Props =
-        $props();
+    let {
+        pageMetaData,
+        pageState,
+        updatePageState,
+        updateSectionState,
+        isMobile,
+    }: Props = $props();
 
-    let sectionMetaData: PageData = $derived(pageMetaData[pageState]);
+    let sectionMetaData: SectionsData = $derived(pageMetaData[pageState]);
 </script>
 
 {#if isMobile}
@@ -36,13 +42,18 @@
         <nav>
             <h3>Contents</h3>
             <ul>
-                {#each sectionMetaData.sections as section}
+                {#each Object.keys(sectionMetaData) as title}
                     <li>
                         <a
                             style="font-size: 12px;"
                             class="secondary"
-                            href="#{section.title}">{section.title}</a
-                        >
+                            href="#{title}"
+                            onclick={(e) => {
+                                e.preventDefault();
+                                updateSectionState(title);
+                            }}
+                            >{title}
+                        </a>
                     </li>
                 {/each}
             </ul>
@@ -66,11 +77,17 @@
                         </a>
                     </summary>
                     <ul>
-                        {#each pageData.sections as section}
+                        {#each Object.keys(pageData) as title}
                             <li>
-                                <a class="secondary" href="#{section.title}"
-                                    >{section.title}</a
-                                >
+                                <a
+                                    class="secondary"
+                                    href="#{title}"
+                                    onclick={(e) => {
+                                        e.preventDefault();
+                                        updateSectionState(title);
+                                    }}
+                                    >{title}
+                                </a>
                             </li>
                         {/each}
                     </ul>
@@ -88,6 +105,9 @@
             height: 70vh;
             z-index: 10;
         }
+        a {
+            font-size: 14px;
+        }
     }
 
     summary {
@@ -103,6 +123,7 @@
     }
 
     a {
+        font-size: 17px;
         text-decoration: none;
     }
 

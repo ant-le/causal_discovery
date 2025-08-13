@@ -1,24 +1,17 @@
 <script lang="ts">
-    // TODO: change to runes
     import katex from "katex";
     import "katex/dist/katex.min.css";
 
-    export let expression: string;
-    export let inline: boolean = true;
-
-    let renderedHtml: string = "";
-
-    $: {
-        try {
-            renderedHtml = katex.renderToString(expression, {
-                displayMode: !inline,
-                throwOnError: false, // Prevents crashing on invalid LaTeX
-            });
-        } catch (error) {
-            console.error("KaTeX rendering error:", error);
-            renderedHtml = `<span class="error" style="color: red;">${error}</span>`;
-        }
-    }
+    let {
+        expression,
+        inline = true,
+    }: { expression: string; inline?: boolean } = $props();
+    let renderedhtml = $derived(
+        katex.renderToString(expression, {
+            displayMode: !inline,
+            throwOnError:false,
+        }),
+    );
 </script>
 
-{@html renderedHtml}
+{@html renderedhtml}
