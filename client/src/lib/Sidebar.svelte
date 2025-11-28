@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { PageMetaData, SectionsData} from "../assets/navigation.ts";
+    import type { PageMetaData, SectionsData } from "../assets/navigation.ts";
 
     interface Props {
         pageMetaData: PageMetaData;
@@ -105,13 +105,10 @@
             height: 70vh;
             z-index: 10;
         }
+
         a {
             font-size: 14px;
         }
-    }
-
-    summary {
-        padding: 0.25rem 0;
     }
 
     summary:after {
@@ -129,12 +126,13 @@
 
     aside ul {
         margin-left: 0.25rem;
-        line-height: 1.5;
+        line-height: 1em;
     }
 
     aside ul > li {
-        border-left: 1px solid var(--pico-muted-border-color);
-        margin: 0.1rem 0;
+        border-left: 0.1em solid var(--pico-muted-border-color);
+        margin: 0.1em;
+        overflow-wrap: break-word;
     }
 
     aside ul > li:hover {

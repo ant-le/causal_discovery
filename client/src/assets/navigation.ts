@@ -8,7 +8,11 @@ import POF from "../sections/background/POF.svelte";
 import Calculus from "../sections/background/Calculus.svelte";
 import MeasureTheory from "../sections/background/MeasureTheory.svelte"
 import ProbTheory from "../sections/background/ProbTheory.svelte"
-
+import InfoTheory from "../sections/background/InfoTheory.svelte";
+import CausalDiscovery from "../sections/thesis/CausalDiscovery.svelte";
+import GPUMCMC from "../sections/thesis/GPUMCMC.svelte";
+import Ideas from "../sections/thesis/Ideas.svelte";
+import Modelling from "../sections/background/Modelling.svelte";
 
 export type SectionsData = Record<string, Component>;
 export interface PageTitle {
@@ -44,10 +48,11 @@ export const appMetaData: AppMetaData = {
             "Calculus": Calculus,
             "Measure Theory": MeasureTheory,
             "Probability Theory": ProbTheory,
+            "Information Theory": InfoTheory,
 
         },
         "Causal Inference": {
-
+            "Causal Modelling": Modelling,
             "SCM": SCM,
             "Potential Outcomes Framework": POF,
 
@@ -55,7 +60,12 @@ export const appMetaData: AppMetaData = {
         "Deep Learning": {},
     },
     "Thesis": {
-        "Introduction": {},
-        "Content": {},
+        "Introduction": {
+            "Main Ideas": Ideas,
+        },
+        "Content": {
+            "Causal Discovery": CausalDiscovery,
+            "MCMC on GPU": GPUMCMC,
+        },
     },
 };

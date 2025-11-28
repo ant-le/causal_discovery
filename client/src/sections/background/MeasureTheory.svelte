@@ -19,7 +19,9 @@
 <section id="Sigma Algebra">
     <p>
         We start with a basic subset of some universal set <strong>X</strong>:
-        <Math expression={"\\Alpha \\subseteq{P(X)}"} inline={false} />
+        <Math expression={"\\Alpha \\subseteq{P(X)}"} inline={false} /> Next, we
+        want to define a collection of subsets, for which we want to estblish a meaningful
+        notion of measurement:
     </p>
     <Definition key="sigma_algebra" />
     <p>
@@ -47,16 +49,17 @@
     <p>
         We now call a set
         <Math expression={"(X,\\Alpha)"} inline={false} />
-        a <strong>measurable space</strong>. We can now define maps, that assign
-        values (measures) to this space:
+        a <strong>measurable space</strong>. For getting actual measures, we now
+        define a map, that assigns a value to each of ours subsets of interest.
     </p>
     <Definition key="measure" />
+</section>
+
+<section id="measure-problem">
     <p>
-        We call <Math expression={"(X,\\Alpha,\\mu)"} /> a
-        <strong>measure space</strong>. For such a measure to have intuitive
-        measing, we for example would like to find a measure <Math
-            expression={"\\mu \\text{ on }P(X=\\mathbb{R^n})"}
-        />
+        For the real number line, the most general measure that provides us with
+        our intuitive notion of length would be a measure
+        <Math expression={"\\mu \\text{ on }P(\\mathbb{R^n})"} />
         that satisfies:
     </p>
     <ol>
@@ -66,90 +69,86 @@
                 expression={"\\mu(x+A)=\\mu(A), \\quad \\forall x \\in \\mathbb{R}^n"}
             />
         </li>
-    </ol>
-    <p></p>
-</section>
-
-<section id="measure-problem">
-    <p>
-        For our notion of length, we would need to find a measure
-        <Math expression={`\\mu \\text{ on } P(\\mathbb{R})`} />
-        with the following properties:
-    </p>
-    <ul>
         <li><Math expression={"\\mu([a,b])=b-a, \\quad b>a"} /></li>
-        <li>
-            <Math
-                expression={`\\mu(x+A)=\\mu(A), \\quad A \\in P(\\mathbb{R}), x \\in \\mathbb{R}`}
-            />
-        </li>
-    </ul>
+    </ol>
     <p>
-        However, no such measure does not exist for the power set of the real
-        numbers. This is called the <strong>measure problem</strong> and we need
-        to be more strict than the power set. Hence, we will use sigma-algebras to
-        extend measure theory, as such properties do hold on these more restricting
-        subsets.
+        However, such a measure does not exist for <Math
+            expression={"P(\\mathbb{R})"}
+        />. This is called the
+        <strong>measure problem</strong> and forces us to be more restrictive on
+        the algebra. Hence, we will use Borel sigma-algebra, as this one gives
+        us a valid measure. With that, we get a triple which we call
+        <strong>measure space</strong>:
+        <Math expression={"(X,\\Alpha,\\mu)"} inline={false} />
     </p>
 </section>
 
 <section id="measurable">
     <p>
-        In order to define what is acutally measurable, we define a second
-        <strong>measurable spaces</strong>:
-        <Math expression={"(\\omega,\\Alpha_2)"} inline={false} />
-        We now want to define a mapping from one set to another:
+        Now that we have established a way to measure the size of any set <Math
+            expression={"A\\in\\Alpha"}
+        />, we want to look at functions that map from our original measure
+        space to any measurable space:
+        <Math expression={"(\\Omega,\\Alpha_2)"} inline={false} />
+        If want to define a mapping from one set to another, we need to make sure
+        that the mapping is compatible with the measure. Therefore, we introduce
+        the concept of <strong>measurable maps</strong>:
     </p>
     <Definition key="measurable" />
     <p>
-        We will make use of this relation later, but we will often use this
-        notion to map a set to the the real numbers, so
-        <Math
-            expression={"(\\omega,\\Alpha_2)=(\\mathbb{R},B(\\mathbb{R}))"}
-            inline={false}
-        />For example, we can define the characteristic function as:
+        With that, we make sure that all elements in the range of the function
+        map to a corresponding domain in the measure space and thus, have a
+        well-defined measure. For example, the
+        <strong>characteristic function</strong>:
         <Math
             expression={`\\chi_A: X \\rightarrow \\mathbb{R}, \\quad \\chi_A(x):=\\begin{cases} 1, \\quad x \\in A
-            \\\\ 0,\\quad x \\notin A \\end{cases}`}
+            \\\\ 0,\\quad x \\notin A \\end{cases}, \\quad\\forall A \\in\\Alpha`}
             inline={false}
         />
-        Therefore, <Math expression={"\\forall A \\in \\Alpha, \\chi_A"} />
-        is a measurable map. This is because the pre-image of
-        <Math expression={"\\chi_A^{-1}(x=\\{0\\})=A^C"} /> is also in the sigma
-        algebra.
+        is a measurable map, because for the case <Math
+            expression={"x=\\{0\\}"}
+        />, the pre-image <Math expression={"\\chi_A^{-1}(x)=A^C"} /> is always by
+        definition in the sigma algebra.
     </p>
 </section>
 
 <section id="lebesque-integral">
     <p>
-        We extend our measurable space to a measure space:
+        Note that by using the characteristic function, we get a very naive
+        notion of integration where the height is fixed to the only possible
+        outcome 1 and the measure provides information about the size of the
+        set, since it indicates wheather an element <Math
+            expression={"x\\in X"}
+        />
+        belongs to some set <Math expression={"A\\in\\Alpha"} />:
         <Math
-            expression={`(X,\\Alpha,\\mu) \\quad \\text{ with } \\mu: \\Alpha \\rightarrow [0,\\infty)`}
-            inline={false}
-        /> and define a measurable map
-        <Math expression={`f:X\\rightarrow \\mathbb{R}`} inline={false} />
-        We know that the characteristic function is a measurable map and gives us
-        some interpretation about the area under a curve, very similar to an integral.
-        Hence, we can define the integral of such a characteristic function with
-        the measure:
-        <Math expression={`I(\\chi_A):=\\mu(A)`} inline={false} />
-        Similarily, <strong>simple functions</strong> follow similar properties
-        as they are a linear combination of characteristic functions. We hence
-        know because of the additivity of measurable maps, that these functions
-        are also measurable:
-        <Math
-            expression={`\\sum_{i=1}^nc_i \\cdot \\chi_{A_i}(x), \\quad A_1,\\dots,A_n \\in \\Alpha, c_1,\\dots,c_n
-            \\in \\mathbb{R}`}
+            expression={`I(\\chi_A):=1\\cdot \\mu(A)=\\mu(A)`}
             inline={false}
         />
-        As a set might need many simple functions and we need to enforce positivity,
-        we create a set of simple functions:
+        Now, the measure of the pre-image is already defined with precision while
+        the height is very simplistically the constant 1. By extending the characteristic
+        function to a simple function, we can get a more nuanced picture by approximating
+        the area with a weighted sum (step function) over disjoint <Math
+            expression={`A_1,\\dots,A_n\\in\\Alpha \\text{ and
+            }c_1,\\dots,c_n\\in\\mathbb{R}^+`}
+        />:
         <Math
-            expression={`S^+ :=\\{ f:X\\rightarrow \\mathbb{R} | f \\text{ simple function }, f \\geq 0\\}`}
+            expression={`\\phi(x):=\\sum_{i=1}^nc_i \\cdot \\chi_{A_i}(x)`}
+            inline={false}
+        />
+        <Math
+            expression={`I(\\phi):=\\sum_{i=1}^nc_i \\cdot \\mu(A_i)`}
+            inline={false}
+        />
+        Since measurable maps are additive, we know that simple functions are also
+        measurable maps. We put our knowledge up to now into a final definition
+        where we introduce a set of simple functions with enforced 
+        positivity before defining the integral:
+        <Math
+            expression={`S^+ :=\\{ \\phi:X\\rightarrow \\mathbb{R} \\mid f \\text{ simple function }, f \\geq 0\\}`}
             inline={false}
         />
     </p>
-    With this, we can define an intergral as a weighted sum of simple functions:
     <Definition key="integral" />
     <p>
         The definition of the integral has some nice properties for
@@ -184,15 +183,15 @@
     <ol>
         <li>
             <Math
-                expression={"f=g \\Rightarrow \\int_{x}fd \\mu=\\int_{x}gd\\mu"}
+                expression={"f=g \\xRightarrow{\\mu-a.e.} \\int_{x}fd \\mu=\\int_{x}gd\\mu"}
             />
         </li>
         <li>
             <Math
-                expression={`f \\leq g \\Rightarrow \\int_{x}fd \\mu \\leq \\int_{x}gd\\mu`}
+                expression={`f \\leq g \\xRightarrow{\\mu-a.e.} \\int_{x}fd \\mu \\leq \\int_{x}gd\\mu`}
             />
         </li>
-        <li><Math expression={"f=0 \\equiv \\int_{x}fd\\mu=0"} /></li>
+        <li><Math expression={"f=0 \\xLeftrightarrow{\\mu-a.e.} \\int_{x}fd\\mu=0"} /></li>
     </ol>
 </section>
 
@@ -320,8 +319,8 @@
     <p>
         In the end, with this extension theorem we are able to construct the
         borel set of the real numbers <Math expression={"B(\\mathbb{R}"} />
-        and the measure of this borel algebra is unique. This extension is
-        referred to as the <strong>Lebesque measure</strong>.
+        and the measure of this borel algebra is unique. This extension is referred
+        to as the <strong>Lebesque measure</strong>.
     </p>
 </section>
 
@@ -354,9 +353,3 @@
         />.
     </p>
 </section>
-
-<style>
-    section {
-        margin-bottom: 5em;
-    }
-</style>
