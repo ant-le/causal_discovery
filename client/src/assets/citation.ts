@@ -14,13 +14,13 @@ export const bibliography: Citation = {
         year: 2018,
     },
     "causalDiscovery": {
-        author: `Bernhard Sch{\"{o}}lkopf and
-                  Francesco Locatello and
-                  Stefan Bauer and
-                  Nan Rosemary Ke and
-                  Nal Kalchbrenner and
-                  Anirudh Goyal and
-                  Yoshua Bengio`,
+        author: `Schölkopf B,
+                  Francesco Locatello F.,
+                  Bauer S.,
+                  Rosemary Ke N.,
+                  Kalchbrenner N.,
+                  Goyal A.,
+                  Bengio Y`,
         title: "Towards Causal Representation Learning",
         year: 2021,
         url: "https://arxiv.org/abs/2102.11107",

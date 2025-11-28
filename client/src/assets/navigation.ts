@@ -12,6 +12,7 @@ import InfoTheory from "../sections/background/InfoTheory.svelte";
 import CausalDiscovery from "../sections/thesis/CausalDiscovery.svelte";
 import GPUMCMC from "../sections/thesis/GPUMCMC.svelte";
 import Ideas from "../sections/thesis/Ideas.svelte";
+import Modelling from "../sections/background/Modelling.svelte";
 
 export type SectionsData = Record<string, Component>;
 export interface PageTitle {
@@ -51,7 +52,7 @@ export const appMetaData: AppMetaData = {
 
         },
         "Causal Inference": {
-
+            "Causal Modelling": Modelling,
             "SCM": SCM,
             "Potential Outcomes Framework": POF,
 

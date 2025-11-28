@@ -17,7 +17,7 @@
                         <a
                             href={entry.url}
                             target="_blank"
-                            rel="noopener noreferrer">Link</a
+                            rel="noopener noreferrer">{entry.url}</a
                         >
                     {/if}
                 </li>
