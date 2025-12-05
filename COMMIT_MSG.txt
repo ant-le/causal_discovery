@@ -1,0 +1,15 @@
+refactor(datasets): restructure utils and generators into subpackages
+
+- Split `utils.py` and `analysis.py` into `utils/` package:
+  - `collate.py`: Batch collation.
+  - `hashing.py`: Graph hashing.
+  - `stats.py`: Statistical analysis helper functions.
+  - `visualization.py`: Plotting functions.
+- Split `generators/graph.py` into `generators/graphs/` package:
+  - `base.py`, `er.py`, `sf.py`, `sbm.py`.
+- Split `generators/mechanisms.py` into `generators/mechanisms/` package:
+  - `base.py`, `linear.py`, `mlp.py`.
+- Updated all imports in `src` and `tests`.
+- Verified with `pytest`.
+
+This refactoring prepares the codebase for adding complex mechanisms (GPCDE) and O.O.D. generators without cluttering single files.

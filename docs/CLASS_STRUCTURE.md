@@ -3,28 +3,55 @@
 ## 1. Datasets Module (`src.datasets`)
 
 ### `SCMFamily`
-*Defines the distribution from which SCMs are drawn.*
+*Defines the distribution from which SCMs are drawn (Meta-Learning Tasks).*
+- **Composition:**
+  - `graph_generator`: Protocol (Strategy for adjacency sampling).
+  - `mechanism_factory`: Protocol (Strategy for mechanism creation).
 - **Attributes:**
-  - `graph_generator`: Callable (returns adjacency matrix).
-  - `mechanism_type`: Enum/String (e.g., 'linear', 'mlp').
-  - `noise_type`: Enum/String (e.g., 'gaussian').
   - `variable_count`: int
+  - `noise_type`: str
+  - `mechanism_proportions`: Dict[str, float]
 - **Methods:**
-  - `sample_scm(seed: int) -> SCMInstance`
-  - `distance_to(other: SCMFamily) -> float` (Computes OOD distance)
-  - `plot_example(save_path: Optional[str] = None) -> None`
+  - `sample_task(seed: int) -> SCMInstance`: Pure function using seed to create task.
+  - `plot_example(save_path: Optional[str])`: Visualization helper.
 
-### `SCMInstance`
-*A specific realization of a causal model.*
+### `MetaIterableDataset` (Inherits `IterableDataset`)
+*Infinite stream of tasks for training.*
+- **Attributes:**
+  - `scm_family`: SCMFamily
+  - `base_seed`: int
+- **Methods:**
+  - `__iter__()`: Implements worker-aware and rank-aware seeding logic.
+  - `__next__()`: Yields `(X, adjacency_matrix)` tuple.
+
+### `MetaFixedDataset` (Inherits `Dataset`)
+*Fixed set of tasks for validation/testing.*
+- **Attributes:**
+  - `scm_family`: SCMFamily
+  - `seeds`: List[int]
+  - `cache_instances`: bool
+  - `_cache`: Dict[int, SCMInstance]
+- **Methods:**
+  - `__getitem__(idx)`: Re-instantiates task from `seeds[idx]` (or retrieves from cache).
+
+### `DAGInstance`
+*A purely structural causal model (graph only).*
 - **Attributes:**
   - `adjacency_matrix`: np.ndarray (The DAG)
+  - `num_vars`: int
+- **Methods:**
+  - `plot_graph(save_path: Optional[str] = None, show: bool = False) -> None`
+
+### `SCMInstance` (Inherits `DAGInstance`)
+*A specific realization of a causal model.*
+- **Attributes:**
   - `mechanisms`: List[Callable] (Functions $f_i(PA_i, \epsilon_i)$)
   - `noise_dists`: List[Callable] (Samplers for $\epsilon_i$)
+  - `topological_order`: List[int]
 - **Methods:**
-  - `sample_observational(n: int) -> Tensor`
+  - `sample(n: int, normalize: bool = True) -> Tensor`: Ancestral sampling.
   - `sample_interventional(n: int, target: int, value: float) -> Tensor`
   - `get_markov_equivalence_class() -> List[np.ndarray]`
-  - `plot_graph(save_path: Optional[str] = None, show: bool = False) -> None`
   - `plot_relationships(n_samples: int = 1000, save_path: Optional[str] = None, show: bool = False) -> None`
 
 ## 2. Models Module (`src.models`)

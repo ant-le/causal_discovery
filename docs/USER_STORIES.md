@@ -1,31 +1,40 @@
 # User Stories
 
 ## Epic 1: Dataset Generation & Management
-**Story 1.1: SCM Families**
-As a researcher, I want to define "families" of Structural Causal Models (SCMs) (e.g., specific graph priors, mechanism types, noise distributions) so that I can systematically test "in-distribution" (i.d.) vs. "out-of-distribution" (o.o.d.) performance.
+**Story 1.1: Core SCM Primitives**
+As a researcher, I want a flexible `SCMFamily` and `SCMInstance` abstraction so that I can compose different graph structures and mechanism types without changing the downstream code.
 - **Acceptance Criteria:**
-  - Class `SCMFamily` exists.
-  - Can specify graph properties (sparsity, size).
-  - Can specify mechanism types (linear, MLP, GP).
-  - Can specify noise types (Gaussian, Laplace).
+  - `SCMInstance` holds adjacency matrix and mechanism modules; supports ancestral sampling.
+  - `SCMFamily` composes a `GraphGenerator` and `MechanismFactory`.
+  - Sampling returns topologically sorted data.
 
-**Story 1.2: Deterministic SCM Instances**
-As a researcher, I want to sample concrete `SCMInstance` objects from an `SCMFamily` using a random seed so that my experiments are reproducible.
+**Story 1.2: Generator Strategies**
+As a developer, I want robust implementations of common graph and mechanism distributions (ER, SF, SBM; Linear, MLP) so that I can benchmark against diverse causal structures.
 - **Acceptance Criteria:**
-  - `SCMFamily.sample(seed)` returns an `SCMInstance`.
-  - `SCMInstance` contains the explicit DAG (adjacency matrix) and callables for mechanisms.
-  - `SCMInstance` can generate observational and interventional data.
+  - `GraphGenerator` supports Erdős-Rényi (vectorized), Scale-Free (NetworkX-based), and SBM.
+  - `MechanismFactory` supports Linear Heteroskedastic and MLP mechanisms.
+  - Generators run efficiently on CPU to avoid GPU bottlenecks.
 
-**Story 1.4: SCM Visualization & Inspection**
-As a researcher, I want to visualize both the causal graph structure and the functional relationships of SCMs so that I can qualitatively verify the nature of the generated data and dependencies.
+**Story 1.3: PyTorch Dataset Infrastructure**
+As an ML engineer, I need `MetaIterableDataset` for infinite streaming and `MetaFixedDataset` for reproducible evaluation to ensure my training pipeline is both scalable and deterministic.
 - **Acceptance Criteria:**
-  - `SCMFamily.plot_example()`: Samples and plots a random instance.
-  - `SCMInstance.plot_graph()`: Plots the DAG. Annotates edges with weights if mechanisms are linear.
-  - `SCMInstance.plot_relationships()`: Generates scatter plots of specific functional relationships where an edge exists in the graph (Parent -> Child), rather than a full $N \times N$ matrix, to focus on direct causal links.
+  - `MetaIterableDataset` handles infinite streams with rank/worker-aware seeding (no duplicates).
+  - `MetaFixedDataset` loads from a fixed seed list and supports instance caching.
+  - `collate_fn` handles data normalization (standard scaling).
 
-**Story 1.3: O.O.D. Quantification**
-As a researcher, I want to quantify the "distance" between the training SCM family and test SCM families using information-theoretic metrics so I can correlate performance degradation with distribution shift.
+**Story 1.4: DataModule & Safety**
+As a user, I want a `DataModule` that manages train/test splits and enforces strict separation so that I never accidentally train on my test graphs.
 - **Acceptance Criteria:**
+  - Validation of `FamilyConfig` objects (Hydra/OmegaConf) at instantiation.
+  - Disjoint set enforcement via graph hashing (retry logic on collision).
+  - Pre-computation of family-level statistics for OOD detection.
+
+**Story 1.5: Analysis & Diagnostics**
+As a researcher, I want a diagnostics module to visualize graph properties and log distribution distances so that I can verify the "OOD-ness" of my datasets before training.
+- **Acceptance Criteria:**
+  - Functions to plot degree histograms and adjacency matrices.
+  - computation of Spectral/KL distances between families.
+  - Automatic logging of seed registries and config snapshots.
 
 ## Epic 2: Model Abstraction
 **Story 2.1: Unified Model Interface**

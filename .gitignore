@@ -9,8 +9,8 @@
 paper
 
 # --- Agent Memory ---
-.agents
 AGENTS.md
+GEMINI.md
 
 # --- IDE & Editor Configs ---
 .idea/
