@@ -34,43 +34,38 @@
 - **Methods:**
   - `__getitem__(idx)`: Re-instantiates task from `seeds[idx]` (or retrieves from cache).
 
-### `DAGInstance`
-*A purely structural causal model (graph only).*
-- **Attributes:**
-  - `adjacency_matrix`: np.ndarray (The DAG)
-  - `num_vars`: int
-- **Methods:**
-  - `plot_graph(save_path: Optional[str] = None, show: bool = False) -> None`
-
-### `SCMInstance` (Inherits `DAGInstance`)
+### `SCMInstance`
 *A specific realization of a causal model.*
 - **Attributes:**
-  - `mechanisms`: List[Callable] (Functions $f_i(PA_i, \epsilon_i)$)
-  - `noise_dists`: List[Callable] (Samplers for $\epsilon_i$)
+  - `adjacency_matrix`: torch.Tensor (The DAG)
+  - `mechanisms`: List[nn.Module]
   - `topological_order`: List[int]
 - **Methods:**
-  - `sample(n: int, normalize: bool = True) -> Tensor`: Ancestral sampling.
-  - `sample_interventional(n: int, target: int, value: float) -> Tensor`
-  - `get_markov_equivalence_class() -> List[np.ndarray]`
-  - `plot_relationships(n_samples: int = 1000, save_path: Optional[str] = None, show: bool = False) -> None`
+  - `sample(n: int) -> Tensor`: Ancestral sampling.
 
-## 2. Models Module (`src.models`)
+## 2. Models Module (`src.causal_meta.models`)
 
-### `BaseCausalModel` (Abstract)
-*Uniform interface for all BCD methods.*
+### `BaseModel` (Inherits `nn.Module`)
+*Uniform interface for all causal discovery methods (Meta-Learning & Classical).*
+- **Attributes:**
+  - `needs_pretraining`: bool (Flag for meta-learners vs instance-optimizers)
 - **Methods:**
-  - `__init__(config: Dict)`
-  - `train(dataset: Tensor, **kwargs) -> None`
-  - `infer_graph_posterior(data: Tensor, n_samples: int) -> List[np.ndarray]`
-  - `infer_scm_posterior(data: Tensor, n_samples: int) -> List[SCMInstance]`
-  - `save(path: str)`
-  - `load(path: str)`
+  - `forward(x: Tensor) -> Any`: Model-specific forward pass (returns logits/params).
+  - `sample(x: Tensor, n_samples: int) -> Tensor`: Returns graph samples `(Batch, N, V, V)`.
+  - `calculate_loss(output: Any, target: Tensor, **kwargs) -> Tensor`: Computes training loss.
 
-### `BNCPModel` (Inherits BaseCausalModel)
-- *Implementation of the Meta-Learning approach.*
+### `BCNP` (Inherits `BaseModel`)
+*Bayesian Causal Neural Process implementation.*
+- **Architecture:** Node Embedding (Set Transformer) -> Edge Prediction (Bilinear/MLP).
+- **Components:** `SetTransformerLayer`, `MultiHeadAttention`.
 
-### `ExplicitBCDModel` (Inherits BaseCausalModel)
-- *Wrapper for DiBS/BayesDAG.*
+### `AviciModel` (Inherits `BaseModel`)
+*Avici-style Amortized Causal Discovery.*
+- **Architecture:** Sample Aggregation -> Variable Attention (Transformer) -> Edge Prediction.
+
+### `ModelFactory`
+- **Methods:**
+  - `create(config: Dict) -> BaseModel`: Instantiates registered models.
 
 ## 3. Pipeline Module (`src.pipeline`)
 

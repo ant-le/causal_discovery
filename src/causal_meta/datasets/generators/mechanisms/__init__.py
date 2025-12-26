@@ -7,6 +7,7 @@ from causal_meta.datasets.generators.mechanisms.mlp import (
     MLPMechanism,
     MLPMechanismFactory,
 )
+from causal_meta.datasets.generators.mechanisms.mixture import MixtureMechanismFactory
 
 __all__ = [
     "MechanismFactory",
@@ -14,4 +15,5 @@ __all__ = [
     "LinearMechanismFactory",
     "MLPMechanism",
     "MLPMechanismFactory",
+    "MixtureMechanismFactory",
 ]

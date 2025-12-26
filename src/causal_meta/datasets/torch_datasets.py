@@ -61,6 +61,9 @@ class MetaIterableDataset(IterableDataset):
             yield x, instance.adjacency_matrix
             seed += stride
 
+    # TODO: add validation logic (after a specific number of samples?)
+    # can have same logic as testing with id and ood buts needs 
+    # different seeds (distinct from test set)
 
 class MetaFixedDataset(Dataset):
     """Fixed-seed SCM dataset with optional instance caching."""
@@ -95,3 +98,5 @@ class MetaFixedDataset(Dataset):
             torch.manual_seed(seed)
             x = instance.sample(self.samples_per_task)
         return x, instance.adjacency_matrix
+
+    # TODO: add logic to safe cache experiments folder in the end

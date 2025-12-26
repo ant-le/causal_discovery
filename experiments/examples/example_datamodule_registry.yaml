@@ -1,0 +1,32 @@
+train_family:
+  name: train
+  n_nodes: 20
+  graph_cfg:
+    type: er
+    sparsity: 0.2
+  mech_cfg:
+    type: linear
+    weight_scale: 0.1
+
+test_families:
+  ood_graph:
+    name: test
+    n_nodes: 20
+    graph_cfg:
+      type: sbm
+      n_blocks: 4
+      p_intra: 0.6
+      p_inter: 0.05
+    mech_cfg:
+      type: mlp
+      hidden_dim: 32
+
+seeds_train: [0, 1, 2, 3, 4]
+seeds_val: [200, 201, 202]
+seeds_test: [100, 101, 102]
+base_seed: 0
+samples_per_task: 128
+cache_test: true
+safety_checks: true
+num_workers: 0
+pin_memory: true

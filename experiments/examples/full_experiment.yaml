@@ -1,0 +1,73 @@
+name: "example_experiment"
+
+logger:
+  wandb:
+    enabled: false
+    mode: "online"
+    project: "causal_meta"
+    entity: null
+    name: "${name}"
+    tags: ["test"]
+
+data:
+  train_family:
+    name: train
+    n_nodes: 20
+    graph_cfg:
+      _target_: causal_meta.datasets.generators.graphs.er.ErdosRenyiGenerator
+      sparsity: 0.2
+    mech_cfg:
+      _target_: causal_meta.datasets.generators.mechanisms.linear.LinearMechanismFactory
+      weight_scale: 0.1
+  
+  test_families:
+    ood_graph:
+      name: test
+      n_nodes: 20
+      graph_cfg:
+        _target_: causal_meta.datasets.generators.graphs.sbm.SBMGenerator
+        n_blocks: 4
+        p_intra: 0.6
+        p_inter: 0.05
+      mech_cfg:
+        _target_: causal_meta.datasets.generators.mechanisms.mlp.MLPMechanismFactory
+        hidden_dim: 32
+  
+  seeds_train: [0, 1, 2, 3, 4]
+  seeds_val: [200, 201, 202]
+  seeds_test: [100, 101, 102]
+  base_seed: 0
+  samples_per_task: 128
+  cache_test: true
+  safety_checks: true
+  num_workers: 0
+  pin_memory: true
+
+model:
+  type: "avici"
+  num_nodes: 20
+  d_model: 64
+  nhead: 4
+  num_layers: 2
+  dim_feedforward: 128
+  dropout: 0.1
+
+objective:
+  name: "bce"
+  pos_weight: 1.0
+
+trainer:
+  lr: 0.0003
+  max_steps: 100
+  log_every_n_steps: 10
+  val_check_interval: 50
+
+inference:
+  n_samples: 10
+
+hydra:
+  run:
+    dir: experiments/${name}
+  sweep:
+    dir: experiments/${name}/multirun
+    subdir: ${hydra.job.num}

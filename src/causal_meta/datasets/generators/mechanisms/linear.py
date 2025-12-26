@@ -27,6 +27,26 @@ class LinearMechanismFactory:
         self.noise_concentration = noise_concentration
         self.noise_rate = noise_rate
 
+    def make_mechanism(self, input_dim: int, torch_generator: torch.Generator) -> nn.Module:
+        # We must ensure torch_generator state is advanced, but torch.randn requires a global RNG
+        # or a generator kwarg. Gamma doesn't accept a generator directly in older torch versions easily
+        # or requires standard sampling. We use the generator directly where possible.
+        if input_dim > 0:
+            weights = torch.randn(input_dim, generator=torch_generator) * self.weight_scale
+        else:
+            weights = torch.zeros(0)
+        
+        # Gamma distribution sampling isn't trivially generator-aware in all versions, 
+        # so we sample uniform and transform or fork. Forking is safer.
+        # Actually, torch.distributions...sample() doesn't take a generator.
+        # We'll use a workaround: sample uniform from generator and inverse CDF (ppf) or just fork.
+        # Forking with set_state is robust.
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(torch.randint(0, 1000000, (1,), generator=torch_generator).item())
+            noise_scale = torch.distributions.Gamma(self.noise_concentration, self.noise_rate).sample()
+        
+        return LinearMechanism(weights, noise_scale=noise_scale.item())
+
     def __call__(
         self,
         adjacency_matrix: torch.Tensor,
@@ -41,12 +61,6 @@ class LinearMechanismFactory:
         for node in range(n_nodes):
             parents = torch.nonzero(adjacency_matrix[:, node], as_tuple=False).flatten()
             n_parents = int(parents.numel())
-            if n_parents > 0:
-                weights = torch.randn(n_parents, generator=torch_generator) * self.weight_scale
-            else:
-                weights = torch.zeros(0)
-
-            noise_scale = torch.distributions.Gamma(self.noise_concentration, self.noise_rate).sample()
-            mechanisms.append(LinearMechanism(weights, noise_scale=noise_scale.item()))
+            mechanisms.append(self.make_mechanism(n_parents, torch_generator))
 
         return mechanisms

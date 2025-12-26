@@ -1,4 +1,5 @@
-from causal_meta.datasets.data_module import CausalMetaModule, FamilyConfig
+from causal_meta.datasets.data_module import CausalMetaModule
+from causal_meta.datasets.generators.configs import DataModuleConfig, FamilyConfig
 from causal_meta.datasets.utils import (
     compute_family_distance,
     get_family_stats,
@@ -17,6 +18,7 @@ __all__ = [
     "MetaFixedDataset",
     "collate_fn_scm",
     "compute_graph_hash",
+    "DataModuleConfig",
     "FamilyConfig",
     "CausalMetaModule",
     "get_family_stats",

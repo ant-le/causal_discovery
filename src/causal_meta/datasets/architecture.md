@@ -111,3 +111,4 @@
 -   **Device Management:**
     -   Generators run on CPU (in `DataLoader` workers).
     -   Resulting `Tensor` data is pinned and transferred to GPU in the training loop.
+

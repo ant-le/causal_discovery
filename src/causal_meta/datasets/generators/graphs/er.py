@@ -6,10 +6,18 @@ import torch
 class ErdosRenyiGenerator:
     """Vectorized Erdős-Rényi DAG sampler using torch.bernoulli."""
 
-    def __init__(self, edge_prob: float) -> None:
+    def __init__(self, edge_prob: Optional[float] = None, *, sparsity: Optional[float] = None) -> None:
+        if edge_prob is None and sparsity is None:
+            raise TypeError("Either 'edge_prob' or its alias 'sparsity' must be provided.")
+        if edge_prob is not None and sparsity is not None and edge_prob != sparsity:
+            raise ValueError("'edge_prob' and 'sparsity' must match if both are provided.")
+
+        edge_prob = sparsity if edge_prob is None else edge_prob
+        if edge_prob is None:  # pragma: no cover - defensive
+            raise TypeError("Missing required edge probability.")
         if edge_prob < 0 or edge_prob > 1:
-            raise ValueError("edge_prob must be in [0, 1].")
-        self.edge_prob = edge_prob
+            raise ValueError("Probability must be in [0, 1].")
+        self.edge_prob = float(edge_prob)
 
     def __call__(
         self,

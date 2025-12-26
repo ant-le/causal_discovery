@@ -1,24 +1,44 @@
-# Goals
+# Model Architecture & Design
 
-1. each used model should be grouped into a seperate folder,
-but make sure that commond model components are reused 
-(e.g. if they use same decoder)
-> question remains if I should just import he model code
-or hardcode the architectures into the folders
+## Goals
+1.  **Modular Storage**: Group each model in a separate subdirectory.
+    *   `./avici/`: Wrapper for Avici-like models (Amortized Inference).
+    *   `./bcnp/`: Bayesian Causal Neural Process models.
+    *   `./bayesDag/`: Custom baselines.
+2.  **Unified Interface**: All models must inherit from a common `BaseModel`.
+3.  **Meta vs. Classical**: 
+    *   Distinguish between models requiring pre-training (Amortized/Deep Learning) and those requiring instance-specific optimization (MCMC/VI).
 
-    - `./bayesDag/`
-    - `./avici/`
-    - `./dibs/`
-    - `./bcnp/`
+## Class Structure
 
+### `BaseModel(nn.Module)`
+The abstract base class located in `src/causal_meta/models/base.py`.
 
-2. Maybe introduce a wrapper with functionality for models 
-to ensure same return type + trainable flag + trained flag
+**Attributes:**
+*   `needs_pretraining` (bool): 
+    *   `True`: Model is a meta-learner (e.g., Avici, BCNP) and requires a training phase across many tasks.
+    *   `False`: Model adapts per instance (e.g., MCMC, VI) and "training" happens during the inference/evaluation phase.
 
-3. Generally, make it easy to add models to workflow and
-to make other functionalities expressive, efficient and less
-redundant
+**Key Methods:**
+*   `forward(x: torch.Tensor) -> Any`:
+    *   Input: `x` of shape `(Batch, Samples, Variables)`.
+    *   Output: Model-specific distribution parameters (e.g., edge logits).
+*   `sample(x: torch.Tensor, n_samples: int = 1) -> torch.Tensor`:
+    *   Input: `x` of shape `(Batch, Samples, Variables)`.
+    *   Output: Predicted adjacency matrices `(Batch, n_samples, V, V)`.
+    *   *Behavior*: 
+        *   If `needs_pretraining=True`: Fast forward pass + sampling from posterior.
+        *   If `needs_pretraining=False`: Triggers the optimization/sampling loop (MCMC/VI) for the specific input `x`.
 
-4. Store model artifacts (weights or posterior) in the respective
-folder (or where should I best store it, together with used
-data and results?)
+**Training Objective Note:**
+`BaseModel` defines `calculate_loss(output, target, **kwargs)` which must be implemented by subclasses. This moves the responsibility of defining the training objective (e.g., NLL, BCE, Acyclicity constraints) to the model itself, allowing for model-specific loss formulations (like DiBS/Avici cyclicity regularization) without bloating the generic runner.
+
+## Directory Structure
+```
+src/causal_meta/models/
+├── base.py          # Abstract base class
+├── factory.py       # Config -> Model instantiation
+├── avici/           # Avici wrapper
+├── bcnp/            # BCNP implementation
+└── utils/           # Common neural components
+```
