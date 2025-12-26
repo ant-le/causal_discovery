@@ -97,4 +97,4 @@ def test_avici_loss_calculation():
     
     # Should fail if cyclicity is missing or logic is wrong
     loss = model.calculate_loss(logits, target, update_regulariser=True)
-    assert loss.shape == (3,)
+    assert loss.dim() == 0

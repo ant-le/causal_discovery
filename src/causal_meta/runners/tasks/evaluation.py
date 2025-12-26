@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from collections import defaultdict
 from omegaconf import DictConfig
 import torch
 import torch.distributed as dist
@@ -30,12 +31,24 @@ class NpEncoder(json.JSONEncoder):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
 
-def sync_metrics(metrics: dict) -> dict:
-    """Synchronize metrics across ranks by averaging."""
-    keys = sorted(metrics.keys())
-    values = torch.tensor([metrics[k] for k in keys], device='cuda')
-    dist.all_reduce(values, op=dist.ReduceOp.AVG)
-    return {k: v.item() for k, v in zip(keys, values)}
+def gather_results(local_results: dict) -> dict:
+    """Gather lists of metrics from all ranks and concatenate them."""
+    if not (dist.is_available() and dist.is_initialized()):
+        return local_results
+
+    # Gather all results objects (list of dicts)
+    world_size = dist.get_world_size()
+    gathered_results = [None for _ in range(world_size)]
+    dist.all_gather_object(gathered_results, local_results)
+
+    # Merge: {metric: [val, ...]}
+    merged = defaultdict(list)
+    for res in gathered_results:
+        if res:
+            for k, v in res.items():
+                merged[k].extend(v)
+    
+    return dict(merged)
 
 def run(cfg: DictConfig, model: BaseModel, data_module: CausalMetaModule):
     # DDP Setup
@@ -56,15 +69,17 @@ def run(cfg: DictConfig, model: BaseModel, data_module: CausalMetaModule):
     # Unwrap if DDP
     model_unwrapped = model.module if is_distributed else model
     
-    all_metrics = {}
+    all_summary_metrics = {}
+    all_raw_metrics = {}
 
     n_samples = cfg.inference.get("n_samples", 100)
     
     for name, loader in test_loaders.items():
         if rank == 0:
             log.info(f"Evaluating on {name}...")
-        metrics_sum = {}
-        counts = {}
+        
+        # Local storage for this rank
+        local_metrics = defaultdict(list)
         
         with torch.no_grad():
             for batch_idx, batch in enumerate(loader):
@@ -79,39 +94,53 @@ def run(cfg: DictConfig, model: BaseModel, data_module: CausalMetaModule):
                 # Use posterior mean edge probabilities (estimated from samples)
                 probs = samples.float().mean(dim=1)
                 
-                # Metrics
+                # Metrics (single task per batch assumed, so we take index 0 or mean)
+                # compute_graph_metrics returns dict of scalars if batch=1
                 m = compute_graph_metrics(probs, adj)
-                m["e_shd"] = float(np.mean(expected_shd(adj.cpu().numpy(), samples_for_metrics.cpu().numpy())))
+                
+                # Probabilistic metrics
+                m["e_shd"] = float(np.mean(expected_shd(adj, samples_for_metrics).cpu().numpy()))
                 m["e_f1"] = float(
-                    np.mean(expected_f1_score(adj.cpu().numpy(), samples_for_metrics.cpu().numpy()))
+                    np.mean(expected_f1_score(adj, samples_for_metrics).cpu().numpy())
                 )
                 m["graph_log_prob"] = float(np.mean(log_prob_graph_scores(adj, samples_for_metrics)))
                 m["graph_auroc"] = float(np.mean(auc_graph_scores(adj, samples_for_metrics)))
                 
                 for k, v in m.items():
-                    metrics_sum[k] = metrics_sum.get(k, 0.0) + v
-                    counts[k] = counts.get(k, 0) + 1
+                    local_metrics[k].append(v)
         
-        # Local Average
-        dataset_metrics = {k: v / counts[k] for k, v in metrics_sum.items()}
-        
-        # Sync if distributed
-        if is_distributed:
-            dataset_metrics = sync_metrics(dataset_metrics)
-            
-        all_metrics[name] = dataset_metrics
+        # Sync across ranks (gather full lists)
+        final_metrics = gather_results(dict(local_metrics))
         
         if rank == 0:
-            log.info(f"Results for {name}: {dataset_metrics}")
+            # Compute Summary Stats (Mean + SEM)
+            summary = {}
+            for k, v in final_metrics.items():
+                arr = np.array(v)
+                summary[f"{k}_mean"] = float(np.mean(arr))
+                summary[f"{k}_sem"] = float(np.std(arr, ddof=1) / np.sqrt(len(arr))) if len(arr) > 1 else 0.0
+                summary[f"{k}_std"] = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
+            
+            all_summary_metrics[name] = summary
+            all_raw_metrics[name] = final_metrics
+            
+            log.info(f"Results for {name}: {summary}")
+            
             if wandb.run:
-                wandb.log({f"test/{name}/{k}": v for k, v in dataset_metrics.items()})
+                # Log means to WandB
+                wandb.log({f"test/{name}/{k}": v for k, v in summary.items()})
 
     # Save
     if rank == 0:
         output_dir = Path(os.getcwd()) / "results"
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        with open(output_dir / "metrics.json", "w") as f:
-            json.dump(all_metrics, f, cls=NpEncoder, indent=4)
+        # Save Summary
+        with open(output_dir / "metrics_summary.json", "w") as f:
+            json.dump(all_summary_metrics, f, cls=NpEncoder, indent=4)
+            
+        # Save Raw (for Box Plots)
+        with open(output_dir / "metrics_raw.json", "w") as f:
+            json.dump(all_raw_metrics, f, cls=NpEncoder, indent=4)
         
-        log.info(f"Metrics saved to {output_dir / 'metrics.json'}")
+        log.info(f"Metrics saved to {output_dir}")

@@ -65,8 +65,6 @@ class CausalMetaModule:
         all_reserved_hashes = all_val_hashes | all_test_hashes
         
         if self.config.safety_checks:
-            self._check_disjoint(self.train_family, all_reserved_hashes)
-
             val_test_collisions = all_val_hashes & all_test_hashes
             if val_test_collisions:
                 warnings.warn(
@@ -138,7 +136,7 @@ class CausalMetaModule:
             loaders[name] = DataLoader(
                 dataset,
                 batch_size=1,  # One task per batch
-                num_workers=0,  # No need for workers on fixed test set
+                num_workers=self.config.num_workers,  # Use configured workers
                 pin_memory=self.config.pin_memory,
                 collate_fn=collate_fn_scm,
                 sampler=sampler
@@ -166,27 +164,12 @@ class CausalMetaModule:
             loaders[name] = DataLoader(
                 dataset,
                 batch_size=1,  # One task per batch
-                num_workers=0,  # No need for workers on fixed validation set
+                num_workers=self.config.num_workers,  # Use configured workers
                 pin_memory=self.config.pin_memory,
                 collate_fn=collate_fn_scm,
                 sampler=sampler
             )
         return loaders
-
-    def _check_disjoint(self, train_family: SCMFamily, test_hashes: Set[str]) -> None:
-        probe_seeds = self._probe_seeds(self.config.seeds_train)
-        collisions: Set[str] = set()
-        for seed in probe_seeds:
-            instance = train_family.sample_task(seed)
-            graph_hash = compute_graph_hash(instance.adjacency_matrix)
-            if graph_hash in test_hashes:
-                collisions.add(graph_hash)
-        if collisions:
-            warnings.warn(
-                f"Detected graph hash collisions between train and held-out (val/test) splits: {collisions}. "
-                "Consider adjusting seeds or family parameters.",
-                RuntimeWarning,
-            )
 
     def _sample_hashes(self, family: SCMFamily, seeds: Sequence[int]) -> Set[str]:
         hashes: Set[str] = set()
@@ -202,7 +185,7 @@ class CausalMetaModule:
         return [self.config.base_seed + i for i in range(count)]
 
     def _compute_spectral_distance(self, train_family: SCMFamily, test_family: SCMFamily) -> float:
-        train_profile = self._spectral_profile(train_family, self.config.seeds_train)
+        train_profile = self._spectral_profile(train_family, [])
         test_profile = self._spectral_profile(test_family, self.config.seeds_test)
         min_len = min(train_profile.numel(), test_profile.numel())
         if min_len == 0:

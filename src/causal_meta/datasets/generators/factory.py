@@ -186,7 +186,6 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
         }
     
     allowed_keys = {
-        "seeds_train",
         "seeds_test",
         "seeds_val",
         "base_seed",
@@ -200,8 +199,8 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
     
     kwargs = {k: v for k, v in cfg.items() if k in allowed_keys}
     
-    if "seeds_train" not in kwargs or "seeds_test" not in kwargs:
-        raise ValueError("Config must contain 'seeds_train' and 'seeds_test'.")
+    if "seeds_test" not in kwargs or "seeds_val" not in kwargs:
+        raise ValueError("Config must contain 'seeds_test' and 'seeds_val'.")
 
     return configs.DataModuleConfig(
         train_family=train_family,

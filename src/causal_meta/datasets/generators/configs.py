@@ -120,49 +120,32 @@ class FamilyConfig:
 
 
 @dataclass
-
-
 class DataModuleConfig:
-
-
     """Top-level configuration for the CausalMetaModule."""
-
 
     train_family: FamilyConfig
 
     # Support multiple named test families (e.g., {"ood_graph": ..., "ood_mech": ...})
-
-
     test_families: Dict[str, FamilyConfig]
 
-
-    seeds_train: List[int]
-
     seeds_test: List[int]
+    
+    # Fixed validation seeds (distinct from train/test)
+    seeds_val: List[int]
 
     # Optional validation families (default is {"id": train_family} when empty)
     val_families: Dict[str, FamilyConfig] = field(default_factory=dict)
 
-    # Fixed validation seeds (distinct from train/test)
-    seeds_val: List[int] = field(default_factory=list)
-
-
     base_seed: int = 0
-
 
     samples_per_task: int = 128
 
-
     cache_val: bool = True
-
 
     cache_test: bool = True
 
-
     safety_checks: bool = True
 
-
     num_workers: int = 0
-
 
     pin_memory: bool = True

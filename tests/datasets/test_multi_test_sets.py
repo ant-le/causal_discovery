@@ -25,11 +25,10 @@ def test_multi_test_families() -> None:
                 "mech_cfg": {"type": "mlp", "hidden_dim": 16},
             }
         },
-        "seeds_train": [0],
-        "seeds_test": [1],
-        "samples_per_task": 10,
-    }
-    
+                    "seeds_val": [0],
+                    "seeds_test": [1],
+                    "samples_per_task": 10,
+                }    
     module = CausalMetaModule.from_config(cfg)
     module.setup()
     

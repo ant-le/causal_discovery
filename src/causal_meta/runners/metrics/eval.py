@@ -177,56 +177,116 @@ def calc_SHD(target: np.ndarray, pred: np.ndarray, double_for_anticausal: bool =
     return int(shd_double - reversed_edges)
 
 
-def expected_shd(target: np.ndarray, pred: np.ndarray, check_acyclic: bool = False) -> np.ndarray:
-    """Expected SHD for a batch of predictions.
+# def expected_shd(target: np.ndarray, pred: np.ndarray, check_acyclic: bool = False) -> np.ndarray:
+#     """Expected SHD for a batch of predictions.
+# 
+#     Args:
+#         target: (batch_size, num_nodes, num_nodes)
+#         pred: (num_samples, batch_size, num_nodes, num_nodes)
+#     """
+#     _ = check_acyclic
+#     target_arr = np.asarray(target)
+#     pred_arr = np.asarray(pred)
+#     if target_arr.ndim != 3 or pred_arr.ndim != 4:
+#         raise ValueError("target must be 3D and pred must be 4D.")
+#     if pred_arr.shape[1:] != target_arr.shape:
+#         raise ValueError("pred shape must be (num_samples, batch, N, N) matching target.")
+# 
+#     shd_all = np.zeros(pred_arr.shape[1], dtype=float)
+#     for i in range(pred_arr.shape[1]):
+#         curr_pred = pred_arr[:, i]
+#         curr_target = target_arr[i]
+#         shd_sample = []
+#         for j in range(curr_pred.shape[0]):
+#             shd_sample.append(calc_SHD(curr_target, curr_pred[j], double_for_anticausal=True))
+#         shd_all[i] = float(np.mean(shd_sample)) if shd_sample else 0.0
+#     return shd_all
+
+def expected_shd(target: torch.Tensor, pred: torch.Tensor, check_acyclic: bool = False) -> torch.Tensor:
+    """Expected SHD for a batch of predictions (Vectorized).
 
     Args:
         target: (batch_size, num_nodes, num_nodes)
         pred: (num_samples, batch_size, num_nodes, num_nodes)
+    Returns:
+        Tensor of shape (batch_size,)
     """
     _ = check_acyclic
-    target_arr = np.asarray(target)
-    pred_arr = np.asarray(pred)
-    if target_arr.ndim != 3 or pred_arr.ndim != 4:
+    if target.ndim != 3 or pred.ndim != 4:
         raise ValueError("target must be 3D and pred must be 4D.")
-    if pred_arr.shape[1:] != target_arr.shape:
+    if pred.shape[1:] != target.shape:
         raise ValueError("pred shape must be (num_samples, batch, N, N) matching target.")
 
-    shd_all = np.zeros(pred_arr.shape[1], dtype=float)
-    for i in range(pred_arr.shape[1]):
-        curr_pred = pred_arr[:, i]
-        curr_target = target_arr[i]
-        shd_sample = []
-        for j in range(curr_pred.shape[0]):
-            shd_sample.append(calc_SHD(curr_target, curr_pred[j], double_for_anticausal=True))
-        shd_all[i] = float(np.mean(shd_sample)) if shd_sample else 0.0
-    return shd_all
+    # pred is (S, B, N, N), target is (B, N, N)
+    # Expand target to (1, B, N, N) for broadcasting
+    target_expanded = target.unsqueeze(0)
+    
+    # SHD (double_for_anticausal=True equivalent) is just sum of absolute differences
+    # pred is binary samples, target is binary adjacency
+    diff = torch.abs(target_expanded - pred)
+    
+    # Sum over N, N dimensions -> (S, B)
+    shd_per_sample = diff.sum(dim=(-1, -2))
+    
+    # Mean over samples -> (B,)
+    return shd_per_sample.float().mean(dim=0)
 
 
-def expected_f1_score(target: np.ndarray, pred: np.ndarray, check_acyclic: bool = False) -> np.ndarray:
-    """Expected F1 score for a batch of predictions.
+# def expected_f1_score(target: np.ndarray, pred: np.ndarray, check_acyclic: bool = False) -> np.ndarray:
+#     """Expected F1 score for a batch of predictions.
+# 
+#     Args:
+#         target: (batch_size, num_nodes, num_nodes)
+#         pred: (num_samples, batch_size, num_nodes, num_nodes)
+#     """
+#     _ = check_acyclic
+#     target_arr = np.asarray(target)
+#     pred_arr = np.asarray(pred)
+#     if target_arr.ndim != 3 or pred_arr.ndim != 4:
+#         raise ValueError("target must be 3D and pred must be 4D.")
+#     if pred_arr.shape[1:] != target_arr.shape:
+#         raise ValueError("pred shape must be (num_samples, batch, N, N) matching target.")
+# 
+#     f1_all = np.zeros(pred_arr.shape[1], dtype=float)
+#     for i in range(pred_arr.shape[1]):
+#         curr_pred = pred_arr[:, i]
+#         curr_target = target_arr[i]
+#         f1_sample = []
+#         for j in range(curr_pred.shape[0]):
+#             f1_sample.append(_binary_f1_score(curr_target.flatten(), curr_pred[j].flatten()))
+#         f1_all[i] = float(np.mean(f1_sample)) if f1_sample else 0.0
+#     return f1_all
+
+def expected_f1_score(target: torch.Tensor, pred: torch.Tensor, check_acyclic: bool = False) -> torch.Tensor:
+    """Expected F1 score for a batch of predictions (Vectorized).
 
     Args:
         target: (batch_size, num_nodes, num_nodes)
         pred: (num_samples, batch_size, num_nodes, num_nodes)
+    Returns:
+        Tensor of shape (batch_size,)
     """
     _ = check_acyclic
-    target_arr = np.asarray(target)
-    pred_arr = np.asarray(pred)
-    if target_arr.ndim != 3 or pred_arr.ndim != 4:
+    if target.ndim != 3 or pred.ndim != 4:
         raise ValueError("target must be 3D and pred must be 4D.")
-    if pred_arr.shape[1:] != target_arr.shape:
+    if pred.shape[1:] != target.shape:
         raise ValueError("pred shape must be (num_samples, batch, N, N) matching target.")
 
-    f1_all = np.zeros(pred_arr.shape[1], dtype=float)
-    for i in range(pred_arr.shape[1]):
-        curr_pred = pred_arr[:, i]
-        curr_target = target_arr[i]
-        f1_sample = []
-        for j in range(curr_pred.shape[0]):
-            f1_sample.append(_binary_f1_score(curr_target.flatten(), curr_pred[j].flatten()))
-        f1_all[i] = float(np.mean(f1_sample)) if f1_sample else 0.0
-    return f1_all
+    # Expand target: (1, B, N, N)
+    target_expanded = target.unsqueeze(0)
+    
+    # Operations on (S, B, N, N)
+    tp = (pred * target_expanded).sum(dim=(-1, -2))
+    fp = (pred * (1 - target_expanded)).sum(dim=(-1, -2))
+    fn = ((1 - pred) * target_expanded).sum(dim=(-1, -2))
+    
+    # F1 per sample: (S, B)
+    denom = 2 * tp + fp + fn
+    # Avoid division by zero
+    f1 = torch.where(denom > 0, (2 * tp) / denom, torch.zeros_like(denom))
+    
+    # Mean over samples -> (B,)
+    return f1.mean(dim=0)
 
 
 def log_prob_graph_scores(targets: torch.Tensor, preds: torch.Tensor, eps: float = 1e-6) -> List[float]:

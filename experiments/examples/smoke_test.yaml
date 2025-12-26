@@ -1,0 +1,60 @@
+# Smoke test configuration (minimal resources)
+name: "smoke_test"
+
+logger:
+  wandb:
+    enabled: false
+
+data:
+  train_family:
+    name: train
+    n_nodes: 10
+    graph_cfg:
+      type: er
+      sparsity: 0.2
+    mech_cfg:
+      type: linear
+      weight_scale: 1.0
+
+  test_families:
+    test_1:
+      name: test
+      n_nodes: 10
+      graph_cfg:
+        type: er
+        sparsity: 0.2
+      mech_cfg:
+        type: linear
+        weight_scale: 1.0
+  
+  seeds_val: [100, 101]
+  seeds_test: [200, 201]
+  base_seed: 42
+  samples_per_task: 32
+  cache_val: true
+  cache_test: true
+  safety_checks: true
+  num_workers: 0
+  pin_memory: false
+
+model:
+  type: "avici"
+  num_nodes: 10
+  d_model: 16
+  nhead: 2
+  num_layers: 2
+  dim_feedforward: 32
+  dropout: 0.1
+
+trainer:
+  max_steps: 10
+  log_every_n_steps: 2
+  val_check_interval: 5
+  lr: 0.001
+
+inference:
+  n_samples: 5
+
+hydra:
+  run:
+    dir: experiments/${name}

@@ -20,8 +20,8 @@ def test_calc_shd_reverse_edge_counts_once_when_not_double() -> None:
 
 
 def test_expected_shd_and_expected_f1() -> None:
-    target = np.array([[[0, 1], [0, 0]]])  # (B=1, N=2, N=2)
-    pred = np.array(
+    target = torch.tensor([[[0, 1], [0, 0]]])  # (B=1, N=2, N=2)
+    pred = torch.tensor(
         [
             [[[0, 1], [0, 0]]],  # perfect
             [[[0, 0], [1, 0]]],  # reversed
@@ -30,11 +30,11 @@ def test_expected_shd_and_expected_f1() -> None:
 
     shd = expected_shd(target, pred)
     assert shd.shape == (1,)
-    assert shd[0] == 1.0
+    assert shd[0].item() == 1.0
 
     f1 = expected_f1_score(target, pred)
     assert f1.shape == (1,)
-    assert np.isclose(f1[0], 0.5)
+    assert np.isclose(f1[0].item(), 0.5)
 
 
 def test_auc_and_log_prob_graph_scores() -> None:

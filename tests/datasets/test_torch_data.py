@@ -77,12 +77,11 @@ def test_causal_meta_module_initializes_and_sets_datasets() -> None:
     config = DataModuleConfig(
         train_family=train_cfg,
         test_families={"test_set_1": test_cfg},
-        seeds_train=[0, 1, 2],
+        seeds_val=[0, 1, 2],
         seeds_test=[10, 11, 12],
         base_seed=0,
         samples_per_task=4,
     )
-
     module = CausalMetaModule(config)
     module.setup()
 
@@ -93,113 +92,42 @@ def test_causal_meta_module_initializes_and_sets_datasets() -> None:
 
 
 def test_causal_meta_module_dataloaders() -> None:
-
-
     # Passing raw dicts to test conversion (The "Compatibility Way")
-
-
     train_cfg = {
-
-
         "name": "train",
-
-
         "n_nodes": 4,
-
-
         "graph_cfg": {"type": "er", "sparsity": 0.3},
-
-
         "mech_cfg": {"type": "linear"},
-
-
     }
-
-
     test_cfg = {
-
-
         "name": "test",
-
-
         "n_nodes": 4,
-
-
         "graph_cfg": {"type": "er", "sparsity": 0.3},
-
-
         "mech_cfg": {"type": "linear"},
-
-
     }
-
-
-
-
 
     cfg = {
-
-
         "train_family": train_cfg,
-
-
         "test_families": {"test": test_cfg},
-
-
-        "seeds_train": [0],
-
-
+        "seeds_val": [0],
         "seeds_test": [1],
-
-
         "num_workers": 2,
-
-
         "pin_memory": True,
-
-
     }
 
-
-
-
-
     module = CausalMetaModule.from_config(cfg)
-
-
     module.setup()
 
-
-
-
-
     train_loader = module.train_dataloader()
-
-
     test_loaders = module.test_dataloader()
 
-
-
-
-
     assert train_loader.num_workers == 2
-
-
     assert train_loader.pin_memory is True
-
-
     
-
-
     assert "test" in test_loaders
-
-
     test_loader = test_loaders["test"]
-
-
-    assert test_loader.num_workers == 0  # Fixed set usually 0 workers
-
-
+    # We now expect test_loader to use configured workers, not 0
+    assert test_loader.num_workers == 2 
     assert test_loader.pin_memory is True
 
 
@@ -220,13 +148,12 @@ def test_train_dataloader_iterates_with_collate_fn() -> None:
     cfg = {
         "train_family": train_cfg,
         "test_families": {"test": test_cfg},
-        "seeds_train": [0],
+        "seeds_val": [0],
         "seeds_test": [1],
         "num_workers": 0,
         "pin_memory": False,
         "samples_per_task": 8,
     }
-
     module = CausalMetaModule.from_config(cfg)
     train_loader = module.train_dataloader()
 
@@ -256,7 +183,6 @@ def test_causal_meta_module_builds_validation_split_and_reserves_hashes() -> Non
     cfg = {
         "train_family": train_cfg,
         "test_families": {"test": test_cfg},
-        "seeds_train": [0],
         "seeds_val": [2],
         "seeds_test": [1],
         "samples_per_task": 8,

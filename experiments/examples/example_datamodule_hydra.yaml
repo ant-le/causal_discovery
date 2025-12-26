@@ -21,7 +21,6 @@ test_families:
       _target_: causal_meta.datasets.generators.mechanisms.mlp.MLPMechanismFactory
       hidden_dim: 32
 
-seeds_train: [0, 1, 2, 3, 4]
 seeds_val: [200, 201, 202]
 seeds_test: [100, 101, 102]
 base_seed: 0

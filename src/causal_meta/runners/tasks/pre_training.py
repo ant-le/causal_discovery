@@ -62,6 +62,34 @@ def run(cfg: DictConfig, model: BaseModel, data_module: CausalMetaModule):
     if rank == 0:
         path.mkdir(parents=True, exist_ok=True)
 
+    # RESUME LOGIC
+    start_step = 0
+    resume_path = path / "last.pt"
+    if resume_path.exists():
+        if rank == 0:
+            log.info(f"Resuming from checkpoint: {resume_path}")
+        # Map location to local device
+        map_location = {'cuda:%d' % 0: 'cuda:%d' % rank} if is_distributed else device
+        checkpoint = torch.load(resume_path, map_location=map_location)
+        
+        model_unwrapped.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_step = checkpoint['step']
+        step = start_step
+        
+        if rank == 0:
+            log.info(f"Resumed at step {step}")
+
+        # Advance Dataset Stream
+        # Each step consumed 'batch_size' tasks.
+        # Since batch_size=1 in data_module, we advance by step.
+        if hasattr(data_module, "train_dataset") and data_module.train_dataset is not None:
+             # We assume linear consumption. This is an approximation for multi-worker
+             # but sufficient to avoid exact replay of the start of the curriculum.
+             data_module.train_dataset.base_seed += step
+             if rank == 0:
+                 log.info(f"Advanced dataset base_seed by {step} to {data_module.train_dataset.base_seed}")
+
     while step < max_steps:
         try:
             batch = next(train_iter)

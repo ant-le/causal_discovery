@@ -46,40 +46,55 @@ def main(cfg: DictConfig):
             mode=wandb_cfg.get("mode", "online"),
         )
     
-    # 2. Setup Data and Model
+    # 2. Setup Data
     if not is_distributed or dist.get_rank() == 0:
-        log.info("Initializing Data Module and Model...")
+        log.info("Initializing Data Module...")
     
     data_module = CausalMetaModule.from_config(cfg.data)
     # Note: data_module setup might need to be called on all ranks if it sets up shared state,
     # but currently CausalMetaModule setup is lazy or deterministic per config.
     # However, seeds must be consistent. Config loading ensures this.
-    
-    model_cfg = OmegaConf.to_container(cfg.model, resolve=True)
-    model = ModelFactory.create(model_cfg)
-    
-    device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
-    model.to(device)
-    
-    if is_distributed:
-        # Wrap model in DDP
-        # find_unused_parameters might be needed if some branches (like decoder) aren't used in every step
-        model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=False)
 
-    # 3. Pre-training (if applicable)
-    if not is_distributed or dist.get_rank() == 0:
-        log.info("--- Phase 1: Pre-training ---")
-    pre_training.run(cfg, model, data_module) # train+val dataset
-    
-    # 4. Inference (if applicable)
-    if not is_distributed or dist.get_rank() == 0:
-        log.info("--- Phase 2: Inference ---")
-    inference.run(cfg, model, data_module) # test dataset (once per test set)
-    
-    # 5. Evaluation
-    if not is_distributed or dist.get_rank() == 0:
-        log.info("--- Phase 3: Evaluation ---")
-    evaluation.run(cfg, model, data_module) # test dataset
+    # Resolve models
+    if "models" in cfg:
+        # Convert DictConfig to dict if needed, though OmegaConf handles iteration
+        model_configs = cfg.models
+    else:
+        # Backward compatibility / Single model mode
+        model_configs = {"default_model": cfg.model}
+
+    for model_name, model_cfg in model_configs.items():
+        if not is_distributed or dist.get_rank() == 0:
+            log.info(f"=== Processing Model: {model_name} ===")
+        
+        # Instantiate Model
+        model_cfg_container = OmegaConf.to_container(model_cfg, resolve=True)
+        model = ModelFactory.create(model_cfg_container)
+        
+        device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
+        model.to(device)
+
+        needs_pretraining = model.needs_pretraining
+        
+        if is_distributed:
+            # Wrap model in DDP
+            # find_unused_parameters might be needed if some branches (like decoder) aren't used in every step
+            model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=False)
+
+        # 3/4. Pre-training OR Inference
+        if needs_pretraining:
+            pre_training.run(cfg, model, data_module) # train+val dataset
+        else:
+            inference.run(cfg, model, data_module) # test dataset (once per test set)
+
+        if not is_distributed or dist.get_rank() == 0:
+            inference_type = "Pre-Training" if needs_pretraining else "Inference"
+            log.info(f"--- Phase 1: {inference_type} ({model_name}) ---")
+        
+        # 5. Evaluation
+        if not is_distributed or dist.get_rank() == 0:
+            log.info(f"--- Phase 2: Evaluation ({model_name}) ---")
+        evaluation.run(cfg, model, data_module) # test dataset
     
     if not is_distributed or dist.get_rank() == 0:
         log.info("Pipeline Finished.")

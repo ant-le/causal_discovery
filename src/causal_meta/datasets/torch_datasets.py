@@ -66,7 +66,7 @@ class MetaIterableDataset(IterableDataset):
     # different seeds (distinct from test set)
 
 class MetaFixedDataset(Dataset):
-    """Fixed-seed SCM dataset with optional instance caching."""
+    """Fixed-seed SCM dataset with optional instance and data caching."""
 
     def __init__(
         self,
@@ -79,7 +79,8 @@ class MetaFixedDataset(Dataset):
         self.seeds = list(seeds)
         self.cache_instances = cache
         self.samples_per_task = samples_per_task
-        self._cache: Dict[int, SCMInstance] = {}
+        # Cache stores Tuple[SCMInstance, torch.Tensor]
+        self._cache: Dict[int, Tuple[SCMInstance, torch.Tensor]] = {}
 
     def __len__(self) -> int:
         return len(self.seeds)
@@ -88,15 +89,17 @@ class MetaFixedDataset(Dataset):
         seed = int(self.seeds[idx])
 
         if self.cache_instances and seed in self._cache:
-            instance = self._cache[seed]
+            instance, x = self._cache[seed]
         else:
             instance = self.family.sample_task(seed)
+            # Deterministic sampling based on the seed
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(seed)
+                x = instance.sample(self.samples_per_task)
+            
             if self.cache_instances:
-                self._cache[seed] = instance
+                self._cache[seed] = (instance, x)
 
-        with torch.random.fork_rng(devices=[]):
-            torch.manual_seed(seed)
-            x = instance.sample(self.samples_per_task)
         return x, instance.adjacency_matrix
 
     # TODO: add logic to safe cache experiments folder in the end

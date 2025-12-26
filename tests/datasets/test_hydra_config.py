@@ -90,7 +90,7 @@ def test_causal_meta_module_accepts_target_based_configs() -> None:
             },
 
 
-            "seeds_train": [0, 1, 2],
+            "seeds_val": [0, 1, 2],
 
 
             "seeds_test": [10, 11, 12],
@@ -222,7 +222,7 @@ def test_causal_meta_module_from_config_parses_top_level_cfg() -> None:
             },
 
 
-            "seeds_train": [0, 1, 2],
+            "seeds_val": [0, 1, 2],
 
 
             "seeds_test": [10, 11, 12],
