@@ -1,12 +1,15 @@
+from __future__ import annotations
+
 from typing import Any, Optional
 
 import torch
-import torch.nn as nn
 import torch.distributed as dist
+import torch.nn as nn
 
 from causal_meta.models.base import BaseModel
 from causal_meta.models.factory import register_model
-from causal_meta.models.utils.nn import CausalTNPEncoder, CausalAdjacencyMatrix
+from causal_meta.models.utils.nn import CausalAdjacencyMatrix, CausalTNPEncoder
+
 
 def cyclicity(adjacency: torch.Tensor) -> torch.Tensor:
     """
@@ -23,8 +26,12 @@ def cyclicity(adjacency: torch.Tensor) -> torch.Tensor:
     """
     n_vars = adjacency.shape[-1]
 
-    M_mult = torch.linalg.matrix_exp(adjacency)
-    h = torch.einsum('...ii', M_mult) - n_vars
+    if adjacency.device.type == "mps":
+        adjacency_cpu = adjacency.to("cpu")
+        M_mult = torch.linalg.matrix_exp(adjacency_cpu).to(adjacency.device)
+    else:
+        M_mult = torch.linalg.matrix_exp(adjacency)
+    h = torch.einsum("...ii", M_mult) - n_vars
 
     return h
 
@@ -41,12 +48,12 @@ class AviciModel(CausalTNPEncoder, BaseModel):
         num_nodes: int,
         d_model: int = 64,
         nhead: int = 4,
-        num_layers: int = 2, # num_layers_encoder
+        num_layers: int = 2,  # num_layers_encoder
         dim_feedforward: int = 128,
         dropout: float = 0.1,
         emb_depth: int = 1,
         use_positional_encoding: bool = False,
-        **kwargs
+        **kwargs,
     ) -> None:
         CausalTNPEncoder.__init__(
             self,
@@ -60,23 +67,25 @@ class AviciModel(CausalTNPEncoder, BaseModel):
             dropout=dropout,
             device=None,
             dtype=None,
-            avici_summary=True # Max pooling
+            avici_summary=True,  # Max pooling
         )
         self.d_model = d_model
-        
+
         # Decoder is a linear layer (Identity in reference)
         self.decoder = nn.Identity()
 
         # Predictor: Attention-based adjacency matrix
         self.predictor = CausalAdjacencyMatrix(
-            nhead=1, # Single head for final prediction
+            nhead=1,  # Single head for final prediction
             d_model=d_model,
             device=None,
             dtype=None,
         )
 
-        self.regulariser_weight = torch.nn.Parameter(torch.tensor(0.0), requires_grad=False)
-        self.regulariser_lr = 1e-4 # hard coded from avici paper
+        self.regulariser_weight = torch.nn.Parameter(
+            torch.tensor(0.0), requires_grad=False
+        )
+        self.regulariser_lr = 1e-4  # hard coded from avici paper
         self.cyclicity_value_avg = None
 
     @property
@@ -98,39 +107,41 @@ class AviciModel(CausalTNPEncoder, BaseModel):
         """
         # input_data is [Batch, Samples, Variables] -> [Batch, Samples, Variables, 1]
         target_data = input_data.unsqueeze(-1)
-        
+
         # Encode
         # representation: [Batch, Nodes, 1, d_model]
         representation = self.encode(target_data=target_data, mask=None)
-        
+
         # Decode
-        representation = representation.squeeze(2) # [Batch, Nodes, d_model]
+        representation = representation.squeeze(2)  # [Batch, Nodes, d_model]
         decoded_output = self.decode(representation)
-        
+
         # Predict Adjacency
         # adj_matrix: [Batch, Nodes, Nodes]
         adj_matrix = self.predictor(decoded_output, padding_mask=None)
-        
+
         return adj_matrix
 
     def sample(self, input_data: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
         """
         Bernoulli sampling from edge probabilities.
-        
+
         Args:
             input_data: Input tensor of shape (Batch, Samples, Variables).
             num_samples: Number of graph samples to generate.
-            
+
         Returns:
             torch.Tensor: Sampled adjacency matrices (Batch, num_samples, Variables, Variables).
         """
         logits = self.forward(input_data)
         probs = torch.sigmoid(logits)
-        probs = probs * (1 - torch.eye(probs.size(-1), device=probs.device, dtype=probs.dtype))
-        
+        probs = probs * (
+            1 - torch.eye(probs.size(-1), device=probs.device, dtype=probs.dtype)
+        )
+
         # Expand for num_samples
         probs = probs.unsqueeze(1).expand(-1, num_samples, -1, -1)
-        
+
         # Sample
         return torch.bernoulli(probs)
 
@@ -138,7 +149,9 @@ class AviciModel(CausalTNPEncoder, BaseModel):
         """
         Should update every 250 steps.
         """
-        self.regulariser_weight.data = self.regulariser_weight.data + self.regulariser_lr * acyclic_loss
+        self.regulariser_weight.data = (
+            self.regulariser_weight.data + self.regulariser_lr * acyclic_loss
+        )
 
     def calculate_loss(self, logits, target, update_regulariser=False, **kwargs):
         """
@@ -155,7 +168,7 @@ class AviciModel(CausalTNPEncoder, BaseModel):
         probs = torch.sigmoid(logits)
         # set diagonal to 0
         probs = probs * (1 - torch.eye(probs.size(-1), device=probs.device))
-        
+
         # Differentiable acyclicity constraint (per batch element)
         # NOTE: keep this as a tensor to preserve gradients.
         cyclicity_per_example = cyclicity(probs)  # (B,)
@@ -190,6 +203,6 @@ class AviciModel(CausalTNPEncoder, BaseModel):
         # Update dual weight with EMA
         if update_regulariser:
             self.update_regulariser_weight(self.cyclicity_value_avg)
-            
+
         total_loss = loss + acyclic_loss
         return total_loss.mean()

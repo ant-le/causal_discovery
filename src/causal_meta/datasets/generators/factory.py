@@ -24,8 +24,7 @@ class _HydraConfigWrapper:
 
     def instantiate(self) -> Any:
         if hydra_instantiate is None:
-            raise RuntimeError(
-                "Hydra is not installed but '_target_' was found.")
+            raise RuntimeError("Hydra is not installed but '_target_' was found.")
         return hydra_instantiate(self.cfg, _recursive_=True)
 
 
@@ -39,8 +38,9 @@ class _DirectObjectWrapper:
 
 def _coerce_dict(cfg: Any) -> Any:
     if DictConfig is not None and isinstance(cfg, DictConfig):
-        # noinspection PyUnresolvedReferences
-        return OmegaConf.to_container(cfg, resolve=True)
+        from omegaconf import OmegaConf as _OmegaConf
+
+        return _OmegaConf.to_container(cfg, resolve=True)
     return cfg
 
 
@@ -80,23 +80,21 @@ def load_graph_config(cfg: Any) -> configs.GraphConfig:
 
     if not isinstance(cfg, Mapping):
         raise TypeError(
-            f"Graph config must be a mapping, callable, or config object. Got {type(cfg)}")
+            f"Graph config must be a mapping, callable, or config object. Got {type(cfg)}"
+        )
 
     if "_target_" in cfg:
         return _HydraConfigWrapper(cfg)
 
     type_name = cfg.get("type")
     if not type_name:
-        raise ValueError(
-            "Graph config must contain a 'type' or '_target_' key.")
+        raise ValueError("Graph config must contain a 'type' or '_target_' key.")
 
     if type_name == "mixture":
         kwargs = _exclude_type(cfg)
         if "generators" not in kwargs:
-            raise ValueError(
-                "Mixture graph config must contain 'generators' list.")
-        kwargs["generators"] = [load_graph_config(
-            g) for g in kwargs["generators"]]
+            raise ValueError("Mixture graph config must contain 'generators' list.")
+        kwargs["generators"] = [load_graph_config(g) for g in kwargs["generators"]]
         return configs.MixtureGraphConfig(**kwargs)
 
     config_cls = GRAPH_CONFIG_MAP.get(str(type_name))
@@ -117,24 +115,31 @@ def load_mechanism_config(cfg: Any) -> configs.MechanismConfig:
 
     if not isinstance(cfg, Mapping):
         raise TypeError(
-            f"Mechanism config must be a mapping, callable, or config object. Got {type(cfg)}")
+            f"Mechanism config must be a mapping, callable, or config object. Got {type(cfg)}"
+        )
 
     if "_target_" in cfg:
         return _HydraConfigWrapper(cfg)
 
     type_name = cfg.get("type")
     if not type_name:
-        raise ValueError(
-            "Mechanism config must contain a 'type' or '_target_' key.")
+        raise ValueError("Mechanism config must contain a 'type' or '_target_' key.")
 
     if type_name == "mixture":
         kwargs = _exclude_type(cfg)
         if "factories" not in kwargs:
-            raise ValueError(
-                "Mixture mechanism config must contain 'factories' list.")
-        kwargs["factories"] = [load_mechanism_config(
-            f) for f in kwargs["factories"]]
+            raise ValueError("Mixture mechanism config must contain 'factories' list.")
+        kwargs["factories"] = [load_mechanism_config(f) for f in kwargs["factories"]]
         return configs.MixtureMechanismConfig(**kwargs)
+
+    # PNL supports a nested inner mechanism config.
+    # Coerce it recursively so downstream code can call `.instantiate()`.
+    if type_name in {"pnl"}:
+        kwargs = _exclude_type(cfg)
+        inner = kwargs.get("inner_config")
+        if inner is not None:
+            kwargs["inner_config"] = load_mechanism_config(inner)
+        return configs.PNLMechanismConfig(**kwargs)
 
     config_cls = MECHANISM_CONFIG_MAP.get(str(type_name))
     if config_cls is None:
@@ -156,14 +161,13 @@ def load_family_config(cfg: Any) -> configs.FamilyConfig:
     mech_cfg = cfg.get("mech_cfg", cfg.get("mech"))
 
     if graph_cfg is None or mech_cfg is None:
-        raise ValueError(
-            "Family config must provide 'graph_cfg' and 'mech_cfg'.")
+        raise ValueError("Family config must provide 'graph_cfg' and 'mech_cfg'.")
 
     return configs.FamilyConfig(
         name=str(cfg.get("name", "")),
         n_nodes=int(cfg["n_nodes"]),
         graph_cfg=load_graph_config(graph_cfg),
-        mech_cfg=load_mechanism_config(mech_cfg)
+        mech_cfg=load_mechanism_config(mech_cfg),
     )
 
 
@@ -174,8 +178,7 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
         return cfg
 
     if not isinstance(cfg, Mapping):
-        raise TypeError(
-            "DataModule config must be a dict or DataModuleConfig object.")
+        raise TypeError("DataModule config must be a dict or DataModuleConfig object.")
 
     train_family = load_family_config(cfg["train_family"])
 
@@ -187,8 +190,7 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
         raise TypeError("'test_families' must be a dictionary of configs.")
 
     test_families = {
-        name: load_family_config(sub_cfg)
-        for name, sub_cfg in test_families_raw.items()
+        name: load_family_config(sub_cfg) for name, sub_cfg in test_families_raw.items()
     }
 
     val_families_raw = cfg.get("val_families")
@@ -211,6 +213,10 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
         "num_workers",
         "pin_memory",
         "normalize_data",
+        "batch_size_train",
+        "batch_size_val",
+        "batch_size_test",
+        "batch_size_test_interventional",
     }
 
     kwargs = {k: v for k, v in cfg.items() if k in allowed_keys}
@@ -222,5 +228,5 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
         train_family=train_family,
         val_families=val_families,
         test_families=test_families,
-        **kwargs
+        **kwargs,
     )

@@ -82,13 +82,7 @@ def run(
 
     # Best-effort device inference (explicit models might have no parameters)
     params = list(model.parameters())
-    device = (
-        params[0].device
-        if params
-        else (
-            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        )
-    )
+    device = params[0].device if params else dist_ctx.device
 
     n_samples = int(cfg.get("inference", {}).get("n_samples", 100))
     cache_compress, cache_dtype, cache_n_samples = cache_settings(cfg)

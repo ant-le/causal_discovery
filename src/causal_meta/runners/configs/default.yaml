@@ -21,9 +21,20 @@ data:
       type: linear
       weight_scale: 1.0
 
+  val_families:
+    id_val:
+      name: id_val
+      n_nodes: 10
+      graph_cfg:
+        type: er
+        sparsity: 0.2
+      mech_cfg:
+        type: linear
+        weight_scale: 1.0
+
   test_families:
     test_1:
-      name: test
+      name: test_1
       n_nodes: 10
       graph_cfg:
         type: er
@@ -55,13 +66,16 @@ trainer:
   val_check_interval: 5
   lr: 0.001
   weight_decay: 1e-4
+  grad_clip_norm: 1.0
+  scheduler: cosine
+  scheduler_t_max: 10
+  scheduler_eta_min: 0.0
 
 inference:
   n_samples: 5
   inil_graph_samples: 5
   use_cached_inference: true
   cache_inference: true
-
 
 hydra:
   run:

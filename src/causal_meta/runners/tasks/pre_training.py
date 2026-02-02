@@ -1,16 +1,22 @@
+from __future__ import annotations
+
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable, Sequence, cast
 
 import torch
+import torch.distributed as dist
+import torch.nn as nn
 import torch.optim as optim
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
-from torch.amp import GradScaler
+from torch.amp.grad_scaler import GradScaler
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from causal_meta.datasets.data_module import CausalMetaModule
 from causal_meta.models.base import BaseModel
+from causal_meta.runners.logger.base import BaseLogger
 from causal_meta.runners.metrics.graph import Metrics
 from causal_meta.runners.utils.distributed import DistributedContext
 from causal_meta.runners.utils.seeding import get_experiment_seed
@@ -20,12 +26,12 @@ log = logging.getLogger(__name__)
 
 def run(
     cfg: DictConfig,
-    model: BaseModel,
+    model: nn.Module,
     data_module: CausalMetaModule,
     *,
-    logger=None,
+    logger: BaseLogger | None = None,
     output_dir: Path | None = None,
-):
+) -> None:
     """
     Executes the pre-training loop for meta-learning models (e.g., Avici, BCNP).
 
@@ -61,8 +67,19 @@ def run(
     # train_dataloader handles DDP seeding internally
     train_loader = data_module.train_dataloader()
 
+    train_batch_size = int(getattr(cfg.data, "batch_size_train", 1))
+    if train_batch_size < 1:
+        raise ValueError("data.batch_size_train must be >= 1")
+
+    accumulate_grad_batches = int(cfg.trainer.get("accumulate_grad_batches", 1))
+    if accumulate_grad_batches < 1:
+        raise ValueError("trainer.accumulate_grad_batches must be >= 1")
+
     # Unwrap model for attribute access
-    model_unwrapped = model.module if is_distributed else model
+    unwrapped = model.module if isinstance(model, DDP) else model
+    model_unwrapped = cast(BaseModel, unwrapped)
+    if not isinstance(model_unwrapped, BaseModel):
+        raise TypeError("Expected model to be a BaseModel or DDP-wrapped BaseModel.")
 
     if not model_unwrapped.needs_pretraining:
         if rank == 0:
@@ -72,9 +89,16 @@ def run(
     # 3. Optimizer
     lr = float(cfg.trainer.lr)
     weight_decay = float(cfg.trainer.get("weight_decay", 1e-4))
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    betas = _maybe_parse_betas(cfg.trainer.get("optimizer_betas", None))
+    optimizer_eps = _maybe_parse_eps(cfg.trainer.get("optimizer_eps", None))
+    optimizer_kwargs: dict[str, Any] = {"lr": lr, "weight_decay": weight_decay}
+    if betas is not None:
+        optimizer_kwargs["betas"] = betas
+    if optimizer_eps is not None:
+        optimizer_kwargs["eps"] = optimizer_eps
+    optimizer = optim.AdamW(model.parameters(), **optimizer_kwargs)
 
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.trainer.max_steps)
+    scheduler = _build_scheduler(optimizer, cfg)
 
     amp_enabled = bool(cfg.trainer.get("amp", False)) and device.type == "cuda"
     amp_dtype_name = str(cfg.trainer.get("amp_dtype", "bf16")).lower()
@@ -88,10 +112,11 @@ def run(
         raise ValueError("trainer.amp_dtype must be one of: bf16, fp16")
 
     # 4. Training Loop
-    max_steps = cfg.trainer.max_steps
-    log_every_n_steps = cfg.trainer.get("log_every_n_steps", 100)
-    val_check_interval = cfg.trainer.get("val_check_interval", 1000)
-    regulariser_update_interval = cfg.trainer.get("regulariser_update_interval", 0)
+    max_steps = int(cfg.trainer.max_steps)
+    log_every_n_steps = int(cfg.trainer.get("log_every_n_steps", 100))
+    val_check_interval = int(cfg.trainer.get("val_check_interval", 1000))
+    regulariser_update_interval = int(cfg.trainer.get("regulariser_update_interval", 0))
+    grad_clip_norm = float(cfg.trainer.get("grad_clip_norm", 1.0))
 
     best_val_metric = float("-inf")
     step = 0
@@ -124,11 +149,11 @@ def run(
 
         model_unwrapped.load_state_dict(checkpoint["model_state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        if "scheduler_state_dict" in checkpoint:
+        if "scheduler_state_dict" in checkpoint and scheduler is not None:
             scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         if "scaler_state_dict" in checkpoint:
             scaler.load_state_dict(checkpoint["scaler_state_dict"])
-        
+
         start_step = checkpoint["step"]
         step = start_step
 
@@ -148,6 +173,26 @@ def run(
                 "training data stream resume will be best-effort."
             )
 
+        saved_batch_size = int(
+            checkpoint.get("train_stream_batch_size_train", train_batch_size)
+        )
+        if saved_batch_size != train_batch_size and rank == 0:
+            log.warning(
+                f"Checkpoint batch_size_train={saved_batch_size} differs from current batch_size_train={train_batch_size}; "
+                "training data stream resume will be best-effort."
+            )
+
+        saved_accum = int(
+            checkpoint.get(
+                "train_stream_accumulate_grad_batches", accumulate_grad_batches
+            )
+        )
+        if saved_accum != accumulate_grad_batches and rank == 0:
+            log.warning(
+                f"Checkpoint accumulate_grad_batches={saved_accum} differs from current accumulate_grad_batches={accumulate_grad_batches}; "
+                "training data stream resume will be best-effort."
+            )
+
         if getattr(cfg.data, "num_workers", 0) > 0:
             log.warning(
                 "Resuming with an IterableDataset stream is not strictly reproducible when num_workers>0; "
@@ -156,18 +201,22 @@ def run(
 
     # Deterministic-ish resume for the streaming dataset when DataLoader uses num_workers=0.
     # With num_workers=0, MetaIterableDataset uses a single stream per rank with stride=world_size.
+    # If batch_size_train or gradient accumulation is used, each optimizer step consumes
+    # multiple stream items per rank.
     if (
         hasattr(data_module, "train_dataset")
         and data_module.train_dataset is not None
         and getattr(cfg.data, "num_workers", 0) == 0
     ):
         data_module.train_dataset.base_seed = (
-            train_stream_initial_base_seed + step * world_size
+            train_stream_initial_base_seed
+            + step * world_size * train_batch_size * accumulate_grad_batches
         )
         if rank == 0 and start_step > 0:
             log.info(
                 f"Resumed train stream base_seed={data_module.train_dataset.base_seed} "
-                f"(initial={train_stream_initial_base_seed}, step={step}, world_size={world_size})."
+                f"(initial={train_stream_initial_base_seed}, step={step}, world_size={world_size}, "
+                f"batch_size_train={train_batch_size}, accumulate_grad_batches={accumulate_grad_batches})."
             )
 
     checkpoint_every_n_steps = int(
@@ -178,70 +227,77 @@ def run(
 
     while step < max_steps:
 
-        try:
-            batch = next(train_iter)
-        except StopIteration:
-            train_iter = iter(train_loader)
-            batch = next(train_iter)
-
-        input_data = batch["data"].to(device)
-        adjacency_matrix = batch["adjacency"].to(device)
-
-        # Forward
         model.train()
         optimizer.zero_grad()
-        if amp_enabled:
-            with torch.autocast(device_type="cuda", dtype=amp_dtype, enabled=True):
-                output = model(input_data)
-        else:
-            output = model(input_data)
 
-        # Loss
+        # Loss is tracked as a scalar mean across micro-batches.
+        loss_accum = torch.tensor(0.0, device=device)
+
         next_step = step + 1
         update_regulariser = (
             regulariser_update_interval > 0
             and next_step % regulariser_update_interval == 0
         )
 
-        # Call calculate_loss on the unwrapped model
-        # The output tensor from DDP forward is on the correct device
-        if amp_enabled:
-            with torch.autocast(device_type="cuda", dtype=amp_dtype, enabled=True):
-                loss = model_unwrapped.calculate_loss(
+        for micro in range(accumulate_grad_batches):
+            try:
+                batch = next(train_iter)
+            except StopIteration:
+                train_iter = iter(train_loader)
+                batch = next(train_iter)
+
+            input_data = batch["data"].to(device)
+            adjacency_matrix = batch["adjacency"].to(device)
+
+            if amp_enabled:
+                with torch.autocast(device_type="cuda", dtype=amp_dtype, enabled=True):
+                    output = model(input_data)
+                    loss_vec = model_unwrapped.calculate_loss(
+                        output,
+                        adjacency_matrix,
+                        update_regulariser=update_regulariser
+                        and (micro == accumulate_grad_batches - 1),
+                    )
+                    loss = loss_vec.mean() / float(accumulate_grad_batches)
+                if scaler.is_enabled():
+                    scaler.scale(loss).backward()
+                else:
+                    loss.backward()
+            else:
+                output = model(input_data)
+                loss_vec = model_unwrapped.calculate_loss(
                     output,
                     adjacency_matrix,
-                    update_regulariser=update_regulariser,
+                    update_regulariser=update_regulariser
+                    and (micro == accumulate_grad_batches - 1),
                 )
-            if scaler.is_enabled():
-                scaler.scale(loss).backward()
-                # Gradient clipping
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                scaler.step(optimizer)
-                scaler.update()
-            else:
+                loss = loss_vec.mean() / float(accumulate_grad_batches)
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
+
+            loss_accum = loss_accum + loss.detach()
+
+        if scaler.is_enabled():
+            scaler.unscale_(optimizer)
+            _maybe_clip_grad_norm(model.parameters(), grad_clip_norm)
+            scaler.step(optimizer)
+            scaler.update()
         else:
-            loss = model_unwrapped.calculate_loss(
-                output, adjacency_matrix, update_regulariser=update_regulariser
-            )
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            _maybe_clip_grad_norm(model.parameters(), grad_clip_norm)
             optimizer.step()
 
-        scheduler.step()
+        if scheduler is not None:
+            scheduler.step()
         step += 1
 
         # Logging
         if step % log_every_n_steps == 0:
+            loss_value = _reduce_loss_for_logging(loss_accum, world_size)
             if rank == 0:
-                log_str = f"Step {step}/{max_steps} | Loss: {loss.item():.4f}"
+                log_str = f"Step {step}/{max_steps} | Loss: {loss_value:.4f}"
                 log.info(log_str)
 
                 if logger:
-                    logger.log_metrics({"train/loss": loss.item()}, step=step)
+                    logger.log_metrics({"train/loss": loss_value}, step=step)
 
         # Validation
         if step % val_check_interval == 0:
@@ -276,6 +332,8 @@ def run(
                         path / "best.pt",
                         train_stream_initial_base_seed=train_stream_initial_base_seed,
                         world_size=world_size,
+                        train_batch_size=train_batch_size,
+                        accumulate_grad_batches=accumulate_grad_batches,
                     )
                     log.info(f"New best model saved! E-F1: {best_val_metric:.4f}")
 
@@ -292,6 +350,8 @@ def run(
                     path / "last.pt",
                     train_stream_initial_base_seed=train_stream_initial_base_seed,
                     world_size=world_size,
+                    train_batch_size=train_batch_size,
+                    accumulate_grad_batches=accumulate_grad_batches,
                 )
 
     if rank == 0:
@@ -306,6 +366,8 @@ def run(
             path / "last.pt",
             train_stream_initial_base_seed=train_stream_initial_base_seed,
             world_size=world_size,
+            train_batch_size=train_batch_size,
+            accumulate_grad_batches=accumulate_grad_batches,
         )
 
     if is_distributed:
@@ -323,7 +385,12 @@ def run(
         dist_ctx.barrier()
 
 
-def validate(model, data_module, device, num_samples: int = 10):
+def validate(
+    model: BaseModel,
+    data_module: CausalMetaModule,
+    device: torch.device,
+    num_samples: int = 10,
+) -> dict[str, float]:
     model.eval()
     val_loaders = data_module.val_dataloader()
 
@@ -354,33 +421,87 @@ def save_checkpoint(
     cfg: DictConfig,
     model: BaseModel,
     optimizer: optim.Optimizer,
-    scheduler: Any,
-    scaler: Any,
+    scheduler: Any | None,
+    scaler: GradScaler,
     step: int,
     filepath: Path,
     *,
     train_stream_initial_base_seed: int,
     world_size: int,
+    train_batch_size: int,
+    accumulate_grad_batches: int,
 ) -> None:
     experiment_seed = get_experiment_seed(
         cfg, fallback=int(train_stream_initial_base_seed)
     )
+    state: dict[str, Any] = {
+        "step": step,
+        "experiment_seed": int(experiment_seed),
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "scaler_state_dict": scaler.state_dict(),
+        "train_stream_initial_base_seed": int(train_stream_initial_base_seed),
+        "train_stream_world_size": int(world_size),
+        "train_stream_batch_size_train": int(train_batch_size),
+        "train_stream_accumulate_grad_batches": int(accumulate_grad_batches),
+        "train_stream_next_base_seed_if_num_workers_0": int(
+            train_stream_initial_base_seed
+            + step * world_size * train_batch_size * accumulate_grad_batches
+        ),
+    }
+    if scheduler is not None:
+        state["scheduler_state_dict"] = scheduler.state_dict()
     torch.save(
-        {
-            "step": step,
-            "experiment_seed": int(experiment_seed),
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "scheduler_state_dict": scheduler.state_dict(),
-            "scaler_state_dict": scaler.state_dict(),
-            "train_stream_initial_base_seed": int(train_stream_initial_base_seed),
-            "train_stream_world_size": int(world_size),
-            "train_stream_next_base_seed_if_num_workers_0": int(
-                train_stream_initial_base_seed + step * world_size
-            ),
-        },
+        state,
         filepath,
     )
+
+
+def _build_scheduler(optimizer: optim.Optimizer, cfg: DictConfig) -> Any | None:
+    scheduler_type = str(cfg.trainer.get("scheduler", "cosine")).lower()
+    if scheduler_type in {"none", "off", "false"}:
+        return None
+    if scheduler_type not in {"cosine"}:
+        raise ValueError(
+            f"trainer.scheduler must be one of: cosine, none. Got '{scheduler_type}'."
+        )
+
+    max_steps = int(cfg.trainer.max_steps)
+    t_max = int(cfg.trainer.get("scheduler_t_max", max_steps))
+    eta_min = float(cfg.trainer.get("scheduler_eta_min", 0.0))
+    return optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max, eta_min=eta_min)
+
+
+def _maybe_clip_grad_norm(
+    parameters: Iterable[torch.nn.Parameter], max_norm: float
+) -> None:
+    if max_norm <= 0:
+        return
+    torch.nn.utils.clip_grad_norm_(parameters, max_norm)
+
+
+def _reduce_loss_for_logging(loss: torch.Tensor, world_size: int) -> float:
+    loss_value = loss.detach()
+    if dist.is_available() and dist.is_initialized():
+        loss_value = loss_value.clone()
+        dist.all_reduce(loss_value, op=dist.ReduceOp.SUM)
+        if world_size > 0:
+            loss_value = loss_value / float(world_size)
+    return float(loss_value.item())
+
+
+def _maybe_parse_betas(value: Any) -> tuple[float, float] | None:
+    if value is None:
+        return None
+    if isinstance(value, Sequence) and len(value) == 2:
+        return float(value[0]), float(value[1])
+    raise ValueError("trainer.optimizer_betas must be a sequence of two floats.")
+
+
+def _maybe_parse_eps(value: Any) -> float | None:
+    if value is None:
+        return None
+    return float(value)
 
 
 if __name__ == "__main__":

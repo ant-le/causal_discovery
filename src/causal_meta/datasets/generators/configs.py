@@ -3,23 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol, Union
 
-from causal_meta.datasets.generators.graphs import (
-    ErdosRenyiGenerator,
-    MixtureGraphGenerator,
-    SBMGenerator,
-    ScaleFreeGenerator,
-)
+from causal_meta.datasets.generators.graphs import (ErdosRenyiGenerator,
+                                                    MixtureGraphGenerator,
+                                                    SBMGenerator,
+                                                    ScaleFreeGenerator)
 from causal_meta.datasets.generators.mechanisms import (
-    LinearMechanismFactory,
-    MechanismFactory,
-    MixtureMechanismFactory,
-    MLPMechanismFactory,
-    SquareMechanismFactory,
-    PeriodicMechanismFactory,
-    LogisticMapMechanismFactory,
-    GPMechanismFactory,
-    PNLMechanismFactory,
-)
+    GPMechanismFactory, LinearMechanismFactory, LogisticMapMechanismFactory,
+    MechanismFactory, MixtureMechanismFactory, MLPMechanismFactory,
+    PeriodicMechanismFactory, PNLMechanismFactory, SquareMechanismFactory)
 
 
 class Instantiable(Protocol):
@@ -175,11 +166,12 @@ MechanismConfig = Union[
 @dataclass
 class FamilyConfig:
     """Configuration for a single SCM Family (graph distribution + mechanisms)."""
+
     name: str
     n_nodes: int
     graph_cfg: GraphConfig
     mech_cfg: MechanismConfig
-    
+
     def validate(self) -> None:
         if self.n_nodes < 1:
             raise ValueError("n_nodes must be positive.")
@@ -195,7 +187,7 @@ class DataModuleConfig:
     test_families: Dict[str, FamilyConfig]
 
     seeds_test: List[int]
-    
+
     # Fixed validation seeds (distinct from train/test)
     seeds_val: List[int]
 
@@ -213,3 +205,9 @@ class DataModuleConfig:
     pin_memory: bool = True
 
     normalize_data: bool = True
+
+    # Batch sizes. Defaults preserve the existing "one task per batch" setup.
+    batch_size_train: int = 1
+    batch_size_val: int = 1
+    batch_size_test: int = 1
+    batch_size_test_interventional: int = 1

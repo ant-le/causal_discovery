@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import os
 from pathlib import Path
@@ -124,10 +126,11 @@ def run_pipeline(cfg: DictConfig):
             model.to(device)
 
             if is_distributed:
+                use_cuda_ddp = dist_ctx.device.type == "cuda"
                 model = DDP(
                     model,
-                    device_ids=[local_rank] if torch.cuda.is_available() else None,
-                    output_device=local_rank if torch.cuda.is_available() else None,
+                    device_ids=[local_rank] if use_cuda_ddp else None,
+                    output_device=local_rank if use_cuda_ddp else None,
                     find_unused_parameters=False,
                 )
 

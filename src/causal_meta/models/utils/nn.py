@@ -1,12 +1,13 @@
+import copy
+import math
+from typing import Callable, Optional
+
 import torch
 import torch.nn as nn
-from typing import Callable, Optional
 from torch import Tensor
 from torch.nn import functional as F
-from torch.nn.parameter import Parameter
-import math
 from torch.nn.init import xavier_uniform_
-import copy
+from torch.nn.parameter import Parameter
 
 
 class PositionalEncoding(nn.Module):
@@ -16,18 +17,20 @@ class PositionalEncoding(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
         position = torch.arange(max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model)
+        )
         pe = torch.zeros(1, 1, max_len, d_model)
         pe[0, 0, :, 0::2] = torch.sin(position * div_term)
         pe[0, 0, :, 1::2] = torch.cos(position * div_term)
-        self.register_buffer('pe', pe)
+        self.register_buffer("pe", pe)
 
     def forward(self, x: Tensor) -> Tensor:
         """
         Arguments:
             x: Tensor, shape ``[batch_size, sample_size, seq_len, 1]``
         """
-        pos = self.pe[:, :, :x.size(2), :]
+        pos = self.pe[:, :, : x.size(2), :]
         # tile
         # shape [batch_size, sample_size, seq_len, d_model]
         pos = pos.repeat(x.size(0), x.size(1), 1, 1)
@@ -69,7 +72,9 @@ class CausalTransformerEncoder(nn.Module):
     ) -> None:
         super(CausalTransformerEncoder, self).__init__()
         assert len(encoder_layers) > 0, "Encoder must have at least one layer."
-        assert len(encoder_layers) % 2 == 0, "Encoder must have an even number of layers."
+        assert (
+            len(encoder_layers) % 2 == 0
+        ), "Encoder must have an even number of layers."
         self.layers = encoder_layers
 
     def forward(
@@ -88,20 +93,38 @@ class CausalTransformerEncoder(nn.Module):
                 # shape [batch_size, num_nodes, num_samples, d_model]
                 src = src.permute(0, 2, 1, 3)
                 # shape [batch_size * num_nodes, num_samples, d_model]
-                src = src.contiguous().view(batch_size * num_nodes, num_samples, d_model)
-                src = mod(src, src_mask=src_mask, src_key_padding_mask=None, is_causal=is_causal)
+                src = src.contiguous().view(
+                    batch_size * num_nodes, num_samples, d_model
+                )
+                src = mod(
+                    src,
+                    src_mask=src_mask,
+                    src_key_padding_mask=None,
+                    is_causal=is_causal,
+                )
                 # Reshape the tensor back to [batch_size, num_nodes, num_samples, d_model]
                 src = src.view(batch_size, num_nodes, num_samples, d_model)
             else:
                 # shape [batch_size, num_samples, num_nodes, d_model]
                 src = src.permute(0, 2, 1, 3)
                 # shape [batch_size * num_samples, num_nodes, d_model]
-                src = src.contiguous().view(batch_size * num_samples, num_nodes, d_model)
+                src = src.contiguous().view(
+                    batch_size * num_samples, num_nodes, d_model
+                )
                 # Extra zeros for the query
                 node_src_key_padding_mask = src_key_padding_mask
                 if node_src_key_padding_mask is not None:
-                    node_src_key_padding_mask = node_src_key_padding_mask.contiguous().view(batch_size * num_samples, num_nodes)
-                src = mod(src, src_mask=src_mask, src_key_padding_mask=node_src_key_padding_mask, is_causal=is_causal)
+                    node_src_key_padding_mask = (
+                        node_src_key_padding_mask.contiguous().view(
+                            batch_size * num_samples, num_nodes
+                        )
+                    )
+                src = mod(
+                    src,
+                    src_mask=src_mask,
+                    src_key_padding_mask=node_src_key_padding_mask,
+                    is_causal=is_causal,
+                )
                 # Make masking position back to zero
                 if node_src_key_padding_mask is not None:
                     bool_pad = node_src_key_padding_mask == -float("inf")
@@ -129,7 +152,7 @@ class CausalTransformerDecoderLayer(nn.TransformerDecoderLayer):
         norm_first: bool = True,
         bias: bool = False,
         device=None,
-        dtype=None
+        dtype=None,
     ) -> None:
         super(CausalTransformerDecoderLayer, self).__init__(
             d_model=d_model,
@@ -168,111 +191,124 @@ class CausalTransformerDecoderLayer(nn.TransformerDecoderLayer):
 
         x = tgt
         if self.norm_first:
-            x = x + self._sa_block(self.norm1(x), tgt_mask, tgt_key_padding_mask, tgt_is_causal)
+            x = x + self._sa_block(
+                self.norm1(x), tgt_mask, tgt_key_padding_mask, tgt_is_causal
+            )
             x = x + self._ff_block(self.norm3(x))
         else:
-            x = self.norm1(x + self._sa_block(x, tgt_mask, tgt_key_padding_mask, tgt_is_causal))
+            x = self.norm1(
+                x + self._sa_block(x, tgt_mask, tgt_key_padding_mask, tgt_is_causal)
+            )
             x = self.norm3(x + self._ff_block(x))
         return x
 
 
 class CausalAdjacencyMatrix(nn.Module):
 
-        def __init__(
-            self,
-            nhead,
-            d_model,
-            device,
-            dtype,
-        ):
-            super(CausalAdjacencyMatrix, self).__init__()
-            self.num_heads = nhead
-            self.d_model = d_model
-            self.in_proj_weight = Parameter(
-                torch.empty((3 * d_model, d_model), device=device, dtype=dtype)
-            )
-            self.in_proj_bias = Parameter(
-                torch.empty(3 * d_model, device=device, dtype=dtype)
-            )
-            self.out_proj_weight = Parameter(
-                torch.empty(nhead, 1, device=device, dtype=dtype)
-            )
-            self.out_proj_bias = Parameter(
-                torch.empty(1, device=device, dtype=dtype)
-            )
-            self.reset_parameters()
+    def __init__(
+        self,
+        nhead,
+        d_model,
+        device,
+        dtype,
+    ):
+        super(CausalAdjacencyMatrix, self).__init__()
+        self.num_heads = nhead
+        self.d_model = d_model
+        self.in_proj_weight = Parameter(
+            torch.empty((3 * d_model, d_model), device=device, dtype=dtype)
+        )
+        self.in_proj_bias = Parameter(
+            torch.empty(3 * d_model, device=device, dtype=dtype)
+        )
+        self.out_proj_weight = Parameter(
+            torch.empty(nhead, 1, device=device, dtype=dtype)
+        )
+        self.out_proj_bias = Parameter(torch.empty(1, device=device, dtype=dtype))
+        self.reset_parameters()
 
-        def reset_parameters(self):
-            xavier_uniform_(self.in_proj_weight)
-            xavier_uniform_(self.out_proj_weight)
-            self.in_proj_bias.data.zero_()
-            self.out_proj_bias.data.zero_()
+    def reset_parameters(self):
+        xavier_uniform_(self.in_proj_weight)
+        xavier_uniform_(self.out_proj_weight)
+        self.in_proj_bias.data.zero_()
+        self.out_proj_bias.data.zero_()
 
-        def forward(self, representation, padding_mask: Optional[Tensor] = None):
-            """
-            Performs attention over the representation to compute the adjacency matrix.
+    def forward(self, representation, padding_mask: Optional[Tensor] = None):
+        """
+        Performs attention over the representation to compute the adjacency matrix.
 
-            Args:
-            -----
-                representation: torch.Tensor, shape [batch_size, num_nodes, d_model]
-                padding_mask: Optional mask for padding.
+        Args:
+        -----
+            representation: torch.Tensor, shape [batch_size, num_nodes, d_model]
+            padding_mask: Optional mask for padding.
 
-            Returns:
-            --------
-                pred: torch.Tensor, shape [batch_size, num_nodes, num_nodes]
-            """
-            query = representation
-            key = representation
-            # We don't need to compute the value tensor but helps with
-            # compatibility with the nn.MultiheadAttention class
-            value = representation
-            # set up shape vars
-            bsz, tgt_len, embed_dim = query.shape
+        Returns:
+        --------
+            pred: torch.Tensor, shape [batch_size, num_nodes, num_nodes]
+        """
+        query = representation
+        key = representation
+        # We don't need to compute the value tensor but helps with
+        # compatibility with the nn.MultiheadAttention class
+        value = representation
+        # set up shape vars
+        bsz, tgt_len, embed_dim = query.shape
 
-            # Tranpose the query, key, and value tensors
-            # shape [num_nodes, batch_size, d_model]
-            query, key, value = [x.transpose(1, 0) for x in (query, key, value)]
+        # Tranpose the query, key, and value tensors
+        # shape [num_nodes, batch_size, d_model]
+        query, key, value = [x.transpose(1, 0) for x in (query, key, value)]
 
-            #
-            # compute in-projection
-            #
-            query_proj, key_proj, value_proj = F._in_projection_packed(
-                query, key, value, self.in_proj_weight, self.in_proj_bias
-            )
-            # value_proj is computed but not used for adjacency prediction logic below
+        #
+        # compute in-projection
+        #
+        # Since query, key, value are the same tensor (self-attention on representation)
+        # we can use a single linear projection and chunk it.
+        # self.in_proj_weight shape: (3 * d_model, d_model)
+        # query shape: (num_nodes, batch_size, d_model) (after transpose)
 
-            head_dim = self.d_model // self.num_heads
+        # F.linear computes input @ weight.T + bias
+        # Output shape: (num_nodes, batch_size, 3 * d_model)
+        qkv = F.linear(query, self.in_proj_weight, self.in_proj_bias)
+        query_proj, key_proj, value_proj = qkv.chunk(3, dim=-1)
 
-            # reshape q, k, v for multihead attention and make em batch first
-            #
-            query_proj = query_proj.view(tgt_len, bsz * self.num_heads, head_dim).transpose(0, 1)
-            key_proj = key_proj.view(key_proj.shape[0], bsz * self.num_heads, head_dim).transpose(0, 1)
+        # value_proj is computed but not used for adjacency prediction logic below
 
-            # update source sequence length after adjustments
-            src_len = key_proj.size(1)
+        head_dim = self.d_model // self.num_heads
 
-            #
-            # (deep breath) calculate attention and out projection
-            #
-            query_proj = query_proj.view(bsz, self.num_heads, tgt_len, head_dim)
-            key_proj = key_proj.view(bsz, self.num_heads, src_len, head_dim)
+        # reshape q, k, v for multihead attention and make em batch first
+        #
+        query_proj = query_proj.view(tgt_len, bsz * self.num_heads, head_dim).transpose(
+            0, 1
+        )
+        key_proj = key_proj.view(
+            key_proj.shape[0], bsz * self.num_heads, head_dim
+        ).transpose(0, 1)
 
-            # Efficient implementation equivalent to the following:
-            L, S = query_proj.size(-2), key_proj.size(-2)
-            scale_factor = 1 / math.sqrt(query.size(-1))
-            attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
+        # update source sequence length after adjustments
+        src_len = key_proj.size(1)
 
-            attn_weight = query_proj @ key_proj.transpose(-2, -1) * scale_factor
-            # shape [batch_size, num_heads, num_nodes, num_nodes]
-            attn_weight += attn_bias[None, None, :, :]
-            attn_weight = attn_weight.permute(0, 2, 3, 1)
-            pred = attn_weight @ self.out_proj_weight + self.out_proj_bias
-            pred = pred.squeeze(-1)
-            pred = pred
-            if padding_mask is not None:
-                new_mask = padding_mask.unsqueeze(1) + padding_mask.unsqueeze(2)
-                pred = pred + new_mask
-            return pred
+        #
+        # (deep breath) calculate attention and out projection
+        #
+        query_proj = query_proj.view(bsz, self.num_heads, tgt_len, head_dim)
+        key_proj = key_proj.view(bsz, self.num_heads, src_len, head_dim)
+
+        # Efficient implementation equivalent to the following:
+        L, S = query_proj.size(-2), key_proj.size(-2)
+        scale_factor = 1 / math.sqrt(query.size(-1))
+        attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
+
+        attn_weight = query_proj @ key_proj.transpose(-2, -1) * scale_factor
+        # shape [batch_size, num_heads, num_nodes, num_nodes]
+        attn_weight += attn_bias[None, None, :, :]
+        attn_weight = attn_weight.permute(0, 2, 3, 1)
+        pred = attn_weight @ self.out_proj_weight + self.out_proj_bias
+        pred = pred.squeeze(-1)
+        pred = pred
+        if padding_mask is not None:
+            new_mask = padding_mask.unsqueeze(1) + padding_mask.unsqueeze(2)
+            pred = pred + new_mask
+        return pred
 
 
 class CausalTNPEncoder(nn.Module):
@@ -335,7 +371,7 @@ class CausalTNPEncoder(nn.Module):
         dtype,
         emb_depth: int = 1,
         avici_summary: bool = False,
-        dropout: Optional[float] = 0.0,
+        dropout: float = 0.0,
     ):
         super(CausalTNPEncoder, self).__init__()
         self.embedder = build_mlp(
@@ -370,7 +406,9 @@ class CausalTNPEncoder(nn.Module):
         )
         self.use_positional_encoding = use_positional_encoding
         if use_positional_encoding:
-            self.positional_encoding = PositionalEncoding(d_model=d_model // 2, dropout=0.0, max_len=num_nodes)
+            self.positional_encoding = PositionalEncoding(
+                d_model=d_model // 2, dropout=0.0, max_len=num_nodes
+            )
 
         self.avici_summary = avici_summary
 
@@ -440,7 +478,7 @@ class CausalTNPEncoder(nn.Module):
             summary_rep = summary_rep.contiguous().view(batch, num_nodes, 1, d_model)
             return summary_rep
 
-    def encode(self, target_data, mask: Optional[Tensor]=None):
+    def encode(self, target_data, mask: Optional[Tensor] = None):
         # First step is to embed the nodes and samples
         # shape [batch_size, num_samples + 1, num_nodes, d_model]
         embedding = self.embed(target_data)

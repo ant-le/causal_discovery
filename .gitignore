@@ -54,6 +54,7 @@ experiments/**/inference/
 experiments/**/pipe.log
 experiments/**/table.tex
 experiments/**/multirun/
+experiments/runs/
 
 # Compiled Python files
 __pycache__/

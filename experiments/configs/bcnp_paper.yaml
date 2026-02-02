@@ -1,43 +1,50 @@
 # @package _global_
-name: "competence_curriculum"
+# BCNP "All Data" training regime (paper replication).
+name: "bcnp_paper"
 
 logger:
   wandb:
     enabled: true
     project: "causal_meta"
-    tags: ["competence", "train"]
+    tags: ["bcnp", "paper", "all_data"]
 
 data:
   # -------------------------------------------------------------------------
-  # TRAINING FAMILY: The "Competence" Mixture
+  # TRAINING FAMILY: BCNP "All Data" mixture
   # -------------------------------------------------------------------------
   train_family:
-    name: competence_train
+    name: bcnp_all_data_train
     n_nodes: 20
-    
-    # Graph: Mixture of ER (Sparse) and SF (Hubs)
+
+    # Graph: Mixture of ER (multi-density) and SF (hubs)
     graph_cfg:
       type: mixture
-      weights: [0.5, 0.5]
+      weights: [0.1667, 0.1667, 0.1667, 0.5]
       generators:
         - type: er
-          sparsity: 0.2  # Expected deg ~ 4
+          sparsity: 0.0526 # Expected edges ~20 for n_nodes=20
+        - type: er
+          sparsity: 0.1053 # Expected edges ~40 for n_nodes=20
+        - type: er
+          sparsity: 0.1579 # Expected edges ~60 for n_nodes=20
         - type: sf
-          m: 2           # Preferential attachment
-    
-    # Mechanisms: Mixture of Linear, MLP, GP
+          m: 2
+
+    # Mechanisms: Balanced mixture of Linear, MLP, GP (GPCDE proxy)
     mech_cfg:
       type: mixture
       weights: [0.34, 0.33, 0.33]
       factories:
         - type: linear
-          weight_scale: 1.0
-          noise_concentration: 2.0  # Heteroscedasticity
+          weight_scale: 10.0
+          noise_concentration: 2.0
+          noise_rate: 2.0
         - type: mlp
           hidden_dim: 32
         - type: gp
           rff_dim: 256
           length_scale_range: [0.5, 2.0]
+          variance: 1.0
 
   # -------------------------------------------------------------------------
   # VALIDATION (In-Distribution)
@@ -51,9 +58,10 @@ data:
         sparsity: 0.2
       mech_cfg:
         type: linear
+        weight_scale: 10.0
 
   # -------------------------------------------------------------------------
-  # TEST FAMILIES (Placeholder - overridden by audit configs usually)
+  # TEST (In-Distribution default, override with audit configs)
   # -------------------------------------------------------------------------
   test_families:
     id_test:
@@ -64,6 +72,7 @@ data:
         sparsity: 0.2
       mech_cfg:
         type: linear
+        weight_scale: 10.0
 
   seeds_val: [1000, 1001, 1002, 1003, 1004]
   seeds_test: [2000, 2001, 2002, 2003, 2004]
@@ -72,33 +81,44 @@ data:
   safety_checks: true
   num_workers: 4
   pin_memory: true
+  normalize_data: true
+  batch_size_train: 1
+  batch_size_val: 1
+  batch_size_test: 1
+  batch_size_test_interventional: 1
 
 model:
-  type: "avici"
+  type: "bcnp"
   num_nodes: 20
   d_model: 128
   nhead: 8
-  num_layers: 6
+  num_layers: 4
+  num_layers_decoder: 4
   dim_feedforward: 512
   dropout: 0.1
-
-objective:
-  name: "bce"
-  pos_weight: 1.0
+  emb_depth: 2
+  use_positional_encoding: false
+  n_perm_samples: 10
+  sinkhorn_iter: 20
+  q_before_l: true
 
 trainer:
   lr: 0.0001
+  weight_decay: 1e-4
+  accumulate_grad_batches: 1
   max_steps: 100000
   log_every_n_steps: 100
   val_check_interval: 1000
-  check_val_every_n_epoch: null
+  checkpoint_every_n_steps: 1000
+  grad_clip_norm: 1.0
+  amp: false
 
 inference:
-  n_samples: 50
+  n_samples: 20
 
 hydra:
   run:
-    dir: ${oc.env:CAUSAL_META_RUN_DIR,experiments/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}}
+    dir: ${oc.env:CAUSAL_META_RUN_DIR,experiments/runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}}
   sweep:
-    dir: ${oc.env:CAUSAL_META_SWEEP_DIR,experiments/${name}/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}}
+    dir: ${oc.env:CAUSAL_META_SWEEP_DIR,experiments/runs/${name}/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}}
     subdir: ${hydra.job.num}

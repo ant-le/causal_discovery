@@ -1,5 +1,5 @@
 import math
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 import torch.nn as nn
@@ -36,7 +36,7 @@ class BCNP(CausalTNPEncoder, BaseModel):
         n_perm_samples: int = 10,
         sinkhorn_iter: int = 20,
         q_before_l: bool = True,
-        **kwargs
+        **kwargs,
     ) -> None:
         CausalTNPEncoder.__init__(
             self,
@@ -123,16 +123,17 @@ class BCNP(CausalTNPEncoder, BaseModel):
 
         return L_param, Q_rep
 
-    def forward(self, input_data: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Returns edge probabilities marginalized over permutations.
-        
+
         Args:
-            input_data: Input tensor of shape (Batch, Samples, Variables).
-            
+            x: Input tensor of shape (Batch, Samples, Variables).
+
         Returns:
             all_probs: Tensor of shape (n_perm_samples, Batch, Variables, Variables).
         """
+        input_data = x
         B, S, V = input_data.shape
         # if V != self.num_nodes:
         #     # In meta-learning, V might vary if model allows, but this implementation binds specific sizes
@@ -149,7 +150,9 @@ class BCNP(CausalTNPEncoder, BaseModel):
 
         # Calculate Q parameters (permutation logits)
         permutation_logits = self.permutation_logit_network(Q_rep).squeeze(-1)  # (B, V)
-        ovector = torch.arange(1, V + 1, device=input_data.device, dtype=input_data.dtype)
+        ovector = torch.arange(
+            1, V + 1, device=input_data.device, dtype=input_data.dtype
+        )
 
         # Outer product to get matrix logits
         Q_param = torch.einsum("bn,m->bnm", permutation_logits, ovector)
@@ -202,11 +205,12 @@ class BCNP(CausalTNPEncoder, BaseModel):
 
         return all_probs
 
-    def sample(self, input_data: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
+    def sample(self, x: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
         """
         Returns sampled graphs.
         Shape: (Batch, num_samples, N, N)
         """
+        input_data = x
         # We temporarily set n_perm_samples to requested n_samples to get K=n_samples
         original_k = self.n_perm_samples
         self.n_perm_samples = num_samples
@@ -223,17 +227,18 @@ class BCNP(CausalTNPEncoder, BaseModel):
 
         return samples
 
-    def calculate_loss(self, probs, target, **kwargs):
+    def calculate_loss(self, output: Any, target: torch.Tensor, **kwargs):
         """
         Args:
         -----
-            probs: torch.Tensor, shape [num_samples, batch_size, num_nodes, num_nodes]
+            output: torch.Tensor, shape [num_samples, batch_size, num_nodes, num_nodes]
             target: torch.Tensor, shape [batch_size, num_nodes, num_nodes]
 
         Returns:
         --------
             loss: torch.Tensor, shape [batch_size]
         """
+        probs = output
         # Reshape the last axis
         probs = probs.contiguous().view(probs.size(0), probs.size(1), -1)
         target_graph = target.reshape(target.size(0), -1)

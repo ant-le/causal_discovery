@@ -12,9 +12,10 @@ from causal_meta.datasets.generators.configs import (DataModuleConfig,
 from causal_meta.datasets.generators.factory import load_data_module_config
 from causal_meta.datasets.scm import SCMFamily
 from causal_meta.datasets.torch_datasets import (MetaFixedDataset,
-                                                 MetaIterableDataset,
-                                                 MetaInterventionalDataset)
-from causal_meta.datasets.utils import collate_fn_scm, collate_fn_interventional, compute_graph_hash
+                                                 MetaInterventionalDataset,
+                                                 MetaIterableDataset)
+from causal_meta.datasets.utils import (collate_fn_interventional,
+                                        collate_fn_scm, compute_graph_hash)
 from causal_meta.datasets.utils.sampling import NoPaddingDistributedSampler
 
 
@@ -127,12 +128,16 @@ class CausalMetaModule:
         """Return the training DataLoader with GPU optimizations."""
         if self.train_dataset is None:
             self.setup()
-        
+
         collate_fn = partial(collate_fn_scm, normalize=self.config.normalize_data)
+
+        batch_size = int(getattr(self.config, "batch_size_train", 1))
+        if batch_size < 1:
+            raise ValueError("data.batch_size_train must be >= 1")
 
         return DataLoader(
             self.train_dataset,  # type: ignore
-            batch_size=1,  # One task per batch (required for collate_fn_scm)
+            batch_size=batch_size,
             num_workers=self.config.num_workers,
             pin_memory=self.config.pin_memory,
             collate_fn=collate_fn,
@@ -150,6 +155,10 @@ class CausalMetaModule:
 
         collate_fn = partial(collate_fn_scm, normalize=self.config.normalize_data)
 
+        batch_size = int(getattr(self.config, "batch_size_test", 1))
+        if batch_size < 1:
+            raise ValueError("data.batch_size_test must be >= 1")
+
         for name, dataset in self.test_datasets.items():
             sampler = None
             if is_distributed:
@@ -157,7 +166,7 @@ class CausalMetaModule:
 
             loaders[name] = DataLoader(
                 dataset,
-                batch_size=1,  # One task per batch
+                batch_size=batch_size,
                 num_workers=self.config.num_workers,  # Use configured workers
                 pin_memory=self.config.pin_memory,
                 collate_fn=collate_fn,
@@ -175,7 +184,13 @@ class CausalMetaModule:
             torch.distributed.is_available() and torch.distributed.is_initialized()
         )
 
-        collate_fn = partial(collate_fn_interventional, normalize=self.config.normalize_data)
+        collate_fn = partial(
+            collate_fn_interventional, normalize=self.config.normalize_data
+        )
+
+        batch_size = int(getattr(self.config, "batch_size_test_interventional", 1))
+        if batch_size < 1:
+            raise ValueError("data.batch_size_test_interventional must be >= 1")
 
         for name, dataset in self.test_interventional_datasets.items():
             sampler = None
@@ -184,7 +199,7 @@ class CausalMetaModule:
 
             loaders[name] = DataLoader(
                 dataset,
-                batch_size=1,  # One task per batch
+                batch_size=batch_size,
                 num_workers=self.config.num_workers,
                 pin_memory=self.config.pin_memory,
                 collate_fn=collate_fn,
@@ -209,6 +224,10 @@ class CausalMetaModule:
 
         collate_fn = partial(collate_fn_scm, normalize=self.config.normalize_data)
 
+        batch_size = int(getattr(self.config, "batch_size_val", 1))
+        if batch_size < 1:
+            raise ValueError("data.batch_size_val must be >= 1")
+
         for name, dataset in self.val_datasets.items():
             sampler = None
             if is_distributed:
@@ -216,7 +235,7 @@ class CausalMetaModule:
 
             loaders[name] = DataLoader(
                 dataset,
-                batch_size=1,  # One task per batch
+                batch_size=batch_size,
                 num_workers=self.config.num_workers,  # Use configured workers
                 pin_memory=self.config.pin_memory,
                 collate_fn=collate_fn,
@@ -231,7 +250,7 @@ class CausalMetaModule:
         hashes: Set[str] = set()
         # Use provided seeds or probe a default range if empty
         seeds_to_probe = list(seeds) if seeds else self._probe_seeds(seeds)
-        
+
         for seed in seeds_to_probe:
             adjacency_matrix = family.sample_graph(seed)
             hashes.add(compute_graph_hash(adjacency_matrix))
@@ -250,12 +269,12 @@ class CausalMetaModule:
         """
         train_profile = self._spectral_profile(train_family, [])
         test_profile = self._spectral_profile(test_family, self.config.seeds_test)
-        
+
         # Ensure profiles are compatible in length (min length)
         min_len = min(train_profile.numel(), test_profile.numel())
         if min_len == 0:
             return 0.0
-            
+
         distance = torch.mean(
             torch.abs(train_profile[:min_len] - test_profile[:min_len])
         )
@@ -269,17 +288,17 @@ class CausalMetaModule:
         """
         seeds_to_probe = self._probe_seeds(seeds, count=count)
         all_eigenvalues = []
-        
+
         for seed in seeds_to_probe:
             adjacency_matrix = family.sample_graph(seed)
             # Symmetrize to get real eigenvalues: A_sym = (A + A.T) / 2
             symmetric_adj = (adjacency_matrix + adjacency_matrix.T) / 2.0
             eigenvalues = torch.linalg.eigvalsh(symmetric_adj)
             all_eigenvalues.append(eigenvalues)
-            
+
         if not all_eigenvalues:
             return torch.tensor([])
-            
+
         # Stack and average across the sampled graphs
         return torch.stack(all_eigenvalues, dim=0).mean(dim=0)
 

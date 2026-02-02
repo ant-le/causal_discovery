@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -50,13 +52,7 @@ def run(
 
     # Device (explicit models may have no parameters)
     params = list(model.parameters())
-    device = (
-        params[0].device
-        if params
-        else (
-            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        )
-    )
+    device = params[0].device if params else dist_ctx.device
 
     # Data
     test_loaders = data_module.test_dataloader()
@@ -145,7 +141,7 @@ def run(
 
                     if artifact_path is not None:
                         artifact = torch_load(artifact_path)
-                        graph_samples = artifact["graph_samples"]  # (1, K, N, N)
+                        graph_samples = artifact["graph_samples"].to(device)
                         samples_for_metrics = graph_samples.permute(1, 0, 2, 3)
                     else:
                         samples = model_unwrapped.sample(
@@ -216,13 +212,20 @@ def run(
 
                     # Batch update for SCM metrics (assuming evaluation loop is usually batch size 1)
                     if bool(getattr(model_unwrapped, "estimates_scm", False)):
-                        scm_metrics_handler.update(
-                            obs_data=input_data.squeeze(0),
-                            graph_samples=samples_for_metrics.squeeze(1),
-                            family=family,
-                            seeds=seeds,
-                            prefix=name,
-                        )
+                        batch_seeds = seeds if isinstance(seeds, list) else None
+                        if batch_seeds is None:
+                            log.warning(
+                                "Skipping SCM metrics because batch seeds are unavailable."
+                            )
+                        else:
+                            for b in range(int(input_data.shape[0])):
+                                scm_metrics_handler.update(
+                                    obs_data=input_data[b],
+                                    graph_samples=samples_for_metrics[:, b],
+                                    family=family,
+                                    seeds=[int(batch_seeds[b])],
+                                    prefix=name,
+                                )
 
         # Compute Summary Stats (Mean + SEM) and Gather Raw Data
         summary = metrics_handler.compute(summary_stats=True)
