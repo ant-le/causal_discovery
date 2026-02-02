@@ -86,15 +86,18 @@ class AviciModel(CausalTNPEncoder, BaseModel):
     def decode(self, representation: torch.Tensor) -> torch.Tensor:
         return self.decoder(representation)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, input_data: torch.Tensor) -> torch.Tensor:
         """
+        Forward pass of the Avici model.
+
         Args:
-            x: (Batch, Samples, Variables)
+            input_data: Input tensor of shape (Batch, Samples, Variables).
+
         Returns:
-            logits: (Batch, Variables, Variables)
+            logits: Predicted adjacency logits of shape (Batch, Variables, Variables).
         """
-        # x is [Batch, Samples, Variables] -> [Batch, Samples, Variables, 1]
-        target_data = x.unsqueeze(-1)
+        # input_data is [Batch, Samples, Variables] -> [Batch, Samples, Variables, 1]
+        target_data = input_data.unsqueeze(-1)
         
         # Encode
         # representation: [Batch, Nodes, 1, d_model]
@@ -102,24 +105,31 @@ class AviciModel(CausalTNPEncoder, BaseModel):
         
         # Decode
         representation = representation.squeeze(2) # [Batch, Nodes, d_model]
-        out = self.decode(representation)
+        decoded_output = self.decode(representation)
         
         # Predict Adjacency
         # adj_matrix: [Batch, Nodes, Nodes]
-        adj_matrix = self.predictor(out, padding_mask=None)
+        adj_matrix = self.predictor(decoded_output, padding_mask=None)
         
         return adj_matrix
 
-    def sample(self, x: torch.Tensor, n_samples: int = 1) -> torch.Tensor:
+    def sample(self, input_data: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
         """
         Bernoulli sampling from edge probabilities.
+        
+        Args:
+            input_data: Input tensor of shape (Batch, Samples, Variables).
+            num_samples: Number of graph samples to generate.
+            
+        Returns:
+            torch.Tensor: Sampled adjacency matrices (Batch, num_samples, Variables, Variables).
         """
-        logits = self.forward(x)
+        logits = self.forward(input_data)
         probs = torch.sigmoid(logits)
         probs = probs * (1 - torch.eye(probs.size(-1), device=probs.device, dtype=probs.dtype))
         
-        # Expand for n_samples
-        probs = probs.unsqueeze(1).expand(-1, n_samples, -1, -1)
+        # Expand for num_samples
+        probs = probs.unsqueeze(1).expand(-1, num_samples, -1, -1)
         
         # Sample
         return torch.bernoulli(probs)
@@ -146,14 +156,18 @@ class AviciModel(CausalTNPEncoder, BaseModel):
         # set diagonal to 0
         probs = probs * (1 - torch.eye(probs.size(-1), device=probs.device))
         
-        # Calculate cyclicity per batch element
-        current_value_tensor = cyclicity(probs).mean() # Scalar tensor
-        
-        # Sync across ranks if using DDP
+        # Differentiable acyclicity constraint (per batch element)
+        # NOTE: keep this as a tensor to preserve gradients.
+        cyclicity_per_example = cyclicity(probs)  # (B,)
+        cyclicity_mean = cyclicity_per_example.mean()
+
+        # Sync a detached scalar for logging/EMA so all ranks update the dual weight identically.
+        cyclicity_logged = cyclicity_mean.detach()
         if dist.is_available() and dist.is_initialized():
-            dist.all_reduce(current_value_tensor, op=dist.ReduceOp.AVG)
-            
-        current_value = current_value_tensor.item()
+            cyclicity_logged = cyclicity_logged.clone()
+            dist.all_reduce(cyclicity_logged, op=dist.ReduceOp.AVG)
+
+        cyclicity_value = float(cyclicity_logged.item())
 
         logits = logits.contiguous().view(logits.size(0), -1)
         target = target.contiguous().view(target.size(0), -1)
@@ -165,13 +179,13 @@ class AviciModel(CausalTNPEncoder, BaseModel):
         # Update EMA of cyclicity_value
         alpha = 0.1  # Smoothing factor between 0 and 1
         if self.cyclicity_value_avg is None:
-            self.cyclicity_value_avg = current_value
+            self.cyclicity_value_avg = cyclicity_value
         else:
             self.cyclicity_value_avg = (
-                alpha * current_value + (1 - alpha) * self.cyclicity_value_avg
+                alpha * cyclicity_value + (1 - alpha) * self.cyclicity_value_avg
             )
 
-        acyclic_loss = self.regulariser_weight * current_value
+        acyclic_loss = self.regulariser_weight * cyclicity_per_example
 
         # Update dual weight with EMA
         if update_regulariser:

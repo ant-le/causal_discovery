@@ -1,8 +1,9 @@
 from __future__ import annotations
+import torch
 from typing import List, Optional, Protocol
 import numpy as np
-import torch
 from torch import nn
+
 
 class MechanismFactory(Protocol):
     """Protocol for mechanism factories."""

@@ -1,7 +1,19 @@
 import torch
 import pytest
-from causal_meta.runners.metrics.eval import compute_graph_metrics
+from causal_meta.runners.metrics.graph import Metrics
 from causal_meta.models.avici.model import AviciModel
+
+def test_metrics_integration() -> None:
+    targets = torch.randint(0, 2, (1, 5, 5)).float()
+    probs = torch.rand((1, 5, 5))
+    samples = torch.randint(0, 2, (10, 1, 5, 5)).float()
+    
+    metrics = Metrics(metrics=["e-shd", "e-edgef1"])
+    results = metrics.compute(probs, targets, samples=samples)
+    
+    assert "e-shd" in results
+    assert "e-edgef1" in results
+    assert isinstance(results["e-shd"], float)
 
 def test_avici_loss():
     # Setup
@@ -14,31 +26,6 @@ def test_avici_loss():
     loss = model.calculate_loss(logits, target)
     assert isinstance(loss, torch.Tensor)
     assert loss.dim() == 0
-
-def test_eval_metrics():
-    # Perfect prediction
-    probs = torch.tensor([[[0.1, 0.9], [0.1, 0.1]]]) # (1, 2, 2)
-    target = torch.tensor([[[0, 1], [0, 0]]])
-    
-    metrics = compute_graph_metrics(probs, target, threshold=0.5)
-    assert metrics["shd"] == 0
-    assert metrics["f1"] == 1.0
-    assert metrics["precision"] == 1.0
-    assert metrics["recall"] == 1.0
-
-    # Bad prediction
-    probs = torch.tensor([[[0.9, 0.1], [0.9, 0.9]]])
-    target = torch.tensor([[[0, 1], [0, 0]]])
-    
-    metrics = compute_graph_metrics(probs, target, threshold=0.5)
-    # Predicted: [[1, 0], [1, 1]] (3 edges)
-    # True: [[0, 1], [0, 0]] (1 edge)
-    # TP: 0
-    # FP: 3 (indices (0,0), (1,0), (1,1))
-    # FN: 1 (index (0,1))
-    # SHD: 4
-    assert metrics["shd"] == 4
-    assert metrics["f1"] == 0.0
 
 def test_training_step_integration():
     # Setup

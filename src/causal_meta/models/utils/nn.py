@@ -215,6 +215,7 @@ class CausalAdjacencyMatrix(nn.Module):
             Args:
             -----
                 representation: torch.Tensor, shape [batch_size, num_nodes, d_model]
+                padding_mask: Optional mask for padding.
 
             Returns:
             --------
@@ -224,7 +225,6 @@ class CausalAdjacencyMatrix(nn.Module):
             key = representation
             # We don't need to compute the value tensor but helps with
             # compatibility with the nn.MultiheadAttention class
-            #TODO: Remove the value tensor computation
             value = representation
             # set up shape vars
             bsz, tgt_len, embed_dim = query.shape
@@ -236,33 +236,33 @@ class CausalAdjacencyMatrix(nn.Module):
             #
             # compute in-projection
             #
-            q, k, v = F._in_projection_packed(
+            query_proj, key_proj, value_proj = F._in_projection_packed(
                 query, key, value, self.in_proj_weight, self.in_proj_bias
             )
-            del v # we don't need this
+            # value_proj is computed but not used for adjacency prediction logic below
 
             head_dim = self.d_model // self.num_heads
 
             # reshape q, k, v for multihead attention and make em batch first
             #
-            q = q.view(tgt_len, bsz * self.num_heads, head_dim).transpose(0, 1)
-            k = k.view(k.shape[0], bsz * self.num_heads, head_dim).transpose(0, 1)
+            query_proj = query_proj.view(tgt_len, bsz * self.num_heads, head_dim).transpose(0, 1)
+            key_proj = key_proj.view(key_proj.shape[0], bsz * self.num_heads, head_dim).transpose(0, 1)
 
             # update source sequence length after adjustments
-            src_len = k.size(1)
+            src_len = key_proj.size(1)
 
             #
             # (deep breath) calculate attention and out projection
             #
-            q = q.view(bsz, self.num_heads, tgt_len, head_dim)
-            k = k.view(bsz, self.num_heads, src_len, head_dim)
+            query_proj = query_proj.view(bsz, self.num_heads, tgt_len, head_dim)
+            key_proj = key_proj.view(bsz, self.num_heads, src_len, head_dim)
 
             # Efficient implementation equivalent to the following:
-            L, S = q.size(-2), k.size(-2)
+            L, S = query_proj.size(-2), key_proj.size(-2)
             scale_factor = 1 / math.sqrt(query.size(-1))
             attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
 
-            attn_weight = q @ k.transpose(-2, -1) * scale_factor
+            attn_weight = query_proj @ key_proj.transpose(-2, -1) * scale_factor
             # shape [batch_size, num_heads, num_nodes, num_nodes]
             attn_weight += attn_bias[None, None, :, :]
             attn_weight = attn_weight.permute(0, 2, 3, 1)

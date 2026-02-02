@@ -1,22 +1,33 @@
 import numpy as np
 import torch
 
-from causal_meta.runners.metrics.eval import (
-    auc_graph_scores,
-    balance_for_auc,
-    calc_SHD,
-    calculate_auc,
+from causal_meta.runners.metrics.graph import (
     expected_f1_score,
     expected_shd,
     log_prob_graph_scores,
+    ancestor_f1_score,
 )
 
 
-def test_calc_shd_reverse_edge_counts_once_when_not_double() -> None:
-    target = np.array([[0, 1], [0, 0]])
-    pred = np.array([[0, 0], [1, 0]])
-    assert calc_SHD(target, pred, double_for_anticausal=True) == 2
-    assert calc_SHD(target, pred, double_for_anticausal=False) == 1
+def test_ancestor_f1() -> None:
+    # 0 -> 1 -> 2
+    target = torch.tensor([[[0, 1, 0], [0, 0, 1], [0, 0, 0]]]).float()
+    
+    # Correct structure
+    pred_correct = torch.tensor([[[[0, 1, 0], [0, 0, 1], [0, 0, 0]]]]).float()
+    # Missing 1->2 but adds 0->2 directly
+    pred_shortcut = torch.tensor([[[[0, 0, 1], [0, 0, 0], [0, 0, 0]]]]).float()
+    
+    # For target, ancestors are (0,1), (1,2), (0,2)
+    # Correct pred: ancestors match.
+    f1_correct = ancestor_f1_score(target, pred_correct)
+    assert f1_correct[0].item() == 1.0
+    
+    # Shortcut pred: ancestors are (0,2). 
+    # TP = {(0,2)}, FP = {}, FN = {(0,1), (1,2)}
+    # F1 = 2*1 / (2*1 + 0 + 2) = 2/4 = 0.5
+    f1_shortcut = ancestor_f1_score(target, pred_shortcut)
+    assert np.isclose(f1_shortcut[0].item(), 0.5)
 
 
 def test_expected_shd_and_expected_f1() -> None:
@@ -30,54 +41,35 @@ def test_expected_shd_and_expected_f1() -> None:
 
     shd = expected_shd(target, pred)
     assert shd.shape == (1,)
+    # SHD: perfect=0, reversed=1 (if not double) or 2 (if double). 
+    # Current expected_shd uses abs diff which is double counting mismatches in DAG context if considering reversed edge as 2 errors (FP+FN).
+    # target=[0,1], pred=[0,0] -> FN=1
+    # target=[0,0], pred=[1,0] -> FP=1
+    # Total diff = 2.
+    # So for sample 2, SHD=2.
+    # Mean SHD = (0 + 2) / 2 = 1.0.
     assert shd[0].item() == 1.0
 
     f1 = expected_f1_score(target, pred)
     assert f1.shape == (1,)
+    # Sample 1: Perfect match -> F1=1.0
+    # Sample 2: 
+    # TP = 0 (target has (0,1), pred has (1,0))
+    # FP = 1 (pred has (1,0))
+    # FN = 1 (target has (0,1))
+    # F1 = 0 / (0 + 1 + 1) = 0.0
+    # Mean F1 = (1.0 + 0.0) / 2 = 0.5
     assert np.isclose(f1[0].item(), 0.5)
 
 
-def test_auc_and_log_prob_graph_scores() -> None:
+def test_log_prob_graph_scores() -> None:
     targets = torch.tensor([[[0.0, 1.0], [0.0, 0.0]]])
     preds = torch.stack([targets, targets], dim=0)  # (S=2, B=1, N=2, N=2)
-
-    aucs = auc_graph_scores(targets, preds)
-    assert len(aucs) == 1
-    assert np.isclose(aucs[0], 1.0)
 
     log_probs = log_prob_graph_scores(targets, preds)
     assert len(log_probs) == 1
     assert np.isfinite(log_probs[0])
+    # Probability is 1.0 (clamped), log prob should be near 0
     assert log_probs[0] > -1e-3
 
-
-def test_balance_for_auc_balances_even_imbalance_and_flips_scores() -> None:
-    rng = np.random.default_rng(0)
-    target = np.array([-1, -1, -1, -1, 1, 1])
-    pred_scores = np.array([1.0, 2.0, -3.0, 4.0, 5.0, -6.0])
-
-    balanced_target, balanced_scores = balance_for_auc(target, pred_scores, rng=rng)
-    assert int(np.sum(balanced_target)) == 0
-
-    flipped = np.nonzero(balanced_target != target)[0]
-    assert flipped.shape == (1,)
-    idx = int(flipped[0])
-    assert target[idx] == -1
-    assert balanced_target[idx] == 1
-    assert balanced_scores[idx] == -pred_scores[idx]
-
-
-def test_calculate_auc_is_deterministic_and_does_not_mutate_inputs() -> None:
-    target = np.array([-1, 1, -1, 1], dtype=int)
-    pred_scores = np.array([-0.2, 0.3, -0.1, 0.4], dtype=float)
-    target_copy = target.copy()
-    pred_copy = pred_scores.copy()
-
-    auc1 = calculate_auc(target, pred_scores, num_shuffles=10, rng=np.random.default_rng(123))
-    auc2 = calculate_auc(target, pred_scores, num_shuffles=10, rng=np.random.default_rng(123))
-    assert 0.0 <= auc1 <= 1.0
-    assert np.isclose(auc1, auc2)
-
-    assert np.array_equal(target, target_copy)
-    assert np.array_equal(pred_scores, pred_copy)
 

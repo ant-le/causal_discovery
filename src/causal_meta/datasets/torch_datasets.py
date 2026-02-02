@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from typing import Dict, Iterable, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, Optional, Sequence, Set, Tuple
 
 import torch
 from torch.utils.data import Dataset, IterableDataset, get_worker_info
 
-from causal_meta.datasets.scm import SCMFamily, SCMInstance
+from causal_meta.datasets.scm import SCMFamily
 from causal_meta.datasets.utils import compute_graph_hash
 
 
@@ -57,49 +57,117 @@ class MetaIterableDataset(IterableDataset):
 
             with torch.random.fork_rng(devices=[]):
                 torch.manual_seed(seed)
-                x = instance.sample(self.samples_per_task)
-            yield x, instance.adjacency_matrix
+                data = instance.sample(self.samples_per_task)
+            
+            yield {"seed": int(seed), "data": data, "adjacency": instance.adjacency_matrix}
             seed += stride
 
-    # TODO: add validation logic (after a specific number of samples?)
-    # can have same logic as testing with id and ood buts needs 
-    # different seeds (distinct from test set)
 
 class MetaFixedDataset(Dataset):
-    """Fixed-seed SCM dataset with optional instance and data caching."""
+    """
+    Fixed-seed SCM dataset for deterministic validation/testing.
+    
+    This dataset acts as a map-style dataset where each index corresponds to a specific
+    deterministic seed from the provided list.
+    """
 
     def __init__(
         self,
         family: SCMFamily,
         seeds: Sequence[int],
-        cache: bool = True,
         samples_per_task: int = 128,
     ) -> None:
         self.family = family
         self.seeds = list(seeds)
-        self.cache_instances = cache
         self.samples_per_task = samples_per_task
-        # Cache stores Tuple[SCMInstance, torch.Tensor]
-        self._cache: Dict[int, Tuple[SCMInstance, torch.Tensor]] = {}
 
     def __len__(self) -> int:
         return len(self.seeds)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        """
+        Generates and returns an SCM task for the given index.
+        
+        Returns:
+            dict: {
+                "seed": int,
+                "data": torch.Tensor (samples),
+                "adjacency": torch.Tensor (adjacency matrix)
+            }
+        """
         seed = int(self.seeds[idx])
 
-        if self.cache_instances and seed in self._cache:
-            instance, x = self._cache[seed]
-        else:
-            instance = self.family.sample_task(seed)
-            # Deterministic sampling based on the seed
+        instance = self.family.sample_task(seed)
+        # Deterministic sampling based on the seed
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(seed)
+            data = instance.sample(self.samples_per_task)
+        
+        adjacency = instance.adjacency_matrix.to(dtype=torch.float32)
+
+        return {"seed": seed, "data": data, "adjacency": adjacency}
+
+
+class MetaInterventionalDataset(Dataset):
+    """
+    Fixed-seed SCM dataset that provides both observational and interventional data.
+    Performs single-node interventions on all nodes.
+    """
+
+    def __init__(
+        self,
+        family: SCMFamily,
+        seeds: Sequence[int],
+        intervention_value: float = 0.0,
+        samples_per_task: int = 128,
+    ) -> None:
+        self.family = family
+        self.seeds = list(seeds)
+        self.intervention_value = intervention_value
+        self.samples_per_task = samples_per_task
+
+    def __len__(self) -> int:
+        return len(self.seeds)
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        seed = int(self.seeds[idx])
+
+        instance = self.family.sample_task(seed)
+        n_nodes = instance.n_nodes
+
+        # 1. Observational Data
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(seed)
+            x_obs = instance.sample(self.samples_per_task)
+        
+        obs_data = {"data": x_obs, "adjacency": instance.adjacency_matrix}
+
+        # 2. Interventional Data (Single-node on all nodes)
+        interventions = []
+        for target_node in range(n_nodes):
+            # Do(X_target = val)
+            mutilated_instance = instance.do({target_node: self.intervention_value})
+
+            # Sample from mutilated graph
+            # We use a derived seed for reproducibility of interventions
+            int_seed = seed + (target_node + 1) * 1000
             with torch.random.fork_rng(devices=[]):
-                torch.manual_seed(seed)
-                x = instance.sample(self.samples_per_task)
+                torch.manual_seed(int_seed)
+                x_int = mutilated_instance.sample(self.samples_per_task)
             
-            if self.cache_instances:
-                self._cache[seed] = (instance, x)
+            interventions.append(
+                {
+                    "target": target_node,
+                    "value": self.intervention_value,
+                    "data": x_int,
+                    "adjacency": mutilated_instance.adjacency_matrix,
+                }
+            )
 
-        return x, instance.adjacency_matrix
+        result = {
+            "observational": obs_data,
+            "interventions": interventions,
+            "seed": seed,
+        }
 
-    # TODO: add logic to safe cache experiments folder in the end
+        return result

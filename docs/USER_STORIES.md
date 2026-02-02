@@ -52,17 +52,20 @@ As a user, I want to define experiments via YAML configuration files (specifying
   - The system parses the config to instantiate the correct SCM family and Model.
 
 **Story 3.2: Automated Evaluation**
-As a researcher, I want the pipeline to automatically compute metrics (E-SHD, AUROC, NIL, I-NIL) after inference so that I have immediate feedback on model performance.
+As a researcher, I want the pipeline to automatically compute core graph metrics and likelihood proxies after inference so that I have immediate feedback on model performance.
 - **Acceptance Criteria:**
-  - Pipeline calculates graph metrics (SHD, AUROC) against ground truth.
-  - Pipeline calculates predictive metrics (NIL) on held-out test sets.
+  - Pipeline calculates expected graph metrics (E-SHD, E-edgeF1, E-SID) against ground truth.
+  - Pipeline calculates `graph_nll` (= negative edge log-prob under mean posterior edge probabilities).
+  - Pipeline can optionally calculate I-NIL via a Linear Gaussian scorer (**heuristic** for non-linear mechanisms).
 
 ## Epic 4: Packaging & Artifacts
 **Story 4.1: Artifact Storage**
-As a user, I want experiment artifacts (trained weights, logs, generated config copies) to be saved in a structured directory `artifacts/{model}/{run_id}/` so that I can audit results later.
+As a user, I want experiment artifacts (trained weights, logs, metric summaries, cached inference) to be saved in a structured Hydra run directory so that I can audit results later.
 - **Acceptance Criteria:**
-  - Automatic creation of artifact directories.
-  - Logging of all parameters.
+  - Run outputs live under `experiments/{name}/{date}/{time}/` by default (Hydra `hydra.run.dir`), with multiruns under `experiments/{name}/multirun/...`.
+  - Output location can be overridden via `CAUSAL_META_RUN_DIR` / `CAUSAL_META_SWEEP_DIR`.
+  - Each run contains `checkpoints/`, `results/`, and optional `inference/` subfolders.
+  - Logging captures the full config and key parameters (via Hydra output + logger backends).
 
 **Story 4.2: Installable Package**
 As a developer, I want the `src/` folder to be structured as an installable Python package (e.g., `causal_meta`) so that I can install it via `pip` or `conda`.

@@ -1,0 +1,13 @@
+# @package hydra.launcher
+_target_: hydra_plugins.hydra_submitit_launcher.submitit_launcher.SlurmLauncher
+submitit_folder: ${hydra.sweep.dir}/.submitit
+timeout_min: 720
+cpus_per_task: 8
+gpus_per_node: 1
+tasks_per_node: 1
+mem_gb: 32
+nodes: 1
+partition: gpu
+setup:
+  - export OMP_NUM_THREADS=1
+  - export HYDRA_FULL_ERROR=1

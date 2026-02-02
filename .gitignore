@@ -43,6 +43,18 @@ pnpm-debug.log*
 .venv
 .env
 
+# --- Hydra / experiment outputs ---
+# Keep YAML inputs under `experiments/`, but ignore generated run artifacts.
+outputs/
+multirun/
+experiments/**/.hydra/
+experiments/**/checkpoints/
+experiments/**/results/
+experiments/**/inference/
+experiments/**/pipe.log
+experiments/**/table.tex
+experiments/**/multirun/
+
 # Compiled Python files
 __pycache__/
 *.py[cod]
@@ -77,3 +89,6 @@ MANIFEST
 # Optional: Ignore package-lock.json if you use yarn or pnpm
 # and want to avoid lockfile conflicts across different package managers.
 package-lock.json
+
+__pycache__/
+*.pyc

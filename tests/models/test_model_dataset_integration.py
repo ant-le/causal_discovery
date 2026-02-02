@@ -20,10 +20,10 @@ def _make_dataset_batch(n_nodes: int = 5, samples_per_task: int = 32, seed: int 
         graph_generator=ErdosRenyiGenerator(edge_prob=0.4),
         mechanism_factory=LinearMechanismFactory(weight_scale=0.1),
     )
-    dataset = MetaFixedDataset(family, seeds=[seed], cache=True, samples_per_task=samples_per_task)
-    x, adj = dataset[0]
-    x_batch, adj_batch = collate_fn_scm([(x, adj)])
-    return x_batch, adj_batch
+    dataset = MetaFixedDataset(family, seeds=[seed], samples_per_task=samples_per_task)
+    item = dataset[0]
+    out = collate_fn_scm([item])
+    return out["data"], out["adjacency"]
 
 
 def _is_dag(adjacency: torch.Tensor) -> bool:
@@ -44,7 +44,7 @@ def test_avici_model_runs_on_dataset_batch() -> None:
     loss = torch.nn.BCEWithLogitsLoss()(logits.view(1, -1), adj.view(1, -1))
     assert torch.isfinite(loss).all()
 
-    samples = model.sample(x, n_samples=4)
+    samples = model.sample(x, num_samples=4)
     assert samples.shape == (1, 4, 6, 6)
     diag = torch.diagonal(samples, dim1=-2, dim2=-1)
     assert torch.all(diag == 0)
@@ -81,7 +81,7 @@ def test_bcnp_model_runs_on_dataset_batch_and_samples_dags() -> None:
     loss = (-log_prob_sum).mean()
     assert torch.isfinite(loss).all()
 
-    samples = model.sample(x, n_samples=5)
+    samples = model.sample(x, num_samples=5)
     assert samples.shape == (1, 5, 6, 6)
     diag = torch.diagonal(samples, dim1=-2, dim2=-1)
     assert torch.all(diag == 0)

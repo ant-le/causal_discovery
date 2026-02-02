@@ -20,11 +20,11 @@ class MockModel(BaseModel):
     def forward(self, x: torch.Tensor):
         return x
 
-    def sample(self, x: torch.Tensor, n_samples: int = 1):
-        # Return dummy adjacency: (Batch, n_samples, V, V)
+    def sample(self, x: torch.Tensor, num_samples: int = 1):
+        # Return dummy adjacency: (Batch, num_samples, V, V)
         # Assume x is (Batch, Samples, V)
         B, S, V = x.shape
-        return torch.zeros(B, n_samples, V, V)
+        return torch.zeros(B, num_samples, V, V)
 
     def calculate_loss(self, output: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         # Dummy loss
@@ -43,6 +43,7 @@ def test_factory_creation():
     model = ModelFactory.create(config)
     assert isinstance(model, MockModel)
     assert model.hidden_dim == 32
+    assert config["type"] == "mock_model"
 
 def test_factory_invalid_type():
     config = {"type": "non_existent"}
@@ -84,7 +85,7 @@ def test_bcnp_instantiation():
 def test_avici_sample_has_zero_diagonal():
     model = causal_meta.models.AviciModel(num_nodes=5, d_model=8, nhead=2, num_layers=2)
     x = torch.randn(3, 7, 5)
-    samples = model.sample(x, n_samples=4)
+    samples = model.sample(x, num_samples=4)
     assert samples.shape == (3, 4, 5, 5)
     diag = torch.diagonal(samples, dim1=-2, dim2=-1)
     assert torch.all(diag == 0)
@@ -98,3 +99,17 @@ def test_avici_loss_calculation():
     # Should fail if cyclicity is missing or logic is wrong
     loss = model.calculate_loss(logits, target, update_regulariser=True)
     assert loss.dim() == 0
+
+
+def test_avici_acyclicity_regularizer_is_differentiable() -> None:
+    model = causal_meta.models.AviciModel(num_nodes=5, d_model=8, nhead=2, num_layers=2)
+    model.regulariser_weight.data = torch.tensor(1.0)
+
+    logits = (0.1 * torch.randn(2, 5, 5)).requires_grad_(True)
+    target = torch.sigmoid(logits.detach())
+
+    loss = model.calculate_loss(logits, target, update_regulariser=False)
+    loss.backward()
+
+    assert logits.grad is not None
+    assert float(logits.grad.abs().sum().item()) > 0.0

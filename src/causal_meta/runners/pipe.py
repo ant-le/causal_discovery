@@ -1,109 +1,183 @@
-import os
-import hydra
-from omegaconf import DictConfig, OmegaConf
 import logging
-import wandb
+import os
+from pathlib import Path
+
+import hydra
 import torch
-import torch.distributed as dist
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import DictConfig
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from causal_meta.runners.tasks import pre_training, evaluation, inference
 from causal_meta.datasets.data_module import CausalMetaModule
 from causal_meta.models.factory import ModelFactory
+from causal_meta.runners.logger.base import BaseLogger
+from causal_meta.runners.logger.local import LocalLogger
+from causal_meta.runners.logger.wandb import WandbLogger
+from causal_meta.runners.tasks import evaluation, inference, pre_training
+from causal_meta.runners.utils.distributed import DistributedContext
+from causal_meta.runners.utils.env import log_environment_info
+from causal_meta.runners.utils.seeding import (get_experiment_seed,
+                                               seed_everything)
 
 log = logging.getLogger(__name__)
 
-@hydra.main(version_base=None, config_path="../../../experiments", config_name="examples/full_experiment")
+
+@hydra.main(version_base=None, config_path="configs", config_name="default")
 def main(cfg: DictConfig):
-    # 0. DDP Setup
-    is_distributed = False
-    local_rank = 0
-    
-    if "LOCAL_RANK" in os.environ:
-        is_distributed = True
-        local_rank = int(os.environ["LOCAL_RANK"])
-        torch.cuda.set_device(local_rank)
-        dist.init_process_group(backend="nccl")
-        
-    # Configure logging to be less verbose on non-zero ranks
-    if is_distributed and dist.get_rank() != 0:
-        logging.getLogger().setLevel(logging.WARNING)
+    run_pipeline(cfg)
 
-    if not is_distributed or dist.get_rank() == 0:
-        log.info("Starting Pipeline...")
-    
-    # 1. Logger Setup (Only on Rank 0)
+
+def run_pipeline(cfg: DictConfig):
+    def _validate_experiment_config(cfg_obj: DictConfig) -> None:
+        missing = []
+        for key in ["name", "data", "trainer", "inference"]:
+            if not hasattr(cfg_obj, key):
+                missing.append(key)
+        if not hasattr(cfg_obj, "model"):
+            missing.append("model")
+        if missing:
+            raise ValueError(f"Missing required config keys: {missing}")
+
+        trainer = cfg_obj.trainer
+        for key in ["lr", "max_steps"]:
+            if not hasattr(trainer, key):
+                raise ValueError(f"Missing required trainer key: trainer.{key}")
+
+        model_cfg = cfg_obj.model
+        if not hasattr(model_cfg, "type"):
+            raise ValueError("Missing required model key: model.type")
+
+    # 0. Validate config early (fail fast on cluster)
+    _validate_experiment_config(cfg)
+
+    # 1. Distributed setup
+    dist_ctx = DistributedContext.setup()
+    is_distributed = dist_ctx.is_distributed
+    local_rank = dist_ctx.local_rank
     use_wandb = cfg.get("logger", {}).get("wandb", {}).get("enabled", False)
-    if use_wandb and (not is_distributed or dist.get_rank() == 0):
-        log.info("Initializing WandB...")
-        wandb_cfg = cfg.logger.wandb
-        wandb.init(
-            project=wandb_cfg.get("project", "causal_meta"),
-            entity=wandb_cfg.get("entity", None),
-            name=wandb_cfg.get("name", cfg.name),
-            config=OmegaConf.to_container(cfg, resolve=True),
-            tags=wandb_cfg.get("tags", []),
-            mode=wandb_cfg.get("mode", "online"),
-        )
-    
-    # 2. Setup Data
-    if not is_distributed or dist.get_rank() == 0:
-        log.info("Initializing Data Module...")
-    
-    data_module = CausalMetaModule.from_config(cfg.data)
-    # Note: data_module setup might need to be called on all ranks if it sets up shared state,
-    # but currently CausalMetaModule setup is lazy or deterministic per config.
-    # However, seeds must be consistent. Config loading ensures this.
+    logger: BaseLogger | None = None
 
-    # Resolve models
-    if "models" in cfg:
-        # Convert DictConfig to dict if needed, though OmegaConf handles iteration
-        model_configs = cfg.models
-    else:
-        # Backward compatibility / Single model mode
-        model_configs = {"default_model": cfg.model}
+    try:
+        # Configure logging to be less verbose on non-zero ranks
+        if is_distributed and dist_ctx.rank != 0:
+            logging.getLogger().setLevel(logging.WARNING)
 
-    for model_name, model_cfg in model_configs.items():
-        if not is_distributed or dist.get_rank() == 0:
-            log.info(f"=== Processing Model: {model_name} ===")
-        
-        # Instantiate Model
-        model_cfg_container = OmegaConf.to_container(model_cfg, resolve=True)
-        model = ModelFactory.create(model_cfg_container)
-        
-        device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
-        model.to(device)
+        if (not is_distributed) or dist_ctx.is_main_process:
+            log.info("Starting Pipeline...")
+            log_environment_info()
 
-        needs_pretraining = model.needs_pretraining
-        
-        if is_distributed:
-            # Wrap model in DDP
-            # find_unused_parameters might be needed if some branches (like decoder) aren't used in every step
-            model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=False)
+        # 2. Seed process RNGs (dataset workers handle their own seeding internally)
+        seed = get_experiment_seed(cfg, fallback=0)
+        seed_everything(seed, deterministic=bool(cfg.get("deterministic", False)))
 
-        # 3/4. Pre-training OR Inference
-        if needs_pretraining:
-            pre_training.run(cfg, model, data_module) # train+val dataset
+        # 2b. Optional TF32 (perf knob for transformer-heavy workloads)
+        tf32_enabled = bool(cfg.trainer.get("tf32", False))
+        if torch.cuda.is_available():
+            torch.backends.cuda.matmul.allow_tf32 = tf32_enabled
+            torch.backends.cudnn.allow_tf32 = tf32_enabled
+
+        # 3. Setup Data
+        if (not is_distributed) or dist_ctx.is_main_process:
+            log.info("Initializing Data Module...")
+
+        data_module = CausalMetaModule.from_config(cfg.data)
+
+        override_dir = cfg.get("inference", {}).get("output_dir", None)
+        if override_dir:
+            base_output_dir = Path(str(override_dir))
         else:
-            inference.run(cfg, model, data_module) # test dataset (once per test set)
+            try:
+                base_output_dir = Path(HydraConfig.get().runtime.output_dir)
+            except Exception:
+                base_output_dir = Path(os.getcwd())
 
-        if not is_distributed or dist.get_rank() == 0:
-            inference_type = "Pre-Training" if needs_pretraining else "Inference"
-            log.info(f"--- Phase 1: {inference_type} ({model_name}) ---")
-        
-        # 5. Evaluation
-        if not is_distributed or dist.get_rank() == 0:
-            log.info(f"--- Phase 2: Evaluation ({model_name}) ---")
-        evaluation.run(cfg, model, data_module) # test dataset
-    
-    if not is_distributed or dist.get_rank() == 0:
-        log.info("Pipeline Finished.")
-    
-    if use_wandb and (not is_distributed or dist.get_rank() == 0):
-        wandb.finish()
-        
-    if is_distributed:
-        dist.destroy_process_group()
+        base_output_dir.mkdir(parents=True, exist_ok=True)
+
+        model_specific_cfg = cfg.model
+        model_id = str(getattr(model_specific_cfg, "type", "model"))
+        if (not is_distributed) or dist_ctx.is_main_process:
+            log.info(f"=== Running Model: {model_id} ===")
+
+        dist_ctx.barrier()
+
+        # Initialize Logger once per run (Hydra multirun launches separate jobs per model).
+        if (not is_distributed) or dist_ctx.is_main_process:
+            if use_wandb:
+                log.info("Initializing WandB Logger...")
+                logger = WandbLogger(cfg, output_dir=str(base_output_dir))
+            else:
+                log.info("Initializing Local Logger...")
+                logger = LocalLogger()
+        else:
+            logger = LocalLogger()
+
+        try:
+            # Instantiate Model
+            model_params = {
+                k: v
+                for k, v in model_specific_cfg.items()
+                if k not in {"trainer", "inference"}
+            }
+            model = ModelFactory.create(model_params)
+
+            device = dist_ctx.device
+            model.to(device)
+
+            if is_distributed:
+                model = DDP(
+                    model,
+                    device_ids=[local_rank] if torch.cuda.is_available() else None,
+                    output_device=local_rank if torch.cuda.is_available() else None,
+                    find_unused_parameters=False,
+                )
+
+            # 5/6. Pre-training OR Inference
+            model_unwrapped = model.module if is_distributed else model
+            if model_unwrapped.needs_pretraining:
+                pre_training.run(
+                    cfg,
+                    model,
+                    data_module,
+                    logger=logger,
+                    output_dir=base_output_dir,
+                )
+                inference_type = "Pre-Training"
+            else:
+                inference.run(
+                    cfg,
+                    model_unwrapped,
+                    data_module,
+                    logger=logger,
+                    output_dir=base_output_dir,
+                )
+                inference_type = "Inference"
+
+            if (not is_distributed) or dist_ctx.is_main_process:
+                log.info(f"--- Phase 1: {inference_type} ---")
+
+            # 7. Evaluation
+            if (not is_distributed) or dist_ctx.is_main_process:
+                log.info("--- Phase 2: Evaluation ---")
+            evaluation.run(
+                cfg,
+                model,
+                data_module,
+                logger=logger,
+                output_dir=base_output_dir,
+            )
+        finally:
+            if logger is not None:
+                logger.finish()
+
+        if (not is_distributed) or dist_ctx.is_main_process:
+            log.info("Pipeline Finished.")
+    finally:
+        # Cleanup distributed context at the very end
+        try:
+            DistributedContext.cleanup()
+        except Exception:
+            pass
+
 
 if __name__ == "__main__":
     main()

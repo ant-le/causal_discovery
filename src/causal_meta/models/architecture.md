@@ -23,9 +23,9 @@ The abstract base class located in `src/causal_meta/models/base.py`.
 *   `forward(x: torch.Tensor) -> Any`:
     *   Input: `x` of shape `(Batch, Samples, Variables)`.
     *   Output: Model-specific distribution parameters (e.g., edge logits).
-*   `sample(x: torch.Tensor, n_samples: int = 1) -> torch.Tensor`:
+*   `sample(x: torch.Tensor, num_samples: int = 1) -> torch.Tensor`:
     *   Input: `x` of shape `(Batch, Samples, Variables)`.
-    *   Output: Predicted adjacency matrices `(Batch, n_samples, V, V)`.
+    *   Output: Predicted adjacency matrices `(Batch, num_samples, V, V)`.
     *   *Behavior*: 
         *   If `needs_pretraining=True`: Fast forward pass + sampling from posterior.
         *   If `needs_pretraining=False`: Triggers the optimization/sampling loop (MCMC/VI) for the specific input `x`.

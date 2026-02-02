@@ -8,7 +8,7 @@ The core architecture follows a **Configuration-Driven Pipeline** pattern:
 
 ## 2. Architecture Layers
 
-### 2.1. Datasets Layer (`src/datasets`)
+### 2.1. Datasets Layer (`src/causal_meta/datasets` / `causal_meta.datasets`)
 Responsible for defining the Data Generating Processes (DGPs).
 - **Concept: Families vs. Instances**
   - **SCMFamily:** Represents a distribution over SCMs (the "prior"). Uses **composition** to hold generation strategies (`GraphGenerator`, `MechanismFactory`).
@@ -17,11 +17,11 @@ Responsible for defining the Data Generating Processes (DGPs).
   - `generate_graph.py`: Vectorized algorithms for sampling DAGs (e.g., Erdos-Renyi, Scale-Free).
   - `generate_functions.py`: Factories for mechanism functions (Linear, MLP, etc.).
 - **Data Loading Strategy:**
-  - **Training:** Uses `MetaIterableDataset` (Infinite Stream). Implements `worker_init_fn` and rank-aware seeding for massive parallel throughput without duplication.
+  - **Training:** Uses `MetaIterableDataset` (Infinite Stream). Implements seeding logic inside `__iter__` using `get_worker_info()` (instead of `worker_init_fn`) and rank-aware offsets for massive parallel throughput without duplication.
   - **Evaluation:** Uses `MetaFixedDataset` (Map-style). Backed by a fixed list of seeds to guarantee strict reproducibility across epochs and model runs. Includes **caching** to avoid re-generating SCMs during repeated validation passes.
 - **Disjointness:** Enforced via checking structural hashes (e.g. of the adjacency matrix) to ensure O.O.D. sets do not overlap with training sets.
 
-### 2.2. Models Layer (`src/models`)
+### 2.2. Models Layer (`src/causal_meta/models` / `causal_meta.models`)
 Wraps diverse BCD algorithms into a uniform API.
 - **BaseCausalModel:** Abstract base class.
   - `train(dataset)`: Updates internal parameters.
@@ -33,17 +33,18 @@ Wraps diverse BCD algorithms into a uniform API.
   - `avici/`: Amortized Variational Inference.
   - `bayesdag/`: Explicit VI/MCMC baseline.
 
-### 2.3. Pipeline Layer (`src/pipeline`)
-Orchestrates the experiment.
-- **ExperimentRunner:**
-  1.  Reads YAML config.
-  2.  Instantiates `SCMFamily` (Train) and `SCMFamily` (Test/OOD).
-  3.  Instantiates `Model`.
-  4.  Runs Training Loop.
-  5.  Runs Evaluation Loop.
-  6.  Saves Artifacts.
+### 2.3. Runners Layer (`src/causal_meta/runners` / `causal_meta.runners`)
+Orchestrates the experiment (Hydra config -> data module -> model -> tasks).
+- **Entry point:** `causal_meta.runners.pipe`
+  1. Validates config keys early.
+  2. Sets up distributed context (optional).
+  3. Builds `CausalMetaModule` (datasets).
+  4. Instantiates `Model` via `ModelFactory`.
+  5. Runs `pre_training` **or** `inference` depending on `model.needs_pretraining`.
+  6. Runs `evaluation`.
 - **Metrics:**
-  - `eval_metrics.py`: Graph metrics (SHD, AUROC) and Data metrics (NIL, I-NIL).
+  - Graph metrics: E-SHD, E-edgeF1, E-SID, ancestor metrics, edge entropy.
+  - Likelihood proxies: `graph_nll` (edge NLL under mean posterior edge probs) and I-NIL via a Linear Gaussian scorer (heuristic for non-linear mechanisms).
 
 ## 3. Data Flow
 1.  **Initialization:** User provides `experiment.yaml`.
@@ -65,4 +66,4 @@ Orchestrates the experiment.
     - Training stream seeds derived via `base + rank * workers + worker_id`.
     - Validation seeds are fixed integers.
 - **Isolation:** Models run in isolated environments/processes if necessary.
-- **Artifacts:** All outputs saved to `artifacts/` with unique Run IDs.
+- **Artifacts:** Outputs are written under Hydra run directories (default: `experiments/{name}/{date}/{time}`), configurable via `CAUSAL_META_RUN_DIR` / `CAUSAL_META_SWEEP_DIR`.

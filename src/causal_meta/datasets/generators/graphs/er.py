@@ -3,14 +3,17 @@ from typing import Optional
 import numpy as np
 import torch
 
+
 class ErdosRenyiGenerator:
     """Vectorized Erdős-Rényi DAG sampler using torch.bernoulli."""
 
     def __init__(self, edge_prob: Optional[float] = None, *, sparsity: Optional[float] = None) -> None:
         if edge_prob is None and sparsity is None:
-            raise TypeError("Either 'edge_prob' or its alias 'sparsity' must be provided.")
+            raise TypeError(
+                "Either 'edge_prob' or its alias 'sparsity' must be provided.")
         if edge_prob is not None and sparsity is not None and edge_prob != sparsity:
-            raise ValueError("'edge_prob' and 'sparsity' must match if both are provided.")
+            raise ValueError(
+                "'edge_prob' and 'sparsity' must match if both are provided.")
 
         edge_prob = sparsity if edge_prob is None else edge_prob
         if edge_prob is None:  # pragma: no cover - defensive

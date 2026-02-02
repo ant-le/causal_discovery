@@ -14,6 +14,11 @@ from causal_meta.datasets.generators.mechanisms import (
     MechanismFactory,
     MixtureMechanismFactory,
     MLPMechanismFactory,
+    SquareMechanismFactory,
+    PeriodicMechanismFactory,
+    LogisticMapMechanismFactory,
+    GPMechanismFactory,
+    PNLMechanismFactory,
 )
 
 
@@ -94,6 +99,62 @@ class MixtureMechanismConfig:
         )
 
 
+@dataclass
+class SquareMechanismConfig:
+    weight_scale: float = 1.0
+    noise_scale: float = 0.1
+
+    def instantiate(self) -> SquareMechanismFactory:
+        return SquareMechanismFactory(
+            weight_scale=self.weight_scale, noise_scale=self.noise_scale
+        )
+
+
+@dataclass
+class PeriodicMechanismConfig:
+    weight_scale: float = 1.0
+    noise_scale: float = 0.1
+
+    def instantiate(self) -> PeriodicMechanismFactory:
+        return PeriodicMechanismFactory(
+            weight_scale=self.weight_scale, noise_scale=self.noise_scale
+        )
+
+
+@dataclass
+class LogisticMapMechanismConfig:
+    weight_scale: float = 1.0
+
+    def instantiate(self) -> LogisticMapMechanismFactory:
+        return LogisticMapMechanismFactory(weight_scale=self.weight_scale)
+
+
+@dataclass
+class GPMechanismConfig:
+    rff_dim: int = 256
+    length_scale_range: tuple[float, float] = (0.5, 2.0)
+    variance: float = 1.0
+
+    def instantiate(self) -> GPMechanismFactory:
+        return GPMechanismFactory(
+            rff_dim=self.rff_dim,
+            length_scale_range=self.length_scale_range,
+            variance=self.variance,
+        )
+
+
+@dataclass
+class PNLMechanismConfig:
+    inner_config: Optional[Instantiable] = None
+    nonlinearity_type: str = "cube"
+
+    def instantiate(self) -> PNLMechanismFactory:
+        inner_factory = self.inner_config.instantiate() if self.inner_config else None
+        return PNLMechanismFactory(
+            inner_factory=inner_factory, nonlinearity_type=self.nonlinearity_type
+        )
+
+
 # Unions for Type Hinting
 GraphConfig = Union[
     ErdosRenyiConfig, ScaleFreeConfig, SBMConfig, MixtureGraphConfig, Instantiable
@@ -102,6 +163,11 @@ MechanismConfig = Union[
     LinearMechanismConfig,
     MLPMechanismConfig,
     MixtureMechanismConfig,
+    SquareMechanismConfig,
+    PeriodicMechanismConfig,
+    LogisticMapMechanismConfig,
+    GPMechanismConfig,
+    PNLMechanismConfig,
     Instantiable,
 ]
 
@@ -140,12 +206,10 @@ class DataModuleConfig:
 
     samples_per_task: int = 128
 
-    cache_val: bool = True
-
-    cache_test: bool = True
-
     safety_checks: bool = True
 
     num_workers: int = 0
 
     pin_memory: bool = True
+
+    normalize_data: bool = True

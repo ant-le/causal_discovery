@@ -4,6 +4,7 @@ import networkx as nx
 import numpy as np
 import torch
 
+
 class ScaleFreeGenerator:
     """Barabási-Albert based DAG sampler."""
 
@@ -21,7 +22,8 @@ class ScaleFreeGenerator:
         rng: Optional[np.random.Generator] = None,
     ) -> torch.Tensor:
         if n_nodes <= self.m:
-            raise ValueError("n_nodes must be greater than m for Barabási-Albert graphs.")
+            raise ValueError(
+                "n_nodes must be greater than m for Barabási-Albert graphs.")
 
         graph = nx.barabasi_albert_graph(n=n_nodes, m=self.m, seed=seed)
         order_rng = rng if rng is not None else np.random.default_rng(seed)

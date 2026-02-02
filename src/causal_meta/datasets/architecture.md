@@ -29,7 +29,7 @@
 -   **Behavior:**
     -   Streams a potentially infinite sequence of tasks (SCMs).
     -   No fixed length (`__len__` is optional/virtual).
-    -   **Yields:** `(X, adjacency_matrix)` pairs (or just `X` depending on config).
+    -   **Yields:** a pickle-safe dict `{"seed": int, "x": Tensor, "adj": Tensor}`.
 -   **Parallelism & Seeding:**
     -   **Crucial:** Implements rank-aware seeding inside `__iter__`.
     -   On `__iter__` (called inside the worker process):
@@ -44,10 +44,12 @@
 -   **Type:** `torch.utils.data.Dataset` (Map-style)
 -   **Behavior:**
     -   Backed by a fixed list of pre-generated seeds.
-    -   **Caching Strategy:**
-        -   Supports a `cache_instances: bool` flag.
-        -   If `True`, instantiates `SCMInstance` once and stores it in memory (or disk if large) to avoid re-computation during repeated validation passes.
-    -   `__getitem__(idx)` returns the deterministic SCM (and sampled data) from `seed_list[idx]`.
+    -   `__getitem__(idx)` returns a dict `{"seed": int, "x": Tensor, "adj": Tensor}`.
+
+### 2.4 Full-SCM / Mechanism-Supervised Training (Design Note)
+To support arbitrary functional mechanisms safely on clusters (DataLoader workers), dataset items intentionally do **not** include `SCMInstance` or mechanism modules (which may be non-picklable).
+
+Instead, datasets always return `seed`, so training code can reconstruct the teacher SCM on demand via `SCMFamily.sample_task(seed)` and apply functional supervision/distillation against the ground-truth mechanisms.
 
 ### 2.3 SCMInstance (Interface)
 > The realized task object passed between components.
@@ -57,7 +59,7 @@
     -   `mechanisms`: List of Callables/Modules.
     -   `topological_order`: List[int] (Cached calculation for fast sampling).
 -   **Methods:**
-    -   `sample(n_samples: int) -> torch.Tensor`:
+    -   `sample(num_samples: int) -> torch.Tensor`:
         -   Performs ancestral sampling in topological order.
         -   **Normalization:** Handled in the `collate_fn` (not here) to align with standard PyTorch conventions and allow batch-level statistics if needed.
     -   `visualize()`: Helper for plotting graph and mechanisms.
@@ -111,4 +113,3 @@
 -   **Device Management:**
     -   Generators run on CPU (in `DataLoader` workers).
     -   Resulting `Tensor` data is pinned and transferred to GPU in the training loop.
-

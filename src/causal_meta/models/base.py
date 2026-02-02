@@ -18,37 +18,45 @@ class BaseModel(nn.Module, ABC):
     def needs_pretraining(self) -> bool:
         """
         Indicates if the model requires a meta-training phase.
-        
+
         Returns:
             True if the model is an amortized meta-learner (e.g., Avici).
             False if the model optimizes/samples per instance (e.g., MCMC, VI).
         """
         pass
 
+    @property
+    def estimates_scm(self) -> bool:
+        """
+        Indicates if the model estimates SCM parameters (functions/noise)
+        in addition to the graph structure.
+        """
+        return False
+
     @abstractmethod
     def forward(self, x: torch.Tensor) -> Any:
         """
         Forward pass of the model.
-        
+
         Args:
             x: Input data tensor of shape (Batch, Samples, Variables).
-            
+
         Returns:
             Model-specific output (e.g., logits, distribution parameters).
         """
         pass
 
     @abstractmethod
-    def sample(self, x: torch.Tensor, n_samples: int = 1) -> torch.Tensor:
+    def sample(self, x: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
         """
         Generate causal structure samples.
-        
+
         Args:
             x: Input data tensor of shape (Batch, Samples, Variables).
-            n_samples: Number of graph samples to return per batch element.
-            
+            num_samples: Number of graph samples to return per batch element.
+
         Returns:
-            Predicted adjacency matrices of shape (Batch, n_samples, Variables, Variables).
+            Predicted adjacency matrices of shape (Batch, num_samples, Variables, Variables).
         """
         pass
 

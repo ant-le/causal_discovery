@@ -1,16 +1,121 @@
 from __future__ import annotations
-from typing import Iterable, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Tuple, Union
+
 import torch
 
-def collate_fn_scm(batch: Iterable[Tuple[torch.Tensor, torch.Tensor]]) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Collate function for SCM batches that stacks and normalizes data."""
-    data, adjs = zip(*batch)
-    data_tensor = torch.stack([x.float() for x in data])
-    adj_tensor = torch.stack([a.float() for a in adjs])
+from causal_meta.datasets.utils.normalization import normalize_scm_data
 
-    flat = data_tensor.reshape(-1, data_tensor.shape[-1])
-    mean = flat.mean(dim=0, keepdim=True)
-    std = flat.std(dim=0, unbiased=False, keepdim=True).clamp_min(1e-8)
-    normalized = (data_tensor - mean) / std
+ScmItem = Mapping[str, Any]
 
-    return normalized, adj_tensor
+
+def collate_fn_scm(batch: Iterable[ScmItem], normalize: bool = True) -> Dict[str, Any]:
+    """
+    Collate function for SCM batches that stacks and normalizes data.
+
+    Expected item format:
+      {"seed": int, "data": Tensor[S, N], "adjacency": Tensor[N, N]}
+    """
+    batch_data: List[torch.Tensor] = []
+    adjacency_matrices: List[torch.Tensor] = []
+    seeds: List[int | None] = []
+
+    for item in batch:
+        if not isinstance(item, Mapping):
+             raise TypeError(f"Expected dict item in collate_fn_scm, got {type(item)}")
+        
+        seeds.append(int(item["seed"]) if "seed" in item else None)
+        batch_data.append(item["data"].float())
+        adjacency_matrices.append(item["adjacency"].float())
+
+    data_tensor = torch.stack(batch_data)
+    adjacency_tensor = torch.stack(adjacency_matrices)
+
+    if normalize:
+        data_tensor = normalize_scm_data(data_tensor)
+
+    return {
+        "seed": seeds if any(s is not None for s in seeds) else None,
+        "data": data_tensor,
+        "adjacency": adjacency_tensor,
+    }
+
+def collate_fn_interventional(batch: Iterable[Dict[str, Any]], normalize: bool = True) -> Dict[str, Any]:
+    """
+    Collate function for interventional batches. 
+    Normalizes both observational and interventional data using observational statistics.
+    """
+    items = list(batch)
+    if not items:
+        raise ValueError("collate_fn_interventional received an empty batch.")
+
+    seeds: List[int] = []
+    obs_data_list: List[torch.Tensor] = []
+    obs_adj_list: List[torch.Tensor] = []
+
+    int_target_list: List[torch.Tensor] = []
+    int_value_list: List[torch.Tensor] = []
+    int_data_list: List[torch.Tensor] = []
+    int_adj_list: List[torch.Tensor] = []
+
+    expected_num_interventions: int | None = None
+
+    for item in items:
+        seeds.append(int(item["seed"]))
+
+        obs = item["observational"]
+        obs_data = obs["data"].float()
+        obs_adj = obs["adjacency"].float()
+
+        # Stats on observational data: (S, N)
+        mean = torch.tensor(0.0)
+        std = torch.tensor(1.0)
+        if normalize:
+            mean = obs_data.mean(dim=0, keepdim=True)
+            std = obs_data.std(dim=0, unbiased=False, keepdim=True).clamp_min(1e-8)
+            obs_data = (obs_data - mean) / std
+        
+        obs_data_list.append(obs_data)
+        obs_adj_list.append(obs_adj)
+
+        interventions = item["interventions"]
+        if expected_num_interventions is None:
+            expected_num_interventions = len(interventions)
+        elif len(interventions) != expected_num_interventions:
+            raise ValueError(
+                "All items in an interventional batch must have the same number of interventions."
+            )
+
+        targets: List[int] = []
+        values: List[float] = []
+        x_ints: List[torch.Tensor] = []
+        adjs: List[torch.Tensor] = []
+
+        for int_item in interventions:
+            targets.append(int(int_item["target"]))
+            values.append(float(int_item["value"]))
+
+            x_int = int_item["data"].float()
+            if normalize:
+                x_int = (x_int - mean) / std
+            
+            x_ints.append(x_int)
+            adjs.append(int_item["adjacency"].float())
+
+        int_target_list.append(torch.tensor(targets, dtype=torch.long))
+        int_value_list.append(torch.tensor(values, dtype=torch.float32))
+        int_data_list.append(torch.stack(x_ints, dim=0))
+        int_adj_list.append(torch.stack(adjs, dim=0))
+
+    return {
+        "seed": torch.tensor(seeds, dtype=torch.long),
+        "observational": {
+            "data": torch.stack(obs_data_list, dim=0),
+            "adjacency": torch.stack(obs_adj_list, dim=0),
+        },
+        "interventions": {
+            "target": torch.stack(int_target_list, dim=0),
+            "value": torch.stack(int_value_list, dim=0),
+            "data": torch.stack(int_data_list, dim=0),
+            "adjacency": torch.stack(int_adj_list, dim=0),
+        },
+    }

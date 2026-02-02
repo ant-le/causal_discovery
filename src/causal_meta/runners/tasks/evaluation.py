@@ -1,25 +1,25 @@
 import json
 import logging
 import os
-from collections import defaultdict
-from omegaconf import DictConfig
-import torch
-import torch.distributed as dist
 from pathlib import Path
+
 import numpy as np
-import wandb
+import torch
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import DictConfig
 
 from causal_meta.datasets.data_module import CausalMetaModule
+from causal_meta.datasets.torch_datasets import MetaFixedDataset
 from causal_meta.models.base import BaseModel
-from causal_meta.runners.metrics.eval import (
-    auc_graph_scores,
-    compute_graph_metrics,
-    expected_f1_score,
-    expected_shd,
-    log_prob_graph_scores,
-)
+from causal_meta.runners.metrics.graph import Metrics
+from causal_meta.runners.metrics.scm import SCMMetrics
+from causal_meta.runners.utils.artifacts import (
+    atomic_torch_save, cache_settings, cache_suffix, find_inference_artifact,
+    prepare_graph_samples_for_cache, torch_load)
+from causal_meta.runners.utils.distributed import DistributedContext
 
 log = logging.getLogger(__name__)
+
 
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -31,116 +31,232 @@ class NpEncoder(json.JSONEncoder):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
 
-def gather_results(local_results: dict) -> dict:
-    """Gather lists of metrics from all ranks and concatenate them."""
-    if not (dist.is_available() and dist.is_initialized()):
-        return local_results
 
-    # Gather all results objects (list of dicts)
-    world_size = dist.get_world_size()
-    gathered_results = [None for _ in range(world_size)]
-    dist.all_gather_object(gathered_results, local_results)
-
-    # Merge: {metric: [val, ...]}
-    merged = defaultdict(list)
-    for res in gathered_results:
-        if res:
-            for k, v in res.items():
-                merged[k].extend(v)
-    
-    return dict(merged)
-
-def run(cfg: DictConfig, model: BaseModel, data_module: CausalMetaModule):
+def run(
+    cfg: DictConfig,
+    model: BaseModel,
+    data_module: CausalMetaModule,
+    *,
+    logger=None,
+    output_dir: Path | None = None,
+):
     # DDP Setup
-    is_distributed = dist.is_available() and dist.is_initialized()
-    rank = dist.get_rank() if is_distributed else 0
-    
+    dist_ctx = DistributedContext.current()
+    is_distributed = dist_ctx.is_distributed
+    rank = dist_ctx.rank
+
     if rank == 0:
         log.info(f"Starting evaluation: {cfg.name}")
-    
-    # Device
-    device = next(model.parameters()).device
-    
+
+    # Device (explicit models may have no parameters)
+    params = list(model.parameters())
+    device = (
+        params[0].device
+        if params
+        else (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        )
+    )
+
     # Data
     test_loaders = data_module.test_dataloader()
-    
+
     model.eval()
-    
+
     # Unwrap if DDP
     model_unwrapped = model.module if is_distributed else model
-    
+
     all_summary_metrics = {}
     all_raw_metrics = {}
 
-    n_samples = cfg.inference.get("n_samples", 100)
-    
+    n_samples = int(cfg.inference.get("n_samples", 100))
+
+    # Initialize Metrics Handlers
+    metrics_handler = Metrics(
+        metrics=[
+            "e-shd",
+            "e-edgef1",
+            "e-sid",
+            "graph_nll",
+            "edge_entropy",
+            "ancestor_f1",
+            "auc",
+        ]
+    )
+    scm_metrics_handler = SCMMetrics(metrics=["inil"])
+
+    # Determine output directory (used for optional cached inference)
+    if output_dir is None:
+        try:
+            output_dir = Path(HydraConfig.get().runtime.output_dir)
+        except Exception:
+            output_dir = Path(os.getcwd())
+    else:
+        output_dir = Path(output_dir)
+    inference_root = output_dir / "inference"
+    use_cached_inference = bool(cfg.inference.get("use_cached_inference", True))
+    cache_inference = bool(cfg.inference.get("cache_inference", True))
+    cache_compress, cache_dtype, cache_n_samples = cache_settings(cfg)
+    suffix = cache_suffix(compress=cache_compress)
+
+    def _shard_indices(n: int, rank: int, world_size: int) -> range:
+        return range(rank, n, world_size)
+
     for name, loader in test_loaders.items():
         if rank == 0:
             log.info(f"Evaluating on {name}...")
-        
-        # Local storage for this rank
-        local_metrics = defaultdict(list)
-        
-        with torch.no_grad():
-            for batch_idx, batch in enumerate(loader):
-                x, adj = batch
-                x = x.to(device)
-                adj = adj.to(device)
-                
-                # Use unwrapped model for sampling logic which might be custom
-                samples = model_unwrapped.sample(x, n_samples=n_samples)  # (Batch, n_samples, N, N)
-                samples_for_metrics = samples.permute(1, 0, 2, 3)  # (n_samples, Batch, N, N)
 
-                # Use posterior mean edge probabilities (estimated from samples)
-                probs = samples.float().mean(dim=1)
-                
-                # Metrics (single task per batch assumed, so we take index 0 or mean)
-                # compute_graph_metrics returns dict of scalars if batch=1
-                m = compute_graph_metrics(probs, adj)
-                
-                # Probabilistic metrics
-                m["e_shd"] = float(np.mean(expected_shd(adj, samples_for_metrics).cpu().numpy()))
-                m["e_f1"] = float(
-                    np.mean(expected_f1_score(adj, samples_for_metrics).cpu().numpy())
-                )
-                m["graph_log_prob"] = float(np.mean(log_prob_graph_scores(adj, samples_for_metrics)))
-                m["graph_auroc"] = float(np.mean(auc_graph_scores(adj, samples_for_metrics)))
-                
-                for k, v in m.items():
-                    local_metrics[k].append(v)
-        
-        # Sync across ranks (gather full lists)
-        final_metrics = gather_results(dict(local_metrics))
-        
+        # Retrieve family for on-the-fly interventional evaluation
+        test_families = getattr(data_module, "test_families", {}) or {}
+        family = test_families.get(name)
+
+        # Reset internal state for this dataset
+        metrics_handler.reset()
+        scm_metrics_handler.reset()
+
+        with torch.no_grad():
+            # For explicit/non-amortized models, prefer cached inference artifacts and avoid DataLoader+DistributedSampler padding.
+            if not model_unwrapped.needs_pretraining:
+                dataset: MetaFixedDataset = loader.dataset  # type: ignore[assignment]
+                for idx in _shard_indices(
+                    len(dataset), rank=rank, world_size=dist_ctx.world_size
+                ):
+                    item = dataset[idx]
+                    seed = int(item["seed"])
+                    input_data_raw, adjacency_matrix_true = (
+                        item["data"],
+                        item["adjacency"],
+                    )
+
+                    # Find cached artifact
+                    artifact_path = (
+                        find_inference_artifact(
+                            inference_root,
+                            dataset_name=name,
+                            seed=seed,
+                            prefer_compress=cache_compress,
+                        )
+                        if use_cached_inference
+                        else None
+                    )
+
+                    input_data = input_data_raw.to(device).unsqueeze(0)
+                    adjacency_matrix = adjacency_matrix_true.to(device).unsqueeze(0)
+
+                    if artifact_path is not None:
+                        artifact = torch_load(artifact_path)
+                        graph_samples = artifact["graph_samples"]  # (1, K, N, N)
+                        samples_for_metrics = graph_samples.permute(1, 0, 2, 3)
+                    else:
+                        samples = model_unwrapped.sample(
+                            input_data, num_samples=n_samples
+                        )
+                        samples_for_metrics = samples.permute(1, 0, 2, 3)
+
+                        if (
+                            cache_inference
+                            and find_inference_artifact(
+                                inference_root,
+                                dataset_name=name,
+                                seed=seed,
+                                prefer_compress=cache_compress,
+                            )
+                            is None
+                        ):
+                            out_path = inference_root / name / f"seed_{seed}{suffix}"
+                            atomic_torch_save(
+                                {
+                                    "seed": seed,
+                                    "idx": int(idx),
+                                    "graph_samples": prepare_graph_samples_for_cache(
+                                        samples.detach(),
+                                        dtype=cache_dtype,
+                                        max_samples=cache_n_samples,
+                                    ).cpu(),
+                                    "true_adj": (adjacency_matrix_true.detach() > 0.5)
+                                    .to(dtype=torch.uint8)
+                                    .cpu(),
+                                    "cache_dtype": str(cache_dtype),
+                                    "cache_n_samples": (
+                                        int(cache_n_samples)
+                                        if cache_n_samples is not None
+                                        else None
+                                    ),
+                                },
+                                out_path,
+                            )
+
+                    # Update handlers
+                    metrics_handler.update(adjacency_matrix, samples_for_metrics)
+                    if bool(getattr(model_unwrapped, "estimates_scm", False)):
+                        scm_metrics_handler.update(
+                            obs_data=input_data.squeeze(0),
+                            graph_samples=samples_for_metrics.squeeze(1),
+                            family=family,
+                            seeds=[seed],
+                            prefix=name,
+                        )
+
+            else:
+                for batch_idx, batch in enumerate(loader):
+                    input_data = batch["data"].to(device)
+                    adjacency_matrix = batch["adjacency"].to(device)
+                    seeds = batch.get("seed")
+                    if seeds is not None and hasattr(seeds, "tolist"):
+                        seeds = seeds.tolist()
+
+                    samples = model_unwrapped.sample(
+                        input_data, num_samples=n_samples
+                    )  # (Batch, n_samples, N, N)
+                    samples_for_metrics = samples.permute(
+                        1, 0, 2, 3
+                    )  # (n_samples, Batch, N, N)
+
+                    metrics_handler.update(adjacency_matrix, samples_for_metrics)
+
+                    # Batch update for SCM metrics (assuming evaluation loop is usually batch size 1)
+                    if bool(getattr(model_unwrapped, "estimates_scm", False)):
+                        scm_metrics_handler.update(
+                            obs_data=input_data.squeeze(0),
+                            graph_samples=samples_for_metrics.squeeze(1),
+                            family=family,
+                            seeds=seeds,
+                            prefix=name,
+                        )
+
+        # Compute Summary Stats (Mean + SEM) and Gather Raw Data
+        summary = metrics_handler.compute(summary_stats=True)
+        final_metrics = metrics_handler.get_raw_results()
+
+        scm_summary = scm_metrics_handler.compute(summary_stats=True)
+        scm_raw = scm_metrics_handler.get_raw_results()
+
         if rank == 0:
-            # Compute Summary Stats (Mean + SEM)
-            summary = {}
-            for k, v in final_metrics.items():
-                arr = np.array(v)
-                summary[f"{k}_mean"] = float(np.mean(arr))
-                summary[f"{k}_sem"] = float(np.std(arr, ddof=1) / np.sqrt(len(arr))) if len(arr) > 1 else 0.0
-                summary[f"{k}_std"] = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
-            
+            # Merge
+            summary.update(scm_summary)
+            for k, v in scm_raw.items():
+                final_metrics[k] = v
+
             all_summary_metrics[name] = summary
             all_raw_metrics[name] = final_metrics
-            
+
             log.info(f"Results for {name}: {summary}")
-            
-            if wandb.run:
-                # Log means to WandB
-                wandb.log({f"test/{name}/{k}": v for k, v in summary.items()})
+
+            if logger:
+                # Log means to Logger
+                logger.log_metrics({f"test/{name}/{k}": v for k, v in summary.items()})
 
     # Save
     if rank == 0:
-        output_dir = Path(os.getcwd()) / "results"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
+        results_dir = output_dir / "results"
+        results_dir.mkdir(parents=True, exist_ok=True)
+
         # Save Summary
-        with open(output_dir / "metrics_summary.json", "w") as f:
+        with open(results_dir / "metrics_summary.json", "w") as f:
             json.dump(all_summary_metrics, f, cls=NpEncoder, indent=4)
-            
+
         # Save Raw (for Box Plots)
-        with open(output_dir / "metrics_raw.json", "w") as f:
+        with open(results_dir / "metrics_raw.json", "w") as f:
             json.dump(all_raw_metrics, f, cls=NpEncoder, indent=4)
-        
-        log.info(f"Metrics saved to {output_dir}")
+
+        log.info(f"Metrics saved to {results_dir}")

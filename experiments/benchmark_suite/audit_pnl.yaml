@@ -1,0 +1,60 @@
+# @package _global_
+name: "audit_pnl"
+
+defaults:
+  - train_competence
+  - _self_
+
+data:
+  test_families:
+    # -----------------------------------------------------------------------
+    # 1. PNL - Cubic
+    # -----------------------------------------------------------------------
+    ood_pnl_cube:
+      name: ood_pnl_cube
+      n_nodes: 20
+      graph_cfg:
+        type: er
+        sparsity: 0.2
+      mech_cfg:
+        type: pnl
+        nonlinearity_type: cube
+        inner_config:
+          type: linear
+    
+    # -----------------------------------------------------------------------
+    # 2. PNL - Sigmoid
+    # -----------------------------------------------------------------------
+    ood_pnl_sigmoid:
+      name: ood_pnl_sigmoid
+      n_nodes: 20
+      graph_cfg:
+        type: er
+        sparsity: 0.2
+      mech_cfg:
+        type: pnl
+        nonlinearity_type: sigmoid
+        inner_config:
+          type: linear
+
+    # -----------------------------------------------------------------------
+    # 3. PNL - Tanh
+    # -----------------------------------------------------------------------
+    ood_pnl_tanh:
+      name: ood_pnl_tanh
+      n_nodes: 20
+      graph_cfg:
+        type: er
+        sparsity: 0.2
+      mech_cfg:
+        type: pnl
+        nonlinearity_type: tanh
+        inner_config:
+          type: linear
+
+hydra:
+  run:
+    dir: ${oc.env:CAUSAL_META_RUN_DIR,experiments/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}}
+  sweep:
+    dir: ${oc.env:CAUSAL_META_SWEEP_DIR,experiments/${name}/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}}
+    subdir: ${hydra.job.num}

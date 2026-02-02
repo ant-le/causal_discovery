@@ -8,6 +8,7 @@ from causal_meta.datasets.generators.graphs import (
     ScaleFreeGenerator,
 )
 from causal_meta.datasets.generators.mechanisms import (
+    GPMechanismFactory,
     LinearMechanismFactory,
     MLPMechanismFactory,
 )
@@ -19,7 +20,7 @@ def test_scm_instance_sampling_shape() -> None:
     family = SCMFamily(n_nodes=6, graph_generator=generator, mechanism_factory=factory)
 
     instance = family.sample_task(seed=7)
-    samples = instance.sample(n_samples=5)
+    samples = instance.sample(num_samples=5)
 
     assert samples.shape == (5, 6)
     assert torch.isfinite(samples).all()
@@ -28,6 +29,22 @@ def test_scm_instance_sampling_shape() -> None:
 def test_sample_task_seed_reproducibility() -> None:
     generator = ErdosRenyiGenerator(edge_prob=0.3)
     factory = LinearMechanismFactory(weight_scale=0.5)
+    family = SCMFamily(n_nodes=5, graph_generator=generator, mechanism_factory=factory)
+
+    instance_a = family.sample_task(seed=123)
+    instance_b = family.sample_task(seed=123)
+
+    assert torch.equal(instance_a.adjacency_matrix, instance_b.adjacency_matrix)
+
+    for mech_a, mech_b in zip(instance_a.mechanisms, instance_b.mechanisms):
+        for key, tensor_a in mech_a.state_dict().items():
+            tensor_b = mech_b.state_dict()[key]
+            assert torch.allclose(tensor_a, tensor_b)
+
+
+def test_gp_mechanism_task_seed_reproducibility() -> None:
+    generator = ErdosRenyiGenerator(edge_prob=0.3)
+    factory = GPMechanismFactory(rff_dim=32, length_scale_range=(0.5, 1.0), variance=1.0)
     family = SCMFamily(n_nodes=5, graph_generator=generator, mechanism_factory=factory)
 
     instance_a = family.sample_task(seed=123)

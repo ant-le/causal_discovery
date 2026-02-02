@@ -1,3 +1,4 @@
+# @package _global_
 name: "example_experiment"
 
 logger:
@@ -37,7 +38,6 @@ data:
   seeds_test: [100, 101, 102]
   base_seed: 0
   samples_per_task: 128
-  cache_test: true
   safety_checks: true
   num_workers: 0
   pin_memory: true
@@ -66,7 +66,7 @@ inference:
 
 hydra:
   run:
-    dir: experiments/${name}
+    dir: ${oc.env:CAUSAL_META_RUN_DIR,experiments/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}}
   sweep:
-    dir: experiments/${name}/multirun
+    dir: ${oc.env:CAUSAL_META_SWEEP_DIR,experiments/${name}/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}}
     subdir: ${hydra.job.num}

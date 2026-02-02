@@ -1,15 +1,13 @@
-refactor(datasets): restructure utils and generators into subpackages
+feat(refactor): address medium priority items and cleanup
 
-- Split `utils.py` and `analysis.py` into `utils/` package:
-  - `collate.py`: Batch collation.
-  - `hashing.py`: Graph hashing.
-  - `stats.py`: Statistical analysis helper functions.
-  - `visualization.py`: Plotting functions.
-- Split `generators/graph.py` into `generators/graphs/` package:
-  - `base.py`, `er.py`, `sf.py`, `sbm.py`.
-- Split `generators/mechanisms.py` into `generators/mechanisms/` package:
-  - `base.py`, `linear.py`, `mlp.py`.
-- Updated all imports in `src` and `tests`.
-- Verified with `pytest`.
+- Consolidated graph metrics: moved `log_prob_graph_scores` to `metrics/graph.py` and removed `runners/graph_metrics.py`.
+- Refactored `collate_fn_scm`: removed legacy tuple support, enforcing dictionary input.
+- Documentation:
+  - Renamed old README to `docs/PAPER_IDEAS.md`.
+  - Created new `README.md` with installation and usage instructions.
+  - Added `docs/PROFILING.md` checklist.
+- Logging: Added lightweight environment report on run start.
+- Fixed `GradScaler` to use the modern `torch.amp` API.
+- Updated `TODO.md` to reflect completed tasks and verified with `pytest`.
 
-This refactoring prepares the codebase for adding complex mechanisms (GPCDE) and O.O.D. generators without cluttering single files.
+Closes: #TODO-MediumPriority, #TODO-Blockers, #TODO-HighPriority

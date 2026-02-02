@@ -1,0 +1,27 @@
+from typing import Any, Dict, Optional, Protocol
+
+
+class BaseLogger(Protocol):
+    """
+    Interface for experiment loggers (e.g., WandB, Local/Console).
+    """
+
+    def log_metrics(
+        self, metrics: Dict[str, float], step: Optional[int] = None
+    ) -> None:
+        """
+        Log a dictionary of scalar metrics.
+        """
+        ...
+
+    def log_hyperparams(self, params: Dict[str, Any]) -> None:
+        """
+        Log configuration/hyperparameters.
+        """
+        ...
+
+    def finish(self) -> None:
+        """
+        Clean up resources (e.g., close connections, save files).
+        """
+        ...

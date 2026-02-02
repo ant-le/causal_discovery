@@ -4,6 +4,7 @@ import networkx as nx
 import numpy as np
 import torch
 
+
 class SBMGenerator:
     """Stochastic Block Model DAG sampler."""
 
@@ -28,13 +29,16 @@ class SBMGenerator:
             raise ValueError("n_nodes must be at least as large as n_blocks.")
 
         base_size, remainder = divmod(n_nodes, self.n_blocks)
-        block_sizes = [base_size + (1 if i < remainder else 0) for i in range(self.n_blocks)]
+        block_sizes = [base_size + (1 if i < remainder else 0)
+                       for i in range(self.n_blocks)]
         probabilities = [
-            [self.p_intra if i == j else self.p_inter for j in range(self.n_blocks)]
+            [self.p_intra if i ==
+                j else self.p_inter for j in range(self.n_blocks)]
             for i in range(self.n_blocks)
         ]
 
-        graph = nx.stochastic_block_model(block_sizes, probabilities, seed=seed)
+        graph = nx.stochastic_block_model(
+            block_sizes, probabilities, seed=seed)
         order_rng = rng if rng is not None else np.random.default_rng(seed)
         order = order_rng.permutation(n_nodes)
         order_position = {node: idx for idx, node in enumerate(order)}

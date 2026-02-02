@@ -24,10 +24,11 @@ def test_erdos_renyi_generator_supports_sparsity_alias() -> None:
 
 def test_collate_fn_normalizes_batch() -> None:
     batch = [
-        (torch.tensor([[1.0, 2.0], [3.0, 4.0]]), torch.zeros(2, 2)),
-        (torch.tensor([[5.0, 6.0], [7.0, 8.0]]), torch.ones(2, 2)),
+        {"seed": 1, "data": torch.tensor([[1.0, 2.0], [3.0, 4.0]]), "adjacency": torch.zeros(2, 2)},
+        {"seed": 2, "data": torch.tensor([[5.0, 6.0], [7.0, 8.0]]), "adjacency": torch.ones(2, 2)},
     ]
-    normalized, adjs = collate_fn_scm(batch)
+    out = collate_fn_scm(batch)
+    normalized, adjs = out["data"], out["adjacency"]
     flat = normalized.reshape(-1, normalized.shape[-1])
     assert torch.allclose(flat.mean(dim=0), torch.zeros(2), atol=1e-6)
     assert torch.allclose(flat.std(dim=0, unbiased=False), torch.ones(2), atol=1e-6)
@@ -37,21 +38,23 @@ def test_collate_fn_normalizes_batch() -> None:
 def test_meta_iterable_dataset_yields_tensors() -> None:
     family = _simple_family(n_nodes=4)
     dataset = MetaIterableDataset(family, base_seed=0, samples_per_task=5)
-    x, adj = next(iter(dataset))
+    item = next(iter(dataset))
+    x, adj = item["data"], item["adjacency"]
     assert isinstance(x, torch.Tensor)
     assert isinstance(adj, torch.Tensor)
     assert x.shape == (5, 4)
     assert adj.shape == (4, 4)
 
 
-def test_meta_fixed_dataset_is_deterministic_and_caches() -> None:
+def test_meta_fixed_dataset_is_deterministic() -> None:
     family = _simple_family(n_nodes=3)
-    dataset = MetaFixedDataset(family, seeds=[42], cache=True, samples_per_task=6)
-    x1, adj1 = dataset[0]
-    x2, adj2 = dataset[0]
+    dataset = MetaFixedDataset(family, seeds=[42], samples_per_task=6)
+    item1 = dataset[0]
+    item2 = dataset[0]
+    x1, adj1 = item1["data"], item1["adjacency"]
+    x2, adj2 = item2["data"], item2["adjacency"]
     assert torch.allclose(x1, x2)
     assert torch.equal(adj1, adj2)
-    assert 42 in dataset._cache
 
 
 def test_causal_meta_module_initializes_and_sets_datasets() -> None:
@@ -157,7 +160,8 @@ def test_train_dataloader_iterates_with_collate_fn() -> None:
     module = CausalMetaModule.from_config(cfg)
     train_loader = module.train_dataloader()
 
-    x, adj = next(iter(train_loader))
+    batch = next(iter(train_loader))
+    x, adj = batch["data"], batch["adjacency"]
     assert x.shape == (1, 8, 4)
     assert adj.shape == (1, 4, 4)
 
