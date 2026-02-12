@@ -102,7 +102,7 @@
         </div>
     </div>
     <hr />
-    <small style="font-size: 0.7em;">
+    <small class="license-text">
         © {currentYear} Anton Lechuga. Code licensed under the {licenseType} License.
         Built with
         <a href="https://svelte.dev/" target="_blank" rel="noopener noreferrer"
@@ -130,7 +130,11 @@
         margin-bottom: 1rem;
     }
     p > a {
-        font-size: 0.8em;
+        font-size: 0.92em;
+    }
+
+    .license-text {
+        font-size: 0.88em;
     }
 
     @media (min-width: 768px) {

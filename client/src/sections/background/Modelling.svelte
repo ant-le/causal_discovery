@@ -3,39 +3,47 @@
 </script>
 
 <section>
-    <p>
-        The project treats causal discovery as posterior inference over SCMs,
-        not as a single graph prediction task.
-    </p>
-
     <article>
-        <header>Model Factorization</header>
+        <header>Modeling Objective</header>
+        <p>
+            The benchmark treats causal discovery as posterior inference over
+            SCM hypotheses, not as a single graph prediction problem.
+        </p>
         <Math
             expression={"p(D, G, \Theta) = p(D \mid G, \Theta)\,p(G, \Theta)"}
             inline={false}
         />
         <p>
             Here, <Math expression="G" /> denotes the DAG and
-            <Math expression="\Theta" /> the mechanism parameters. Inference
-            targets <Math expression="p(G, \Theta \mid D)" />.
+            <Math expression="\Theta" /> mechanism parameters; inference targets
+            <Math expression="p(G, \Theta \mid D)" />.
         </p>
     </article>
 
     <article>
-        <header>Why This Matters in Practice</header>
+        <header>Evaluation Consequences</header>
         <ul>
             <li>
-                Finite data often leaves several plausible graphs; posterior
-                uncertainty should be preserved.
+                Finite data typically leaves multiple plausible causal
+                structures.
             </li>
             <li>
-                Shift robustness depends on mechanism assumptions, not only edge
-                recovery.
+                Robustness under shift depends on mechanism assumptions, not only
+                edge recovery.
             </li>
             <li>
-                Evaluation therefore combines structure metrics with
-                intervention-aware diagnostics.
+                Benchmarking therefore combines graph metrics and
+                intervention-aware posterior diagnostics.
             </li>
         </ul>
     </article>
+
+    <details>
+        <summary><strong>Modeling Assumptions (compact)</strong></summary>
+        <ul>
+            <li>Acyclic structural assignments induce a valid causal graph.</li>
+            <li>Priors encode structure and mechanism inductive bias.</li>
+            <li>Likelihood terms link SCM candidates to observed datasets.</li>
+        </ul>
+    </details>
 </section>

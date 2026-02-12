@@ -3,32 +3,39 @@
 </script>
 
 <section>
-    <p>
-        <strong>RQ2</strong> focuses on moving from graph-only predictions toward
-        richer posterior objects that better reflect uncertainty about both
-        structure and mechanisms.
-    </p>
+    <article>
+        <header>RQ2: Full-SCM Approximation</header>
+        <p>
+            <strong>RQ2</strong> moves from graph-only outputs toward richer
+            posterior objects that reflect uncertainty over both graph structure
+            and mechanisms.
+        </p>
+    </article>
 
-    <ul>
-        <li>
-            Keep the model output Bayesian: calibrated uncertainty is as
-            important as mean performance.
-        </li>
-        <li>
-            Evaluate how runtime and memory costs grow when approximating richer
-            posterior families <Cite key="bcnp" />.
-        </li>
-        <li>
-            Preserve graph-level quality while extending inference objectives to
-            better support downstream intervention analysis <Cite
-                key="evaluation"
-            />.
-        </li>
-    </ul>
+    <article>
+        <header>What Changes in Practice</header>
+        <ul>
+            <li>
+                Calibrated uncertainty remains a first-class target, not only
+                average score.
+            </li>
+            <li>
+                Runtime and memory growth must be measured when posterior
+                families become richer <Cite key="bcnp" />.
+            </li>
+            <li>
+                Graph-level quality should be preserved while expanding support
+                for intervention-centric evaluation <Cite key="evaluation" />.
+            </li>
+        </ul>
+    </article>
 
-    <p>
-        This framing follows the theory and evaluation concerns summarized in
-        the project notes under <code>paper/markdown/keep_both</code> and
-        <code>paper/markdown/keep_rq2</code>.
-    </p>
+    <article>
+        <header>Takeaway</header>
+        <p>
+            The objective is not only to predict plausible edges, but to produce
+            posterior information that remains useful for downstream decisions
+            under uncertainty.
+        </p>
+    </article>
 </section>

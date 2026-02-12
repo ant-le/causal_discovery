@@ -1,33 +1,43 @@
 <script lang="ts">
     import Cite from "../../lib/Cite.svelte";
+    import ConvergenceSignals from "../../lib/ConvergenceSignals.svelte";
 </script>
 
 <section>
-    <p>
-        GPU acceleration is critical for practical Bayesian inference when many
-        posterior samples, chains, or datasets must be processed.
-    </p>
+    <article>
+        <header>Acceleration Goal</header>
+        <p>
+            GPU acceleration is essential when Bayesian workflows require many
+            posterior samples, chains, or task evaluations.
+        </p>
+    </article>
 
-    <ul>
-        <li>
-            Parallel hardware enables chain-level and batch-level speedups for
-            gradient-based MCMC workflows <Cite key="gpuMcmc" />.
-        </li>
-        <li>
-            Vectorized tensor operations in PyTorch reduce Python overhead and
-            improve throughput.
-        </li>
-        <li>
-            Benchmark quality still depends on diagnostics, not raw speed:
-            short-chain strategies must be paired with robust convergence checks <Cite
-                key="shortChains"
-            />.
-        </li>
-    </ul>
+    <article>
+        <header>What Scales</header>
+        <ul>
+            <li>
+                Parallel hardware enables chain-level and batch-level speedups
+                for gradient-based MCMC workflows <Cite key="gpuMcmc" />.
+            </li>
+            <li>
+                Vectorized tensor execution reduces Python overhead and improves
+                throughput.
+            </li>
+            <li>
+                Distributed runtime controls keep behavior consistent across
+                single-GPU and multi-process runs.
+            </li>
+        </ul>
+    </article>
 
-    <p>
-        In this repository, distributed execution and device placement are
-        managed centrally in <code>src/causal_meta/main.py</code> and
-        <code>src/causal_meta/runners/utils/distributed.py</code>.
-    </p>
+    <article>
+        <header>Quality Guardrails</header>
+        <p>
+            Speed is not sufficient on its own. Short-chain strategies still
+            require robust convergence diagnostics and stability checks to remain
+            scientifically reliable <Cite key="shortChains" />.
+        </p>
+    </article>
+
+    <ConvergenceSignals />
 </section>

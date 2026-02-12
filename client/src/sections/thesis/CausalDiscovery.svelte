@@ -1,38 +1,49 @@
 <script lang="ts">
     import Cite from "../../lib/Cite.svelte";
     import Math from "../../lib/Math.svelte";
+    import BenchmarkOutputs from "../../lib/BenchmarkOutputs.svelte";
+    import MetricCatalog from "../../lib/MetricCatalog.svelte";
 </script>
 
 <section>
-    <p>
-        The pipeline implements Bayesian causal discovery as a configurable
-        sequence: config validation, dataset construction, model dispatch,
-        pre-training or explicit inference, and evaluation.
-    </p>
+    <article>
+        <header>Method Objective</header>
+        <p>
+            The thesis pipeline implements Bayesian causal discovery as a
+            configurable sequence: setup, data construction, model dispatch,
+            inference, and evaluation.
+        </p>
 
-    <Math
-        expression={"p(G,\\Theta\\mid D) \\propto p(D\\mid G,\\Theta)\\,p(G,\\Theta)"}
-        inline={false}
-    />
+        <Math
+            expression={"p(G,\\Theta\\mid D) \\propto p(D\\mid G,\\Theta)\\,p(G,\\Theta)"}
+            inline={false}
+        />
+    </article>
 
-    <ul>
-        <li>
-            <code>src/causal_meta/main.py</code> orchestrates distributed setup,
-            logging, task routing, and teardown.
-        </li>
-        <li>
-            <code>src/causal_meta/datasets/</code> builds reproducible
-            train/val/test families with rank-aware sampling.
-        </li>
-        <li>
-            <code>src/causal_meta/models/</code> exposes a common interface for
-            Avici, BCNP, DiBS, and BayesDAG <Cite key="avici" /><Cite
-                key="bcnp"
-            /><Cite key="dibs" /><Cite key="bayesdag" />.
-        </li>
-        <li>
-            <code>src/causal_meta/runners/metrics/</code> provides graph and SCM
-            metrics used in benchmark reports.
-        </li>
-    </ul>
+    <article>
+        <header>Execution Stages</header>
+        <ul>
+            <li>
+                A runtime layer manages distributed setup, logging, routing, and
+                teardown.
+            </li>
+            <li>
+                Dataset modules generate reproducible train/validation/test task
+                families.
+            </li>
+            <li>
+                A shared model interface supports Avici, BCNP, DiBS, and
+                BayesDAG <Cite key="avici" /><Cite key="bcnp" /><Cite
+                    key="dibs"
+                /><Cite key="bayesdag" />.
+            </li>
+            <li>
+                Evaluation combines graph-focused and SCM-focused reporting.
+            </li>
+        </ul>
+    </article>
+
+    <BenchmarkOutputs />
+
+    <MetricCatalog />
 </section>

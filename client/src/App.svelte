@@ -19,9 +19,13 @@
 
     // Define Color Theme (global)
     let theme = $state<"light" | "dark">("dark");
+
+    $effect(() => {
+        document.documentElement.setAttribute("data-theme", theme);
+    });
+
     function toggleTheme() {
         theme = theme === "dark" ? "light" : "dark";
-        document.documentElement.setAttribute("data-theme", theme);
     }
 </script>
 

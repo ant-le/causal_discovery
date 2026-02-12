@@ -165,4 +165,24 @@
     a:hover {
         text-decoration: none;
     }
+
+    nav {
+        min-height: 3.4rem;
+    }
+
+    nav a {
+        font-weight: 500;
+        letter-spacing: 0.01em;
+    }
+
+    @media (max-width: 700px) {
+        nav ul {
+            gap: 0.1rem;
+        }
+
+        nav a {
+            padding-inline: 0.45rem;
+            font-size: 0.88rem;
+        }
+    }
 </style>

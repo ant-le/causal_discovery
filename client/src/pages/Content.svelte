@@ -102,51 +102,62 @@
 </script>
 
 <svelte:window bind:innerWidth />
-<div class="container">
-    <Sidebar {pageMetaData} {pageState} {updatePageState} {updateSectionState} {isMobile} />
-    {#key pageState}
-        <div
-            class="content-wrapper"
-            in:fly={{ x: 50, duration: 300, delay: 300 }}
-            out:fade={{ duration: 250 }}
-        >
-            <PageTitle title={sectionState} />
-            {#if CurrentSection}
-                <CurrentSection />
-            {:else}
-                <p>This section is currently being prepared.</p>
-            {/if}
-            <Sources sources={sectionSources} />
-            <Bibliography {citedKeys} />
-        </div>
-    {/key}
-</div>
+<main class="container-fluid content-shell">
+    <div class="grid content-grid">
+        <Sidebar
+            {pageMetaData}
+            {pageState}
+            {sectionState}
+            {updatePageState}
+            {updateSectionState}
+            {isMobile}
+        />
+        {#key pageState}
+            <section
+                class="content-wrapper"
+                in:fly={{ x: 50, duration: 300, delay: 300 }}
+                out:fade={{ duration: 250 }}
+            >
+                <PageTitle title={sectionState} />
+                {#if CurrentSection}
+                    <CurrentSection />
+                {:else}
+                    <p>This section is currently being prepared.</p>
+                {/if}
+                <Sources sources={sectionSources} />
+                <Bibliography {citedKeys} />
+            </section>
+        {/key}
+    </div>
+</main>
 
 <style>
-    .container {
-        display: flex;
-        flex-direction: row;
-        overflow: hidden;
+    .content-shell {
+        overflow-x: clip;
+        padding-inline: clamp(0.8rem, 2vw, 2rem);
+    }
+
+    .content-grid {
+        grid-template-columns: minmax(0, 1fr);
+        align-items: start;
+        column-gap: clamp(1.25rem, 2vw, 2.5rem);
     }
 
     .content-wrapper {
-        width: 100%;
+        min-width: 0;
+        max-width: 76rem;
+        padding-right: clamp(0.25rem, 1vw, 1.5rem);
     }
 
-    /* --- Desktop Styles --- */
     @media (min-width: 769px) {
-        .content-wrapper {
-            margin-left: 250px;
-            padding-right: 4em;
+        .content-grid {
+            grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
         }
     }
 
-    /* --- Mobile Styles --- */
-    /* This handles the layout when the sidebar is not fixed */
     @media (max-width: 768px) {
-        .container {
-            display: flex;
-            flex-direction: column;
+        .content-wrapper {
+            padding-right: 0.1rem;
         }
     }
 </style>

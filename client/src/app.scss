@@ -4,12 +4,49 @@
   $enable-semantic-container: true
 );
 
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap");
+
+:root {
+  --ui-font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  --display-font-family:
+    "Source Serif 4", "Iowan Old Style", "Palatino Linotype", serif;
+  --pico-font-family: var(--ui-font-family);
+}
+
 #app {
+  width: 100%;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--display-font-family);
+  letter-spacing: 0.01em;
+}
+
+p,
+li,
+small,
+a,
+button,
+summary {
+  font-size: clamp(0.96rem, 0.89rem + 0.2vw, 1.06rem);
+  line-height: 1.62;
+}
+
+nav a,
+aside a,
+button,
+summary {
+  font-family: var(--ui-font-family);
+}
+
 section {
-  margin-top: 2.5rem;
+  margin-top: clamp(1.5rem, 2vw, 2.5rem);
 }

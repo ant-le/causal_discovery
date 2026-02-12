@@ -2,49 +2,43 @@
     import Math from "../../lib/Math.svelte";
 </script>
 
-<section id="entropy">
-    <p>
-        When talking about entropy, we operate on probability distributions. So
-        we first fix a sample space and two random variables:
+<section>
+    <article>
+        <header>Appendix Goal</header>
+        <p>
+            Information-theoretic quantities summarize uncertainty and mismatch
+            between distributions, which is useful for posterior comparison.
+        </p>
+    </article>
 
-        <Math expression={"(\\Omega, \\Alpha, \\mathbb{P})"} inline={false} />
-        <Math expression={"X:\\Omega \\rightarrow \\mathbb{R}"} inline={false} />
-        <Math expression={"Y:\\Omega \\rightarrow \\mathbb{R}"} inline={false} />
-    Next, we define probability distributions on these random variables and 
-        fix them:
-        <Math expression={"P=\\mathbb{P}_X"} inline={false} />
-        <Math expression={"Q=\\mathbb{P}_Y"} inline={false} />
-        The probability mass functions of the distributions are given by:
-        <Math expression={"(p_x)_{x \\in X(\\Omega)}, \\quad (q_x)_{x \\in X(\\Omega)}"} inline={false} />
+    <article>
+        <header>Core Quantities</header>
+        <Math expression={"H(P)=-\\sum_x p_x \\log p_x"} inline={false} />
+        <Math expression={"H(P,Q)=-\\sum_x p_x \\log q_x"} inline={false} />
+        <Math
+            expression={"D_{KL}(P\\|Q)=\\sum_x p_x \\log \\left(\\frac{p_x}{q_x}\\right)"}
+            inline={false}
+        />
+    </article>
 
-    </p>
-    <p>
-        When we only have a single probability distribution present, the entropy
-        the <strong>entropy</strong> of that distribution is given by:
-    </p>
-    <Math
-        expression={"H(P)=-\\sum_{x\\in X(\\Omega)}{p_x \\ln (p_x)}"}
-        inline={false}
-    />
-</section>
+    <details>
+        <summary><strong>Interpretation</strong></summary>
+        <ul>
+            <li>Entropy measures uncertainty within one distribution.</li>
+            <li>Cross-entropy measures coding loss under a reference model.</li>
+            <li>
+                KL divergence measures directional mismatch between candidate and
+                target distributions.
+            </li>
+        </ul>
+    </details>
 
-<section id="cross-entropy">
-    <p>
-        Next, if there is a second distribution present which shows the ground
-        truth, we can compare it with the <strong>cross-entropy</strong>:
-    </p>
-    <Math
-        expression={"H(P,Q)=-\\sum_{x \\in X(\\Omega)} p_x \\ln q_x"}
-        inline={false}
-    />
-</section>
-
-<section id="kl-divergence">
-    <p>When comparing the entropy to the cross-entropy, we arrive at</p>
-    <Math
-        expression={` \\begin{align*} D_{KL}(P \\mid \\mid Q) &=H(P,Q) - H(P) \\\\ &=\\sum_{x \\in X(\\Omega)} p_x \\ln (p_x)
-        - \\sum_{x \\in X(\\Omega)} p_x \\ln (q_x)\\\\ &=\\sum_{x \\in X(\\Omega)} p_x \\ln \\left(\\frac{p_x}{q_x}\\right)
-        \\end{align*} `}
-        inline={false}
-    />
+    <details>
+        <summary><strong>Use in This Project</strong></summary>
+        <p>
+            These quantities motivate posterior-sensitive evaluation: two methods
+            can have similar edge recovery while assigning substantially
+            different uncertainty mass over plausible causal mechanisms.
+        </p>
+    </details>
 </section>

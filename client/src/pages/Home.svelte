@@ -130,22 +130,24 @@
 <style>
     .background-particles {
         position: fixed;
-        left: 0;
-        width: 100%;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
         z-index: -2;
     }
 
     section {
-        margin-top: 10vh;
+        margin-top: clamp(3rem, 9vh, 6rem);
         display: flex;
         justify-content: center;
         align-items: center;
+        padding: 0 1rem;
     }
 
     .round {
         position: relative;
-        max-width: 480px;
-        margin: 5vh auto;
+        width: min(100%, 31rem);
+        margin: 4vh auto;
         border-radius: 50%;
         aspect-ratio: 1 / 1;
         display: flex;
@@ -156,6 +158,15 @@
         justify-content: center;
         border: 2px solid;
         transition: border-color 0.3s ease;
+        padding: clamp(1rem, 2.5vw, 2rem);
+    }
+
+    @media (max-width: 600px) {
+        .round {
+            border-radius: 2.5rem;
+            aspect-ratio: auto;
+            min-height: 20rem;
+        }
     }
 
     @keyframes rotate {

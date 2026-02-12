@@ -4,6 +4,7 @@
     interface Props {
         pageMetaData: PageMetaData;
         pageState: string;
+        sectionState: string;
         updatePageState: (newstate: string) => void;
         updateSectionState: (newstate: string) => void;
         isMobile: boolean;
@@ -11,6 +12,7 @@
     let {
         pageMetaData,
         pageState,
+        sectionState,
         updatePageState,
         updateSectionState,
         isMobile,
@@ -19,99 +21,140 @@
     let sectionMetaData: SectionsData = $derived(pageMetaData[pageState] ?? {});
 </script>
 
-{#if isMobile}
-    <nav aria-label="breadcrumb">
-        <ul>
-            {#each Object.keys(pageMetaData) as title}
-                <li>
-                    <a
-                        style="font-size: 13px;"
-                        class:secondary={pageState !== title}
-                        href={title}
-                        onclick={(e) => {
-                            e.preventDefault();
-                            updatePageState(title);
-                        }}
-                        >{title}
-                    </a>
-                </li>
-            {/each}
-        </ul>
-    </nav>
-    <aside style="margin-top:0; margin-bottom: 2em;">
-        <nav>
-            <h3>Contents</h3>
+<div class="sidebar-panel">
+    {#if isMobile}
+        <nav aria-label="Section groups" class="group-nav">
             <ul>
-                {#each Object.keys(sectionMetaData) as title}
+                {#each Object.keys(pageMetaData) as pageTitle}
                     <li>
                         <a
-                            style="font-size: 12px;"
-                            class="secondary"
-                            href="#{title}"
+                            class="mobile-page-link"
+                            class:secondary={pageState !== pageTitle}
+                            aria-current={pageState === pageTitle ? "page" : undefined}
+                            href={pageTitle}
                             onclick={(e) => {
                                 e.preventDefault();
-                                updateSectionState(title);
+                                updatePageState(pageTitle);
                             }}
-                            >{title}
+                            >{pageTitle}
                         </a>
                     </li>
                 {/each}
             </ul>
         </nav>
-    </aside>
-{:else}
-    <aside>
-        <nav>
-            <h3>On this page</h3>
-            {#each Object.entries(pageMetaData) as [title, pageData]}
-                <details open={pageState === title}>
-                    <summary>
-                        <a
-                            class:secondary={pageState !== title}
-                            href={title}
-                            onclick={(e) => {
-                                e.preventDefault();
-                                updatePageState(title);
-                            }}
-                            >{title}
-                        </a>
-                    </summary>
-                    <ul>
-                        {#each Object.keys(pageData) as title}
-                            <li>
-                                <a
-                                    class="secondary"
-                                    href="#{title}"
-                                    onclick={(e) => {
-                                        e.preventDefault();
-                                        updateSectionState(title);
-                                    }}
-                                    >{title}
-                                </a>
-                            </li>
-                        {/each}
-                    </ul>
-                </details>
-            {/each}
-        </nav>
-    </aside>
-{/if}
+
+        <aside class="sections-panel">
+            <nav aria-label="Page contents">
+                <h3>Contents</h3>
+                <ul>
+                    {#each Object.keys(sectionMetaData) as sectionTitle}
+                        <li>
+                            <a
+                                class="mobile-section-link"
+                                class:secondary={sectionState !== sectionTitle}
+                                aria-current={sectionState === sectionTitle
+                                    ? "page"
+                                    : undefined}
+                                href="#{sectionTitle}"
+                                onclick={(e) => {
+                                    e.preventDefault();
+                                    updateSectionState(sectionTitle);
+                                }}
+                                >{sectionTitle}
+                            </a>
+                        </li>
+                    {/each}
+                </ul>
+            </nav>
+        </aside>
+    {:else}
+        <aside class="sections-panel">
+            <nav aria-label="On this page">
+                <h3>On this page</h3>
+                {#each Object.entries(pageMetaData) as [pageTitle, pageData]}
+                    <details open={pageState === pageTitle}>
+                        <summary>
+                            <a
+                                class:secondary={pageState !== pageTitle}
+                                aria-current={pageState === pageTitle
+                                    ? "page"
+                                    : undefined}
+                                href={pageTitle}
+                                onclick={(e) => {
+                                    e.preventDefault();
+                                    updatePageState(pageTitle);
+                                }}
+                                >{pageTitle}
+                            </a>
+                        </summary>
+                        <ul>
+                            {#each Object.keys(pageData) as sectionTitle}
+                                <li>
+                                    <a
+                                        class:secondary={!(pageState ===
+                                            pageTitle &&
+                                            sectionState === sectionTitle)}
+                                        aria-current={pageState === pageTitle &&
+                                        sectionState === sectionTitle
+                                            ? "page"
+                                            : undefined}
+                                        href="#{sectionTitle}"
+                                        onclick={(e) => {
+                                            e.preventDefault();
+                                            updateSectionState(sectionTitle);
+                                        }}
+                                        >{sectionTitle}
+                                    </a>
+                                </li>
+                            {/each}
+                        </ul>
+                    </details>
+                {/each}
+            </nav>
+        </aside>
+    {/if}
+</div>
 
 <style>
-    @media (min-width: 769px) {
-        aside {
-            position: fixed;
-            width: 250px;
-            height: 70vh;
-            z-index: 10;
-        }
+    .sidebar-panel {
+        min-width: 0;
+    }
 
-        a {
-            font-size: 14px;
+    .sections-panel {
+        margin-top: 0;
+    }
+
+    .group-nav {
+        margin-bottom: 0.75rem;
+    }
+
+    @media (min-width: 769px) {
+        .sidebar-panel {
+            position: sticky;
+            top: 5rem;
+            align-self: start;
+            max-height: calc(100vh - 6rem);
+            overflow-y: auto;
+            padding-right: 0.25rem;
         }
     }
 
-    summary:after {
+    @media (max-width: 768px) {
+        .sections-panel {
+            margin-bottom: 1.25rem;
+        }
+    }
+
+    .mobile-page-link {
+        font-size: 0.88rem;
+        font-weight: 600;
+    }
+
+    .mobile-section-link {
+        font-size: 0.84rem;
+    }
+
+    summary::after {
         display: none;
     }
 
@@ -120,26 +163,26 @@
     }
 
     a {
-        font-size: 17px;
+        font-size: 0.95rem;
         text-decoration: none;
     }
 
-    aside ul {
+    .sections-panel ul {
         margin-left: 0.25rem;
-        line-height: 1em;
+        line-height: 1.3;
     }
 
-    aside ul > li {
+    .sections-panel ul > li {
         border-left: 0.1em solid var(--pico-muted-border-color);
         margin: 0.1em;
         overflow-wrap: break-word;
     }
 
-    aside ul > li:hover {
+    .sections-panel ul > li:hover {
         border-left: 1px solid var(--pico-primary);
     }
 
-    aside ul > li a {
+    .sections-panel ul > li a {
         display: block;
         padding: 0.25rem 0;
         color: var(--pico-secondary);
@@ -148,7 +191,7 @@
         margin-left: 0.2em;
     }
 
-    aside ul > li a:hover {
+    .sections-panel ul > li a:hover {
         filter: brightness(1.1);
     }
 </style>

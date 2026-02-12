@@ -83,7 +83,7 @@ const thesisWorkflow: ExplainContent[] = [
   {
     title: "Hydra-Driven Experiment Configuration",
     explainText:
-      "Experiments are configured through <code>src/causal_meta/configs/</code>, enabling consistent local and cluster runs.",
+      "Experiments use Hydra configuration groups, enabling consistent local and cluster runs.",
   },
   {
     title: "Dataset Family Sampling",

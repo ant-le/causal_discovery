@@ -3,16 +3,26 @@
 </script>
 
 <section>
-    <p>
-        The Potential Outcomes Framework (POF) expresses causal effects through
-        counterfactual quantities for the same unit under different treatments.
-    </p>
+    <article>
+        <header>Potential Outcomes View</header>
+        <p>
+            The Potential Outcomes Framework expresses effects via
+            counterfactual outcomes for the same unit under alternative
+            treatments.
+        </p>
 
-    <Math expression={"\text{ATE} = \mathbb{E}[Y(1)-Y(0)]"} inline={false} />
+        <Math expression={"\text{ATE} = \mathbb{E}[Y(1)-Y(0)]"} inline={false} />
+    </article>
 
-    <p>
-        POF is useful for clarifying estimands, while SCMs provide the
-        graph-based generative assumptions used in this codebase. Together they
-        motivate evaluation beyond edge recovery: intervention behavior matters.
-    </p>
+    <article>
+        <header>How It Complements SCMs</header>
+        <ul>
+            <li>POF clarifies estimands and target causal questions.</li>
+            <li>SCMs specify generative assumptions and intervention structure.</li>
+            <li>
+                Combined, they justify evaluating intervention behavior and
+                posterior quality beyond edge recovery.
+            </li>
+        </ul>
+    </article>
 </section>
