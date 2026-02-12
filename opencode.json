@@ -1,17 +1,17 @@
 {
-  "$schema": "https://opencode.ai/config.json",
-  "permission": {
-    "tavily_*": "deny"
-  },
-  "mcp": {
-    "tavily": {
-      "type": "remote",
-      "url": "https://mcp.tavily.com/mcp",
-      "oauth": false,
-      "headers": {
-        "Authorization": "Bearer {env:TAVILY_API_KEY}"
-      },
-      "enabled": true
+    "$schema": "https://opencode.ai/config.json",
+    "permission": {
+        "tavily_*": "deny"
+    },
+    "mcp": {
+        "docling": {
+            "type": "local",
+            "command": [
+                "/bin/sh",
+                "-lc",
+                "cd /tmp && exec /opt/homebrew/bin/uvx --from=docling-mcp docling-mcp-server"
+            ],
+            "timeout": 3000000
+        }
     }
-  }
 }

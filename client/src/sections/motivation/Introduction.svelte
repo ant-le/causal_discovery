@@ -2,16 +2,15 @@
     import Cite from "../../lib/Cite.svelte";
 </script>
 
-<div>
+<section>
     <p>
-        The current paradigm of artificial intelligence, while powerful, is
-        largely built on correlation. Models excel at learning statistical
-        patterns from data but often fail when deployed in new environments
-        where those patterns no longer hold. This brittleness stems from a lack
-        of understanding of the underlying causal mechanisms that generate the
-        data. This thesis is motivated by the conviction that the next frontier
-        for AI is the development of systems that can reason about cause and
-        effect, enabling them to be more robust, explainable, and
-        generalizable <Cite key="bookOfWhy"/>.
+        Predictive models often break when deployment conditions differ from the
+        training distribution. This project studies Bayesian causal discovery as
+        a way to make that fragility measurable and actionable by modeling
+        uncertainty over causal graphs instead of returning a single best guess.
+        The motivation is aligned with the argument that causal models are
+        central for robust reasoning and intervention planning <Cite
+            key="bookOfWhy"
+        />.
     </p>
-</div>
+</section>

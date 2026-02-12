@@ -1,22 +1,38 @@
 <script lang="ts">
+    import Cite from "../../lib/Cite.svelte";
     import Math from "../../lib/Math.svelte";
 </script>
 
 <section>
     <p>
-        From a Bayesian viewpoint, the we want to estimate the underlying
-        <strong>SCM</strong> by jointly looking at the edge structure and the functional
-        forms:
+        The pipeline implements Bayesian causal discovery as a configurable
+        sequence: config validation, dataset construction, model dispatch,
+        pre-training or explicit inference, and evaluation.
     </p>
+
     <Math
-        expression={"\\mathbb{P}(G,\\Theta,D)=\\mathbb{P}(D\\mid G,\\Theta)\\cdot\\mathbb{P}(G,\\Theta)"}
+        expression={"p(G,\\Theta\\mid D) \\propto p(D\\mid G,\\Theta)\\,p(G,\\Theta)"}
         inline={false}
     />
-    Now, as we are interested in the SCMs, conditioning on the data gives us:
-    <Math
-        expression={"\\mathbb{P}(G,\\Theta\\mid D)=\\frac{\\mathbb{P}(D,G,\\Theta)}{\\mathbb{P}(D)}"}
-        inline={false}
-    />
-    Calculating the joint probability numerically is however intracable as the number
-    of graphs and functional forms grow exponentially with data.
+
+    <ul>
+        <li>
+            <code>src/causal_meta/main.py</code> orchestrates distributed setup,
+            logging, task routing, and teardown.
+        </li>
+        <li>
+            <code>src/causal_meta/datasets/</code> builds reproducible
+            train/val/test families with rank-aware sampling.
+        </li>
+        <li>
+            <code>src/causal_meta/models/</code> exposes a common interface for
+            Avici, BCNP, DiBS, and BayesDAG <Cite key="avici" /><Cite
+                key="bcnp"
+            /><Cite key="dibs" /><Cite key="bayesdag" />.
+        </li>
+        <li>
+            <code>src/causal_meta/runners/metrics/</code> provides graph and SCM
+            metrics used in benchmark reports.
+        </li>
+    </ul>
 </section>

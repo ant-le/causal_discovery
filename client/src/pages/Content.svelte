@@ -9,9 +9,24 @@
         type PageMetaData,
     } from "../assets/navigation.ts";
     import { type CitationKey } from "../assets/citation.ts";
+    import sourceMap from "../assets/data/sourceMap.json" with {
+        type: "json",
+    };
     import PageTitle from "../lib/PageTitle.svelte";
     import Sidebar from "../lib/Sidebar.svelte";
     import Bibliography from "../lib/Bibliography.svelte";
+    import Sources from "../lib/Sources.svelte";
+
+    interface SourceReferences {
+        code: string[];
+        notes: string[];
+        docs: string[];
+    }
+
+    type SourceMapData = Record<
+        AppStates,
+        Record<string, Record<string, SourceReferences>>
+    >;
 
     // 1. Manage Citations
     let citedKeys: CitationKey[] = $state([]);
@@ -29,17 +44,47 @@
     // 2. Define Page States (sections to be rendered)
     let { appState }: { appState: AppStates } = $props();
     let pageMetaData: PageMetaData = $derived(appMetaData[appState]);
-    let pageState: string = $state("Introduction");
-    let currentPage: SectionsData = $derived(pageMetaData[pageState]);
-    let sectionState: string = $state("Background");
-    let CurrentSection: Component = $derived(
-        currentPage[sectionState],
+    let pageState: string = $state("");
+    let currentPage: SectionsData = $derived(pageMetaData[pageState] ?? {});
+    let sectionState: string = $state("");
+    let CurrentSection: Component | null = $derived(
+        currentPage[sectionState] ?? null,
+    );
+    const sectionSourceMap = sourceMap as SourceMapData;
+    let sectionSources: SourceReferences | null = $derived(
+        sectionSourceMap[appState]?.[pageState]?.[sectionState] ?? null,
     );
 
+    $effect(() => {
+        const pageKeys = Object.keys(pageMetaData);
+        if (pageKeys.length === 0) {
+            pageState = "";
+            sectionState = "";
+            return;
+        }
+
+        if (!pageKeys.includes(pageState)) {
+            pageState = pageKeys[0];
+        }
+
+        const sections = pageMetaData[pageState] ?? {};
+        const sectionKeys = Object.keys(sections);
+
+        if (sectionKeys.length === 0) {
+            sectionState = "";
+            return;
+        }
+
+        if (!sectionKeys.includes(sectionState)) {
+            sectionState = sectionKeys[0];
+        }
+    });
+
     function updatePageState(newState: string) {
-        if (newState !== pageState) {
+        if (newState !== pageState && pageMetaData[newState]) {
             pageState = newState;
-            sectionState = Object.keys(currentPage)[0];
+            const nextSections = pageMetaData[newState] ?? {};
+            sectionState = Object.keys(nextSections)[0] ?? "";
             citedKeys = [];
         }
     }
@@ -66,7 +111,12 @@
             out:fade={{ duration: 250 }}
         >
             <PageTitle title={sectionState} />
-            <CurrentSection />
+            {#if CurrentSection}
+                <CurrentSection />
+            {:else}
+                <p>This section is currently being prepared.</p>
+            {/if}
+            <Sources sources={sectionSources} />
             <Bibliography {citedKeys} />
         </div>
     {/key}

@@ -16,7 +16,7 @@
         isMobile,
     }: Props = $props();
 
-    let sectionMetaData: SectionsData = $derived(pageMetaData[pageState]);
+    let sectionMetaData: SectionsData = $derived(pageMetaData[pageState] ?? {});
 </script>
 
 {#if isMobile}

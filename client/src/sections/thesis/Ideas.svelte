@@ -1,24 +1,32 @@
-<script lang="ts">
-    import Math from "../../lib/Math.svelte";
-</script>
-
 <section>
+    <p>
+        The repository is organized around a modular benchmark architecture that
+        maps directly to the thesis workflow.
+    </p>
+
     <ol>
         <li>
-            Use the <strong>BNCP</strong> meta-learning approach for generating
-            plausible DAGs <Math expression={"\\mathbb{P}(G\\mid D)"} /> and then
-            use Bayesian methods for learning functional dependencies
-            <Math expression={"\\mathbb{P}(\\Theta \\mid G,D)"} /> for obtaining
-            full posterior <Math expression={"\\mathbb{P}(\\Theta,G\\mid D)"} />
+            <strong>Configuration Layer:</strong> Hydra configs in
+            <code>src/causal_meta/configs/</code> define data families, model
+            variants, training, inference, and logging.
         </li>
         <li>
-            <strong>Causal Representation Learning:</strong> Define causal structures
-            as an abstraction layer (latent variables) and try to estimate theses
-            from obserational data. Use this to make procedure extendable to potentially
-            unobserved vars and different data (text, images, audio)
+            <strong>Dataset Layer:</strong> <code>datasets/</code> samples SCM
+            families and exposes iterable/fixed PyTorch datasets for training and
+            evaluation.
         </li>
-        <li>Search for Open Weights</li>
-        <li>Tiss: Working Title</li>
-        <li>Rudimental Implementation - Problem Formulation</li>
+        <li>
+            <strong>Model Layer:</strong> <code>models/</code> keeps amortized and
+            explicit inference methods behind a shared base interface.
+        </li>
+        <li>
+            <strong>Runner Layer:</strong> <code>runners/tasks/</code> separates
+            pre-training, inference, and evaluation to keep experiments
+            reproducible.
+        </li>
+        <li>
+            <strong>Metrics Layer:</strong> graph- and SCM-focused metrics provide
+            comparable benchmark outputs across model classes.
+        </li>
     </ol>
 </section>

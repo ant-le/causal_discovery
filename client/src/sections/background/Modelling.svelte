@@ -2,40 +2,40 @@
     import Math from "../../lib/Math.svelte";
 </script>
 
-<section id="intro">
+<section>
     <p>
-        Causality lies between differential equations know from phisics which
-        need to be carefully designed and statistical learning techniches used
-        in current ML which are mostly learned from observational data
+        The project treats causal discovery as posterior inference over SCMs,
+        not as a single graph prediction task.
     </p>
-</section>
 
-<section id="inputs">
-    <p>We can divide data across two dimensions:</p>
-    <ol>
-        <li>Observational vs. Interventional</li>
-        <li>Hand-engineered vs. raw, unstructured (perceptual)</li>
-    </ol>
-</section>
-
-<section id="models">
     <article>
-        <header>Statistical Models</header>
-        Current ML which heavily relies on a large amount of in-distribution data.
-    </article>
-    <article>
-        <header>Causal Graphical Models</header>
-        Here, dependencies between phenomena are modelled with a graph. Hereby, these
-        models can have many different representations for data which would always
-        be equal for models based on statistical learning.
-    </article>
-    <article>
-        <header>Structural Causal Models</header>
-        Considers set of observables associated with vertices of a DAG.
+        <header>Model Factorization</header>
         <Math
-            expression={"X_i:=f_i(PA_i,U_i), \\quad (i=1,\\dots,n)"}
+            expression={"p(D, G, \Theta) = p(D \mid G, \Theta)\,p(G, \Theta)"}
             inline={false}
-        /> using a deterministic function f depending on a set of parents PA
-        and some unexplained random variable U.
+        />
+        <p>
+            Here, <Math expression="G" /> denotes the DAG and
+            <Math expression="\Theta" /> the mechanism parameters. Inference
+            targets <Math expression="p(G, \Theta \mid D)" />.
+        </p>
+    </article>
+
+    <article>
+        <header>Why This Matters in Practice</header>
+        <ul>
+            <li>
+                Finite data often leaves several plausible graphs; posterior
+                uncertainty should be preserved.
+            </li>
+            <li>
+                Shift robustness depends on mechanism assumptions, not only edge
+                recovery.
+            </li>
+            <li>
+                Evaluation therefore combines structure metrics with
+                intervention-aware diagnostics.
+            </li>
+        </ul>
     </article>
 </section>

@@ -64,6 +64,15 @@ test_families:
       type: logistic_map
       weight_scale: 1.0
 
+  ood_periodic:
+    name: ood_periodic
+    graph_cfg:
+      type: er
+      sparsity: 0.1
+    mech_cfg:
+      type: periodic
+      weight_scale: 1.0
+
   ood_pnl_tanh:
     name: ood_pnl_tanh
     graph_cfg:

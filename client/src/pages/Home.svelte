@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount, onDestroy } from "svelte";
-    import { thesisData } from "../assets/data/textData";
+    import { thesisData } from "../assets/data/textData.ts";
     import { loadSlim } from "@tsparticles/slim";
     import type { Container } from "@tsparticles/engine";
 
@@ -15,8 +15,14 @@
         if (particlesContainer && particlesEl) {
             const styles = getComputedStyle(particlesEl);
             const newColor = styles.getPropertyValue(colorName).trim();
-            particlesContainer.options.particles.color.value = newColor;
-            particlesContainer.options.particles.links.color = newColor;
+            const options = particlesContainer.options as unknown as {
+                particles: {
+                    color: { value: string };
+                    links: { color: string };
+                };
+            };
+            options.particles.color.value = newColor;
+            options.particles.links.color = newColor;
             particlesContainer.refresh();
         }
     });
@@ -39,7 +45,6 @@
                             enable: true,
                             mode: "repulse",
                         },
-                        resize: true,
                     },
                     modes: {
                         repulse: {
@@ -75,7 +80,8 @@
                     number: {
                         density: {
                             enable: true,
-                            area: 800,
+                            width: 800,
+                            height: 800,
                         },
                         value: 80,
                     },

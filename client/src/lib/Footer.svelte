@@ -64,7 +64,7 @@
                         href="prevented"
                         onclick={(e) => {
                             e.preventDefault();
-                            updateState("motivation");
+                            updateState("Motivation");
                         }}>Motivation</a
                     >
                     |
@@ -72,7 +72,7 @@
                         href="prevnted"
                         onclick={(e) => {
                             e.preventDefault();
-                            updateState("background");
+                            updateState("Background");
                         }}>Background</a
                     >
                     |
@@ -80,7 +80,7 @@
                         href="prevented"
                         onclick={(e) => {
                             e.preventDefault();
-                            updateState("content");
+                            updateState("Thesis");
                         }}>Thesis</a
                     >
                 </p>
