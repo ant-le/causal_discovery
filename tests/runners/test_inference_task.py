@@ -52,8 +52,8 @@ def test_inference_writes_artifacts(tmp_path) -> None:
     written = inference_run(cfg, model, data_module)
     assert written["dummy"] == 2
 
-    assert (tmp_path / "inference" / "dummy" / "seed_123.pt").exists()
-    assert (tmp_path / "inference" / "dummy" / "seed_456.pt").exists()
+    assert (tmp_path / "inference" / "model" / "dummy" / "seed_123.pt").exists()
+    assert (tmp_path / "inference" / "model" / "dummy" / "seed_456.pt").exists()
 
 
 class _DummyExplicitModelOnes(torch.nn.Module):
@@ -84,7 +84,7 @@ def test_inference_can_compress_and_limit_samples(tmp_path) -> None:
     written = inference_run(cfg, model, data_module)
     assert written["dummy"] == 2
 
-    path = tmp_path / "inference" / "dummy" / "seed_123.pt.gz"
+    path = tmp_path / "inference" / "model" / "dummy" / "seed_123.pt.gz"
     assert path.exists()
     with gzip.open(path, "rb") as f:
         artifact = torch.load(f, map_location="cpu")

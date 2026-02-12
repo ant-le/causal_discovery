@@ -1,15 +1,16 @@
 from __future__ import annotations
-import torch
+
 from typing import List, Optional, Protocol
+
 import numpy as np
+import torch
 from torch import nn
 
 
 class MechanismFactory(Protocol):
     """Protocol for mechanism factories."""
 
-    def make_mechanism(self, input_dim: int, rng: torch.Generator) -> nn.Module:
-        ...
+    def make_mechanism(self, input_dim: int, rng: torch.Generator) -> nn.Module: ...
 
     def __call__(
         self,
@@ -17,10 +18,8 @@ class MechanismFactory(Protocol):
         *,
         torch_generator: Optional[torch.Generator] = None,
         rng: Optional[np.random.Generator] = None,
-    ) -> List[nn.Module]:
-        ...
+    ) -> List[nn.Module]: ...
 
     def make_mechanism(
         self, input_dim: int, torch_generator: torch.Generator
-    ) -> nn.Module:
-        ...
+    ) -> nn.Module: ...

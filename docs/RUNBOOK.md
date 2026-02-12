@@ -21,6 +21,7 @@ causal-meta --config-path experiments/examples --config-name smoke_test
 We use the `hydra-submitit-launcher` to submit jobs to a Slurm cluster. This handles both single jobs and parallel sweeps.
 
 ### Single Job on Slurm
+
 To submit a single job to the cluster:
 
 ```bash
@@ -31,6 +32,7 @@ causal-meta --multirun \
 ```
 
 ### Parallel Sweeps (Recommended)
+
 To run multiple seeds or hyperparameter variations in parallel on the cluster:
 
 ```bash
@@ -42,6 +44,7 @@ causal-meta --multirun \
 ```
 
 ### Resource Overrides
+
 You can override Slurm resources directly from the command line:
 
 ```bash
@@ -63,15 +66,19 @@ causal-meta --multirun \
   conda activate causal_meta
   pip install -e .
   ```
+- **BayesDAG External Env:** See `docs/BAYESDAG_SETUP.md` for the required pyenv
+  environment and pinned dependencies to run `model.type=bayesdag`.
 
 ## 4. Output Structure
 
 Hydra manages output directories:
-- `experiments/${name}/${date}/${time}/`: Single run directory.
-- `experiments/${name}/multirun/${date}/${time}/`: Sweep/Slurm directory.
-  - Subdirectories `0/`, `1/`, etc., contain results for each job in the sweep.
+
+- `experiments/runs/${name}/`: Single run directory and multirun aggregate.
 - Each directory contains:
-  - `checkpoints/`: Model weights.
-  - `results/`: `metrics_summary.json` and `metrics_raw.json`.
-  - `inference/`: Sampled graphs.
-  - `pipe.log`: Job logs.
+  - `checkpoints/`: Model weights (`best_<model_name>.pt`, `last_<model_name>.pt`).
+  - `results/`: `<model_name>.json` and `aggregated.json`.
+  - `inference/<model_name>/`: Sampled graphs (`seed_<seed>.pt` or `seed_<seed>.pt.gz`).
+  - `pipe_<model_name>.log`: Job logs.
+
+**Note:** If you sweep different hyperparameters for the same model, use different `name` values
+to avoid overwriting artifacts in a shared run folder.

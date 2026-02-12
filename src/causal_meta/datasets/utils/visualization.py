@@ -1,12 +1,17 @@
 from __future__ import annotations
+
 from typing import TYPE_CHECKING, List
+
 import numpy as np
 import torch
+
 from causal_meta.datasets.utils.stats import degree_sequence
 
 if TYPE_CHECKING:
-    from causal_meta.datasets.scm import SCMFamily
     from matplotlib.figure import Figure
+
+    from causal_meta.datasets.scm import SCMFamily
+
 
 def plot_degree_distribution(family: SCMFamily, n_samples: int = 100) -> Figure:
     """Plot a histogram of node degrees sampled from a family."""
@@ -34,6 +39,7 @@ def plot_degree_distribution(family: SCMFamily, n_samples: int = 100) -> Figure:
     ax.set_title("Degree Distribution")
     fig.tight_layout()
     return fig
+
 
 def visualize_adjacency(adj_tensor: torch.Tensor) -> Figure:
     """Visualize a single adjacency matrix."""

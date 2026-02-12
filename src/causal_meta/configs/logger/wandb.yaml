@@ -1,0 +1,8 @@
+# @package logger
+
+wandb:
+  enabled: true
+  mode: "online"
+  project: "causal_meta"
+  entity: "lechuga-anton"
+  tags: []

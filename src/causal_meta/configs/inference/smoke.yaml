@@ -1,0 +1,9 @@
+# @package inference
+
+n_samples: 3
+use_cached_inference: true
+cache_inference: true
+
+cache_compress: false
+cache_dtype: "uint8"
+cache_n_samples: null

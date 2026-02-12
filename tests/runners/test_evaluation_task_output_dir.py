@@ -48,5 +48,5 @@ def test_evaluation_writes_results_to_output_dir(tmp_path) -> None:
 
     evaluation_run(cfg, model, data_module, output_dir=tmp_path)
 
-    assert (tmp_path / "results" / "metrics_summary.json").exists()
-    assert (tmp_path / "results" / "metrics_raw.json").exists()
+    assert (tmp_path / "results" / "avici.json").exists()
+    assert (tmp_path / "results" / "aggregated.json").exists()

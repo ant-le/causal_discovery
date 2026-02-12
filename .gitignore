@@ -11,6 +11,8 @@ paper
 # --- Agent Memory ---
 AGENTS.md
 GEMINI.md
+.opencode/
+opencode.json
 
 # --- IDE & Editor Configs ---
 .idea/
@@ -45,15 +47,6 @@ pnpm-debug.log*
 
 # --- Hydra / experiment outputs ---
 # Keep YAML inputs under `experiments/`, but ignore generated run artifacts.
-outputs/
-multirun/
-experiments/**/.hydra/
-experiments/**/checkpoints/
-experiments/**/results/
-experiments/**/inference/
-experiments/**/pipe.log
-experiments/**/table.tex
-experiments/**/multirun/
 experiments/runs/
 
 # Compiled Python files

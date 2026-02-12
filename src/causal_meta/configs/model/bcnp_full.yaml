@@ -1,0 +1,21 @@
+# @package model
+
+type: "bcnp"
+id: "bcnp_full"
+
+# Large transformer (paper-scale).
+d_model: 512
+dim_feedforward: 2048
+nhead: 16
+num_layers: 4
+dropout: 0.1
+emb_depth: 2
+use_positional_encoding: false
+
+# Decoder depth (split internally into Q/L halves).
+num_layers_decoder: 4
+
+# Sinkhorn permutation sampling.
+n_perm_samples: 100
+sinkhorn_iter: 1000
+q_before_l: true

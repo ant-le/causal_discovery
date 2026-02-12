@@ -1,2 +1,10 @@
+# We don't push OpenCode Configs
 !AGENTS.md
+!.opencode/
+!opencode.json
+
+# Be able do read paper
 !paper/
+
+# Be able to investigate experiments
+!experiments/runs/

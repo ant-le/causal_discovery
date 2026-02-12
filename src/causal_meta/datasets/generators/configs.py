@@ -9,8 +9,8 @@ from causal_meta.datasets.generators.graphs import (ErdosRenyiGenerator,
                                                     ScaleFreeGenerator)
 from causal_meta.datasets.generators.mechanisms import (
     GPMechanismFactory, LinearMechanismFactory, LogisticMapMechanismFactory,
-    MechanismFactory, MixtureMechanismFactory, MLPMechanismFactory,
-    PeriodicMechanismFactory, PNLMechanismFactory, SquareMechanismFactory)
+    MixtureMechanismFactory, MLPMechanismFactory, PeriodicMechanismFactory,
+    PNLMechanismFactory, SquareMechanismFactory)
 
 
 class Instantiable(Protocol):

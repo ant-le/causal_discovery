@@ -9,7 +9,6 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.optim as optim
-from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
 from torch.amp.grad_scaler import GradScaler
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -18,6 +17,8 @@ from causal_meta.datasets.data_module import CausalMetaModule
 from causal_meta.models.base import BaseModel
 from causal_meta.runners.logger.base import BaseLogger
 from causal_meta.runners.metrics.graph import Metrics
+from causal_meta.runners.utils.artifacts import (get_model_name,
+                                                 resolve_output_dir)
 from causal_meta.runners.utils.distributed import DistributedContext
 from causal_meta.runners.utils.seeding import get_experiment_seed
 
@@ -125,13 +126,8 @@ def run(
         log.info("Starting training loop...")
 
     # Determine output directory
-    if output_dir is None:
-        try:
-            output_dir = Path(HydraConfig.get().runtime.output_dir)
-        except Exception:
-            output_dir = Path(os.getcwd())
-    else:
-        output_dir = Path(output_dir)
+    output_dir = resolve_output_dir(cfg, output_dir)
+    model_name = get_model_name(cfg, model)
 
     path = output_dir / "checkpoints"
     if rank == 0:
@@ -314,9 +310,11 @@ def run(
                 log.info(f"Validation at step {step}: {val_metrics}")
 
                 if logger:
-                    logger.log_metrics(
-                        {f"val/{k}": v for k, v in val_metrics.items()}, step=step
-                    )
+                    prefixed = {k: v for k, v in val_metrics.items() if "/" in k}
+                    log_payload = {f"val/{k}": v for k, v in prefixed.items()}
+                    if "mean_e-edgef1" in val_metrics:
+                        log_payload["val/mean_e-edgef1"] = val_metrics["mean_e-edgef1"]
+                    logger.log_metrics(log_payload, step=step)
 
                 # Save Best (using E-F1 as metric)
                 current_metric = val_metrics.get("mean_e-edgef1", 0.0)

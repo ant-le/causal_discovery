@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import random
 from typing import Dict, List, Optional, Sequence
 
 import networkx as nx
@@ -48,10 +47,10 @@ class SCMInstance:
     def sample(self, num_samples: int) -> torch.Tensor:
         """
         Perform ancestral sampling following the cached topological order.
-        
+
         Args:
             num_samples: The number of samples to generate.
-            
+
         Returns:
             torch.Tensor: A tensor of shape (num_samples, n_nodes).
         """
@@ -60,22 +59,29 @@ class SCMInstance:
 
         device = self.adjacency_matrix.device
         n_nodes = self.adjacency_matrix.shape[0]
-        samples = torch.zeros((num_samples, n_nodes), device=device, dtype=torch.float32)
+        samples = torch.zeros(
+            (num_samples, n_nodes), device=device, dtype=torch.float32
+        )
 
-        for node in self.topological_order:
-            parents = torch.nonzero(
-                self.adjacency_matrix[:, node], as_tuple=False
-            ).flatten()
-            
-            parent_values = (
-                samples[:, parents]
-                if parents.numel() > 0
-                else torch.zeros((num_samples, 0), device=device, dtype=torch.float32)
-            )
-            
-            noise = torch.randn((num_samples, 1), device=device, dtype=torch.float32)
-            value = self.mechanisms[node](parent_values, noise)
-            samples[:, node] = value.view(-1)
+        with torch.no_grad():
+            for node in self.topological_order:
+                parents = torch.nonzero(
+                    self.adjacency_matrix[:, node], as_tuple=False
+                ).flatten()
+
+                parent_values = (
+                    samples[:, parents]
+                    if parents.numel() > 0
+                    else torch.zeros(
+                        (num_samples, 0), device=device, dtype=torch.float32
+                    )
+                )
+
+                noise = torch.randn(
+                    (num_samples, 1), device=device, dtype=torch.float32
+                )
+                value = self.mechanisms[node](parent_values, noise)
+                samples[:, node] = value.view(-1)
 
         return samples
 
@@ -83,12 +89,12 @@ class SCMInstance:
         """
         Applies Pearl's do-operator, returning a new SCMInstance (the 'mutilated graph').
 
-        Edges incoming to intervened nodes are removed (structural intervention), 
+        Edges incoming to intervened nodes are removed (structural intervention),
         and their mechanisms are replaced by ConstantMechanism (functional intervention).
-        
+
         Args:
             intervention: A dictionary mapping node indices to their intervention values.
-            
+
         Returns:
             SCMInstance: A new SCM instance representing the intervened system.
         """

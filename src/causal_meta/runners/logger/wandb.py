@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from types import ModuleType
 from typing import Any, Dict, Mapping, Optional
 
@@ -47,19 +48,45 @@ class WandbLogger(BaseLogger):
     """
 
     def __init__(self, cfg: Any, output_dir: Optional[str] = None):
-        self.wandb_module = import_wandb_if_enabled(True)
-        if self.wandb_module is None:
+        # Keep as Any so type checkers accept wandb's dynamic API.
+        wandb_module = import_wandb_if_enabled(True)
+        if wandb_module is None:
             raise RuntimeError("WandbLogger initialized but wandb import failed.")
+        self.wandb_module: Any = wandb_module
 
         from omegaconf import OmegaConf
 
         wandb_cfg = _get(_get(cfg, "logger", {}), "wandb", {})
 
         # Initialize run
+        default_name = _get(cfg, "name", "experiment")
+        model_cfg = _get(cfg, "model", {})
+        model_type = _get(model_cfg, "type", None)
+        if model_type:
+            default_name = f"{default_name}_{model_type}"
+
+        run_name: str
+        try:
+            run_name_cfg = _get(wandb_cfg, "name", None)
+        except Exception:
+            # If OmegaConf interpolation fails, fall back to an auto-generated name.
+            run_name_cfg = None
+
+        if isinstance(run_name_cfg, str) and run_name_cfg.strip():
+            run_name = run_name_cfg
+        else:
+            run_name = str(default_name)
+            # Best-effort uniqueness for Hydra multiruns.
+            job_num = os.environ.get("HYDRA_JOB_NUM")
+            if job_num not in {None, "None", ""}:
+                run_name = f"{run_name}_job{job_num}"
+            else:
+                run_name = f"{run_name}_pid{os.getpid()}"
+
         self.run = self.wandb_module.init(
             project=_get(wandb_cfg, "project", "causal_meta"),
             entity=_get(wandb_cfg, "entity", None),
-            name=_get(wandb_cfg, "name", _get(cfg, "name", "experiment")),
+            name=run_name,
             config=(
                 OmegaConf.to_container(cfg, resolve=True)
                 if hasattr(cfg, "logger")

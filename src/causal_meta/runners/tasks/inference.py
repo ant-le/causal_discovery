@@ -1,33 +1,21 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import Dict
 
 import torch
-from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
 
 from causal_meta.datasets.data_module import CausalMetaModule
 from causal_meta.datasets.torch_datasets import MetaFixedDataset
 from causal_meta.models.base import BaseModel
 from causal_meta.runners.utils.artifacts import (
-    atomic_torch_save, cache_settings, cache_suffix,
-    prepare_graph_samples_for_cache)
+    atomic_torch_save, cache_settings, cache_suffix, get_model_name,
+    prepare_graph_samples_for_cache, resolve_output_dir)
 from causal_meta.runners.utils.distributed import DistributedContext
 
 log = logging.getLogger(__name__)
-
-
-def _get_output_dir(cfg: DictConfig) -> Path:
-    override = cfg.get("inference", {}).get("output_dir", None)
-    if override:
-        return Path(str(override))
-    try:
-        return Path(HydraConfig.get().runtime.output_dir)
-    except Exception:
-        return Path(os.getcwd())
 
 
 def _shard_indices(n: int, rank: int, world_size: int) -> range:
@@ -73,11 +61,17 @@ def run(
     if not getattr(data_module, "test_datasets", None):
         data_module.setup()
 
-    if output_dir is None:
-        output_dir = _get_output_dir(cfg)
+    # Determine inference root directory
+    # 1. Check for explicit 'cache_dir' in config (persistent cache)
+    # 2. Fallback to 'output_dir' (run-specific)
+    cache_dir = cfg.get("inference", {}).get("cache_dir", None)
+    if cache_dir:
+        inference_root = Path(str(cache_dir))
     else:
-        output_dir = Path(output_dir)
-    inference_root = output_dir / "inference"
+        inference_root = resolve_output_dir(cfg, output_dir) / "inference"
+
+    model_name = get_model_name(cfg, model)
+
     inference_root.mkdir(parents=True, exist_ok=True)
 
     # Best-effort device inference (explicit models might have no parameters)
@@ -95,13 +89,32 @@ def run(
         if rank == 0:
             log.info(f"Running inference cache for dataset '{name}'...")
 
-        out_dir = inference_root / name
+        # If using a shared/persistent cache_dir, keep a model namespace.
+        # For per-run artifacts, keep files directly under the model's run folder.
+        out_dir = (
+            (inference_root / model_name / name)
+            if cache_dir
+            else (inference_root / name)
+        )
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        total = len(dataset)
         count = 0
         for idx in _shard_indices(len(dataset), rank=rank, world_size=world_size):
             item = dataset[idx]
             seed = int(item["seed"])
+            out_path = out_dir / f"seed_{seed}{suffix}"
+            if out_path.exists():
+                count += 1
+                if logger and rank == 0:
+                    logger.log_metrics(
+                        {
+                            f"inference/{name}/completed": count,
+                            f"inference/{name}/total": total,
+                            f"inference/{name}/progress": count / max(1, total),
+                        }
+                    )
+                continue
             input_data, adjacency_matrix = item["data"], item["adjacency"]
             input_data = input_data.to(device)
             model_input = input_data.unsqueeze(0)
@@ -126,8 +139,16 @@ def run(
                 ),
             }
 
-            atomic_torch_save(artifact, out_dir / f"seed_{seed}{suffix}")
+            atomic_torch_save(artifact, out_path)
             count += 1
+            if logger and rank == 0:
+                logger.log_metrics(
+                    {
+                        f"inference/{name}/completed": count,
+                        f"inference/{name}/total": total,
+                        f"inference/{name}/progress": count / max(1, total),
+                    }
+                )
 
         written[name] = count
 

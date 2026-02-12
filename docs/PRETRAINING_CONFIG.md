@@ -159,8 +159,8 @@ Implemented in `src/causal_meta/runners/tasks/pre_training.py`.
 ### Files
 
 - Stored under `<output_dir>/checkpoints/`
-  - `last.pt`: periodic + end-of-run checkpoint
-  - `best.pt`: best-by-validation checkpoint
+  - `last_<model_name>.pt`: periodic + end-of-run checkpoint
+  - `best_<model_name>.pt`: best-by-validation checkpoint
 
 ### What is saved
 
@@ -176,7 +176,7 @@ Implemented in `src/causal_meta/runners/tasks/pre_training.py`.
 
 ### Resume behavior
 
-- If `<output_dir>/checkpoints/last.pt` exists:
+- If `<output_dir>/checkpoints/last_<model_name>.pt` exists:
   - loads model/optimizer/scheduler/scaler
   - resumes `step`
   - attempts “deterministic-ish” resumption of the infinite stream **only** when `data.num_workers == 0` by setting:
@@ -191,7 +191,7 @@ Implemented in `src/causal_meta/runners/tasks/pre_training.py`.
 
 ### Post-train reload
 
-- At the end, if `best.pt` exists, the model reloads `best.pt` before returning to `pipe.py` (so the following evaluation uses best weights).
+- At the end, if `best_<model_name>.pt` exists, the model reloads it before returning to `pipe.py` (so the following evaluation uses best weights).
 
 ## Distributed (DDP) Notes
 

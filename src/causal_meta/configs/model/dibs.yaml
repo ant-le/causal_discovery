@@ -1,0 +1,11 @@
+# @package model
+
+type: "dibs"
+id: "dibs"
+
+# DiBS explicit inference parameters.
+mode: "nonlinear"
+steps: 20
+seed: 0
+use_marginal: false
+xla_preallocate: false

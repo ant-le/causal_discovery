@@ -21,4 +21,3 @@ def normalize_scm_data(x: torch.Tensor, *, eps: float = 1e-8) -> torch.Tensor:
     mean = flat.mean(dim=0, keepdim=True)
     std = flat.std(dim=0, unbiased=False, keepdim=True).clamp_min(eps)
     return (x - mean) / std
-

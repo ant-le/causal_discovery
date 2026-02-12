@@ -1,11 +1,13 @@
-from typing import Dict, Any
-import pytest
-from omegaconf import OmegaConf, DictConfig
 import logging
+from typing import Any, Dict
 
-from causal_meta.runners.logger.local import LocalLogger
+import pytest
+from omegaconf import DictConfig, OmegaConf
+
 from causal_meta.runners.logger.base import BaseLogger
+from causal_meta.runners.logger.local import LocalLogger
 from causal_meta.runners.pipe import run_pipeline
+
 
 class TestLocalLogger:
     def test_implements_protocol(self):
@@ -20,7 +22,7 @@ class TestLocalLogger:
         logger = LocalLogger()
         metrics = {"train/loss": 0.5, "val/acc": 0.9}
         logger.log_metrics(metrics, step=10)
-        
+
         assert len(logger.history) == 1
         entry = logger.history[0]
         assert entry["step"] == 10
@@ -30,11 +32,12 @@ class TestLocalLogger:
     def test_log_hyperparams(self, caplog):
         logger = LocalLogger()
         params = {"lr": 0.01, "batch_size": 32}
-        
+
         with caplog.at_level(logging.INFO):
             logger.log_hyperparams(params)
-        
+
         assert "Hyperparameters: {'lr': 0.01, 'batch_size': 32}" in caplog.text
+
 
 def test_pipeline_integration_smoke(tmp_path):
     """
@@ -43,62 +46,62 @@ def test_pipeline_integration_smoke(tmp_path):
     and that artifacts are produced.
     """
     # Create a minimal valid config
-    cfg = OmegaConf.create({
-        "name": "integration_test",
-        "logger": {
-            "wandb": {"enabled": False}
-        },
-        "data": {
-            "train_family": {
-                "name": "train",
-                "n_nodes": 5,
-                "graph_cfg": {"type": "er", "sparsity": 0.5},
-                "mech_cfg": {"type": "linear", "weight_scale": 1.0},
-            },
-            "test_families": {
-                "test_1": {
-                    "name": "test",
+    cfg = OmegaConf.create(
+        {
+            "name": "integration_test",
+            "logger": {"wandb": {"enabled": False}},
+            "data": {
+                "train_family": {
+                    "name": "train",
                     "n_nodes": 5,
                     "graph_cfg": {"type": "er", "sparsity": 0.5},
                     "mech_cfg": {"type": "linear", "weight_scale": 1.0},
-                }
+                },
+                "test_families": {
+                    "test_1": {
+                        "name": "test",
+                        "n_nodes": 5,
+                        "graph_cfg": {"type": "er", "sparsity": 0.5},
+                        "mech_cfg": {"type": "linear", "weight_scale": 1.0},
+                    }
+                },
+                "seeds_val": [100],
+                "seeds_test": [200],
+                "base_seed": 42,
+                "samples_per_task": 10,
+                "safety_checks": False,
+                "num_workers": 0,
+                "pin_memory": False,
             },
-            "seeds_val": [100],
-            "seeds_test": [200],
-            "base_seed": 42,
-            "samples_per_task": 10,
-            "safety_checks": False,
-            "num_workers": 0,
-            "pin_memory": False
-        },
-        "model": {
-            "type": "avici",
-            "num_nodes": 5,
-            "d_model": 8,
-            "nhead": 2,
-            "num_layers": 2,
-            "dim_feedforward": 16,
-            "dropout": 0.0,
-        },
-        "trainer": {
-            "max_steps": 2, # Very short run
-            "log_every_n_steps": 1,
-            "val_check_interval": 2,
-            "lr": 0.001,
-            "tf32": False
-        },
-        "inference": {
-            "n_samples": 2,
-            "inil_graph_samples": 1,
-            "use_cached_inference": False,
-            "cache_inference": False
+            "model": {
+                "type": "avici",
+                "num_nodes": 5,
+                "d_model": 8,
+                "nhead": 2,
+                "num_layers": 2,
+                "dim_feedforward": 16,
+                "dropout": 0.0,
+            },
+            "trainer": {
+                "max_steps": 2,  # Very short run
+                "log_every_n_steps": 1,
+                "val_check_interval": 2,
+                "lr": 0.001,
+                "tf32": False,
+            },
+            "inference": {
+                "n_samples": 2,
+                "inil_graph_samples": 1,
+                "use_cached_inference": False,
+                "cache_inference": False,
+            },
         }
-    })
-    
-    
+    )
+
     # Let's run it.
     # We change cwd to tmp_path to avoid writing to project root
     import os
+
     original_cwd = os.getcwd()
     os.chdir(tmp_path)
     try:
@@ -108,11 +111,11 @@ def test_pipeline_integration_smoke(tmp_path):
 
     # Check for artifacts
     # The default behavior writes to os.getcwd() if hydra config is missing
-    # Structure: <cwd>/checkpoints/last.pt
-    # Structure: <cwd>/results/metrics_summary.json
-    
-    assert (tmp_path / "checkpoints" / "last.pt").exists()
-    assert (tmp_path / "results" / "metrics_summary.json").exists()
+    # Structure: <cwd>/checkpoints/last_<model_name>.pt
+    # Structure: <cwd>/results/<model_name>.json
+
+    assert (tmp_path / "checkpoints" / "last_avici.pt").exists()
+    assert (tmp_path / "results" / "avici.json").exists()
 
 
 def test_pipeline_rejects_multiple_models(tmp_path) -> None:
@@ -143,8 +146,20 @@ def test_pipeline_rejects_multiple_models(tmp_path) -> None:
                 "pin_memory": False,
             },
             "models": {
-                "avici": {"type": "avici", "num_nodes": 5, "d_model": 8, "nhead": 2, "num_layers": 2},
-                "bcnp": {"type": "bcnp", "num_nodes": 5, "d_model": 8, "nhead": 2, "num_layers": 2},
+                "avici": {
+                    "type": "avici",
+                    "num_nodes": 5,
+                    "d_model": 8,
+                    "nhead": 2,
+                    "num_layers": 2,
+                },
+                "bcnp": {
+                    "type": "bcnp",
+                    "num_nodes": 5,
+                    "d_model": 8,
+                    "nhead": 2,
+                    "num_layers": 2,
+                },
             },
             "trainer": {"max_steps": 1, "lr": 0.001},
             "inference": {"n_samples": 1},

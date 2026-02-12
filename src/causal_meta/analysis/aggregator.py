@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import glob
 import json
 import logging
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -11,26 +13,32 @@ log = logging.getLogger(__name__)
 
 
 def load_results(root_dir: str) -> pd.DataFrame:
-    """
-    Walks through the root directory to find 'metrics_summary.json' files.
-    Returns a DataFrame with flattened metrics and metadata inferred from path.
+    """Load per-model result files into a flat DataFrame.
+
+    Args:
+        root_dir: Root directory containing run outputs.
+
+    Returns:
+        DataFrame with flattened metrics and metadata inferred from path.
     """
     root_path = Path(root_dir)
     result_files = glob.glob(
-        str(root_path / "**" / "metrics_summary.json"), recursive=True
+        str(root_path / "**" / "results" / "*.json"), recursive=True
     )
 
     data = []
 
     for file_path in result_files:
+        if Path(file_path).name == "aggregated.json":
+            continue
         try:
             with open(file_path, "r") as f:
                 content = json.load(f)
 
-            # Content structure: { "dataset_name": { "metric": val, ... }, ... }
+            summary = content.get("summary", content)
+            model_name = Path(file_path).stem
 
-            # Infer run ID / seed from path (assuming Hydra structure)
-            # e.g. .../multirun/2023-10-27/10-00-00/0/results/metrics_summary.json
+            # Infer run ID from path (best-effort)
             path_parts = Path(file_path).parts
 
             # Simple heuristic: try to find the numeric folder (job id)
@@ -40,9 +48,10 @@ def load_results(root_dir: str) -> pd.DataFrame:
                     run_id = part
                     break
 
-            for dataset_name, metrics in content.items():
+            for dataset_name, metrics in summary.items():
                 row: dict[str, Any] = {
                     "run_id": run_id,
+                    "model": model_name,
                     "dataset": dataset_name,
                     "path": str(Path(file_path).parent),
                 }
@@ -58,7 +67,7 @@ def load_results(root_dir: str) -> pd.DataFrame:
 
 
 def aggregate_results(
-    df: pd.DataFrame, group_by: List[str] = ["dataset"]
+    df: pd.DataFrame, group_by: list[str] = ["dataset"]
 ) -> pd.DataFrame:
     """
     Aggregates results by dataset.
@@ -97,7 +106,7 @@ def aggregate_results(
 
 
 def latex_table(
-    agg_df: pd.DataFrame, metrics: List[str] = ["e-shd", "e-edgef1", "inil"]
+    agg_df: pd.DataFrame, metrics: list[str] = ["e-shd", "e-edgef1", "inil"]
 ) -> str:
     """
     Generates a simple LaTeX table body from the aggregated DataFrame.

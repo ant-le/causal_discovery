@@ -64,18 +64,27 @@ def test_evaluation_uses_cached_inference_artifact(tmp_path) -> None:
     data_module = _DummyDataModule(dataset)
     model = _ModelThatShouldNotSample()
 
-    out_dir = tmp_path / "inference" / "dummy"
+    out_dir = tmp_path / "inference" / "model" / "dummy"
     out_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = out_dir / "seed_123.pt.gz"
 
-    graph_samples = torch.zeros(1, 3, dataset.n_nodes, dataset.n_nodes, dtype=torch.uint8)
+    graph_samples = torch.zeros(
+        1, 3, dataset.n_nodes, dataset.n_nodes, dtype=torch.uint8
+    )
     with gzip.open(artifact_path, "wb") as f:
         torch.save(
-            {"seed": 123, "idx": 0, "graph_samples": graph_samples, "true_adj": torch.zeros(dataset.n_nodes, dataset.n_nodes, dtype=torch.uint8)},
+            {
+                "seed": 123,
+                "idx": 0,
+                "graph_samples": graph_samples,
+                "true_adj": torch.zeros(
+                    dataset.n_nodes, dataset.n_nodes, dtype=torch.uint8
+                ),
+            },
             f,
         )
 
     evaluation_run(cfg, model, data_module, output_dir=tmp_path)
 
-    assert (tmp_path / "results" / "metrics_summary.json").exists()
-    assert (tmp_path / "results" / "metrics_raw.json").exists()
+    assert (tmp_path / "results" / "model.json").exists()
+    assert (tmp_path / "results" / "aggregated.json").exists()

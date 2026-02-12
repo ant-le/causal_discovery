@@ -23,6 +23,10 @@ causal-meta = "causal_meta.runners.pipe:main"
 dev = [
     "pytest>=7.0.0",
 ]
+explicit = [
+    "dibs-lib",
+    "causica @ git+https://github.com/microsoft/Project-BayesDAG.git#subdirectory=src",
+]
 cluster = [
     "hydra-submitit-launcher>=1.2.0",
 ]

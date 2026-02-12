@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import torch
-from hydra.core.hydra_config import HydraConfig
+import torch.nn as nn
 from omegaconf import DictConfig
 
 from causal_meta.datasets.data_module import CausalMetaModule
@@ -17,26 +17,27 @@ from causal_meta.runners.metrics.graph import Metrics
 from causal_meta.runners.metrics.scm import SCMMetrics
 from causal_meta.runners.utils.artifacts import (
     atomic_torch_save, cache_settings, cache_suffix, find_inference_artifact,
-    prepare_graph_samples_for_cache, torch_load)
+    get_model_name, prepare_graph_samples_for_cache, resolve_output_dir,
+    torch_load)
 from causal_meta.runners.utils.distributed import DistributedContext
 
 log = logging.getLogger(__name__)
 
 
 class NpEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, np.integer):
-            return int(obj)
-        if isinstance(obj, np.floating):
-            return float(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return super(NpEncoder, self).default(obj)
+    def default(self, o: Any) -> Any:
+        if isinstance(o, np.integer):
+            return int(o)
+        if isinstance(o, np.floating):
+            return float(o)
+        if isinstance(o, np.ndarray):
+            return o.tolist()
+        return super().default(o)
 
 
 def run(
     cfg: DictConfig,
-    model: BaseModel,
+    model: nn.Module,
     data_module: CausalMetaModule,
     *,
     logger=None,
@@ -60,7 +61,8 @@ def run(
     model.eval()
 
     # Unwrap if DDP
-    model_unwrapped = model.module if is_distributed else model
+    model_unwrapped_raw = model.module if is_distributed else model
+    model_unwrapped = cast(BaseModel, model_unwrapped_raw)
 
     all_summary_metrics = {}
     all_raw_metrics = {}
@@ -82,14 +84,12 @@ def run(
     scm_metrics_handler = SCMMetrics(metrics=["inil"])
 
     # Determine output directory (used for optional cached inference)
-    if output_dir is None:
-        try:
-            output_dir = Path(HydraConfig.get().runtime.output_dir)
-        except Exception:
-            output_dir = Path(os.getcwd())
+    output_dir = resolve_output_dir(cfg, output_dir)
+    cache_dir = cfg.inference.get("cache_dir", None)
+    if cache_dir:
+        inference_root = Path(str(cache_dir))
     else:
-        output_dir = Path(output_dir)
-    inference_root = output_dir / "inference"
+        inference_root = output_dir / "inference"
     use_cached_inference = bool(cfg.inference.get("use_cached_inference", True))
     cache_inference = bool(cfg.inference.get("cache_inference", True))
     cache_compress, cache_dtype, cache_n_samples = cache_settings(cfg)
@@ -97,6 +97,8 @@ def run(
 
     def _shard_indices(n: int, rank: int, world_size: int) -> range:
         return range(rank, n, world_size)
+
+    model_name = get_model_name(cfg, model_unwrapped_raw)
 
     for name, loader in test_loaders.items():
         if rank == 0:
@@ -113,7 +115,7 @@ def run(
         with torch.no_grad():
             # For explicit/non-amortized models, prefer cached inference artifacts and avoid DataLoader+DistributedSampler padding.
             if not model_unwrapped.needs_pretraining:
-                dataset: MetaFixedDataset = loader.dataset  # type: ignore[assignment]
+                dataset = cast(MetaFixedDataset, loader.dataset)  # type: ignore[assignment]
                 for idx in _shard_indices(
                     len(dataset), rank=rank, world_size=dist_ctx.world_size
                 ):
@@ -129,8 +131,10 @@ def run(
                         find_inference_artifact(
                             inference_root,
                             dataset_name=name,
+                            model_name=model_name,
                             seed=seed,
                             prefer_compress=cache_compress,
+                            use_model_subdir=bool(cache_dir),
                         )
                         if use_cached_inference
                         else None
@@ -154,12 +158,18 @@ def run(
                             and find_inference_artifact(
                                 inference_root,
                                 dataset_name=name,
+                                model_name=model_name,
                                 seed=seed,
                                 prefer_compress=cache_compress,
+                                use_model_subdir=bool(cache_dir),
                             )
                             is None
                         ):
-                            out_path = inference_root / name / f"seed_{seed}{suffix}"
+                            out_path = (
+                                (inference_root / model_name / name)
+                                if cache_dir
+                                else (inference_root / name)
+                            ) / f"seed_{seed}{suffix}"
                             atomic_torch_save(
                                 {
                                     "seed": seed,
@@ -251,15 +261,26 @@ def run(
 
     # Save
     if rank == 0:
-        results_dir = output_dir / "results"
-        results_dir.mkdir(parents=True, exist_ok=True)
+        model_results_path = output_dir / "metrics.json"
+        with open(model_results_path, "w") as f:
+            json.dump(
+                {"summary": all_summary_metrics, "raw": all_raw_metrics},
+                f,
+                cls=NpEncoder,
+                indent=4,
+            )
 
-        # Save Summary
-        with open(results_dir / "metrics_summary.json", "w") as f:
-            json.dump(all_summary_metrics, f, cls=NpEncoder, indent=4)
+        # Best-effort: keep an overview JSON at the run root.
+        try:
+            from causal_meta.runners.utils.artifacts import update_run_overview
 
-        # Save Raw (for Box Plots)
-        with open(results_dir / "metrics_raw.json", "w") as f:
-            json.dump(all_raw_metrics, f, cls=NpEncoder, indent=4)
+            run_root = output_dir.parent
+            update_run_overview(
+                run_root=run_root,
+                model_name=model_name,
+                summary=all_summary_metrics,
+            )
+        except Exception:
+            pass
 
-        log.info(f"Metrics saved to {results_dir}")
+        log.info(f"Metrics saved to {model_results_path}")

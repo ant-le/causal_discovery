@@ -43,7 +43,9 @@ class NoPaddingDistributedSampler(Sampler[int]):
         if self.world_size < 1:
             raise ValueError("world_size must be >= 1.")
         if self.rank < 0 or self.rank >= self.world_size:
-            raise ValueError(f"rank must be in [0, {self.world_size}). Got {self.rank}.")
+            raise ValueError(
+                f"rank must be in [0, {self.world_size}). Got {self.rank}."
+            )
 
     def set_epoch(self, epoch: int) -> None:
         self.epoch = int(epoch)
@@ -67,4 +69,3 @@ class NoPaddingDistributedSampler(Sampler[int]):
         if n <= self.rank:
             return 0
         return (n - self.rank + self.world_size - 1) // self.world_size
-

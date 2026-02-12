@@ -1,0 +1,21 @@
+# @package _global_
+
+defaults:
+  - logger: offline
+  - data: smoke
+  - model: avici_smoke
+  - trainer: smoke
+  - inference: smoke
+  - _self_
+  - override hydra/job_logging: console
+
+# Minimal default config for installed usage (`python -m causal_meta.runners.pipe`).
+name: "smoke_test"
+
+hydra:
+  run:
+    dir: ${oc.env:CAUSAL_META_RUN_DIR,experiments/runs/${name}/${model.id}}
+  sweep:
+    dir: ${oc.env:CAUSAL_META_SWEEP_DIR,experiments/runs/${name}}
+    subdir: ""
+  output_subdir: null

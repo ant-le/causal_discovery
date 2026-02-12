@@ -1,0 +1,29 @@
+# @package model
+
+type: "bayesdag"
+id: "bayesdag"
+
+# BayesDAG explicit inference parameters.
+variant: "nonlinear"
+lambda_sparse: 1.0
+
+# Keep this tiny for smoke. Increase for real runs.
+num_chains: 1
+sinkhorn_n_iter: 200
+
+scale_noise: 0.1
+scale_noise_p: 1.0
+batch_size: 32
+max_epochs: 1
+
+standardize_data_mean: false
+standardize_data_std: false
+skip_evaluation: true
+
+# Keep BayesDAG's internal logs/artifacts inside the run folder.
+save_dir: ${hydra:runtime.output_dir}/bayesdag_output
+
+external_python: ${oc.env:CAUSAL_META_BAYESDAG_PYTHON,null}
+pyenv_env: ${oc.env:CAUSAL_META_BAYESDAG_PYENV_ENV,bayesdag-3.9}
+external_timeout_s: 1200
+device: "auto"

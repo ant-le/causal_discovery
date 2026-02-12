@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import Any, Dict, Iterable, List, Mapping, Tuple, Union
+
+from typing import Any, Dict, Iterable, List, Mapping
 
 import torch
 
@@ -21,8 +22,8 @@ def collate_fn_scm(batch: Iterable[ScmItem], normalize: bool = True) -> Dict[str
 
     for item in batch:
         if not isinstance(item, Mapping):
-             raise TypeError(f"Expected dict item in collate_fn_scm, got {type(item)}")
-        
+            raise TypeError(f"Expected dict item in collate_fn_scm, got {type(item)}")
+
         seeds.append(int(item["seed"]) if "seed" in item else None)
         batch_data.append(item["data"].float())
         adjacency_matrices.append(item["adjacency"].float())
@@ -39,9 +40,12 @@ def collate_fn_scm(batch: Iterable[ScmItem], normalize: bool = True) -> Dict[str
         "adjacency": adjacency_tensor,
     }
 
-def collate_fn_interventional(batch: Iterable[Dict[str, Any]], normalize: bool = True) -> Dict[str, Any]:
+
+def collate_fn_interventional(
+    batch: Iterable[Dict[str, Any]], normalize: bool = True
+) -> Dict[str, Any]:
     """
-    Collate function for interventional batches. 
+    Collate function for interventional batches.
     Normalizes both observational and interventional data using observational statistics.
     """
     items = list(batch)
@@ -73,7 +77,7 @@ def collate_fn_interventional(batch: Iterable[Dict[str, Any]], normalize: bool =
             mean = obs_data.mean(dim=0, keepdim=True)
             std = obs_data.std(dim=0, unbiased=False, keepdim=True).clamp_min(1e-8)
             obs_data = (obs_data - mean) / std
-        
+
         obs_data_list.append(obs_data)
         obs_adj_list.append(obs_adj)
 
@@ -97,7 +101,7 @@ def collate_fn_interventional(batch: Iterable[Dict[str, Any]], normalize: bool =
             x_int = int_item["data"].float()
             if normalize:
                 x_int = (x_int - mean) / std
-            
+
             x_ints.append(x_int)
             adjs.append(int_item["adjacency"].float())
 

@@ -58,15 +58,19 @@ class MetaIterableDataset(IterableDataset):
             with torch.random.fork_rng(devices=[]):
                 torch.manual_seed(seed)
                 data = instance.sample(self.samples_per_task)
-            
-            yield {"seed": int(seed), "data": data, "adjacency": instance.adjacency_matrix}
+
+            yield {
+                "seed": int(seed),
+                "data": data,
+                "adjacency": instance.adjacency_matrix,
+            }
             seed += stride
 
 
 class MetaFixedDataset(Dataset):
     """
     Fixed-seed SCM dataset for deterministic validation/testing.
-    
+
     This dataset acts as a map-style dataset where each index corresponds to a specific
     deterministic seed from the provided list.
     """
@@ -87,7 +91,7 @@ class MetaFixedDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         """
         Generates and returns an SCM task for the given index.
-        
+
         Returns:
             dict: {
                 "seed": int,
@@ -102,7 +106,7 @@ class MetaFixedDataset(Dataset):
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(seed)
             data = instance.sample(self.samples_per_task)
-        
+
         adjacency = instance.adjacency_matrix.to(dtype=torch.float32)
 
         return {"seed": seed, "data": data, "adjacency": adjacency}
@@ -139,7 +143,7 @@ class MetaInterventionalDataset(Dataset):
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(seed)
             x_obs = instance.sample(self.samples_per_task)
-        
+
         obs_data = {"data": x_obs, "adjacency": instance.adjacency_matrix}
 
         # 2. Interventional Data (Single-node on all nodes)
@@ -154,7 +158,7 @@ class MetaInterventionalDataset(Dataset):
             with torch.random.fork_rng(devices=[]):
                 torch.manual_seed(int_seed)
                 x_int = mutilated_instance.sample(self.samples_per_task)
-            
+
             interventions.append(
                 {
                     "target": target_node,

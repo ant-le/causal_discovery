@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import os
-from pathlib import Path
 import socket
 import sys
+from pathlib import Path
 
 import pytest
 import torch
@@ -27,7 +27,11 @@ class _DummyFixedDataset:
         n_nodes = 3
         input_data = torch.zeros(n_samples, n_nodes)
         adjacency_matrix = torch.zeros(n_nodes, n_nodes)
-        return {"seed": int(self.seeds[idx]), "data": input_data, "adjacency": adjacency_matrix}
+        return {
+            "seed": int(self.seeds[idx]),
+            "data": input_data,
+            "adjacency": adjacency_matrix,
+        }
 
 
 class _DummyLoader:
@@ -105,7 +109,9 @@ def _can_bind_loopback() -> bool:
 
 def test_ddp_evaluation_does_not_hang_and_writes_results(tmp_path) -> None:
     if not _can_bind_loopback():
-        pytest.skip("Socket bind is not permitted in this environment; skipping DDP smoke test.")
+        pytest.skip(
+            "Socket bind is not permitted in this environment; skipping DDP smoke test."
+        )
 
     ctx = mp.get_context("spawn")
     init_file = tmp_path / "ddp_init"
@@ -143,5 +149,5 @@ def test_ddp_evaluation_does_not_hang_and_writes_results(tmp_path) -> None:
     exit_codes = [p.exitcode for p in procs]
     assert exit_codes == [0, 0]
 
-    assert (tmp_path / "results" / "metrics_summary.json").exists()
-    assert (tmp_path / "results" / "metrics_raw.json").exists()
+    assert (tmp_path / "results" / "model.json").exists()
+    assert (tmp_path / "results" / "aggregated.json").exists()

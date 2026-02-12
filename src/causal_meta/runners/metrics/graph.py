@@ -6,21 +6,22 @@ from typing import Any, Dict, List, Optional, Union
 import torch
 
 from causal_meta.datasets.scm import SCMFamily
+
 from .base import BaseMetrics
 
 
 def auc_graph_scores(targets: torch.Tensor, preds: torch.Tensor) -> torch.Tensor:
     """
     Compute Area Under the Receiver Operating Characteristic Curve (ROC AUC) for graph edges.
-    
+
     Since we don't have sklearn, this computes AUC manually using the trapezoidal rule
     on sorted predictions.
-    
+
     Args:
         targets: (Batch, N, N) binary adjacency matrices.
         preds: (NumSamples, Batch, N, N) binary graph samples or probabilities.
                If binary samples, we average them to get probabilities.
-    
+
     Returns:
         Tensor of shape (Batch,) containing AUC score per graph.
     """
@@ -29,7 +30,7 @@ def auc_graph_scores(targets: torch.Tensor, preds: torch.Tensor) -> torch.Tensor
 
     # 1. Get predicted probabilities: Mean over samples -> (Batch, N, N)
     probs = preds.float().mean(dim=0)
-    
+
     # 2. Flatten N,N dimensions -> (Batch, N*N)
     y_true = targets.reshape(targets.shape[0], -1).float()
     y_score = probs.reshape(probs.shape[0], -1)
@@ -37,20 +38,20 @@ def auc_graph_scores(targets: torch.Tensor, preds: torch.Tensor) -> torch.Tensor
     # 3. Compute AUC per batch item
     auc_scores = []
     device = targets.device
-    
+
     for i in range(y_true.shape[0]):
         yt = y_true[i]
         ys = y_score[i]
-        
+
         # Sort by score descending
         desc_score_indices = torch.argsort(ys, descending=True)
         yt_sorted = yt[desc_score_indices]
-        ys_sorted = ys[desc_score_indices]
-        
+        # ys_sorted = ys[desc_score_indices]
+
         # Total positives and negatives
         tp_total = yt_sorted.sum()
         fp_total = yt_sorted.numel() - tp_total
-        
+
         if tp_total == 0 or fp_total == 0:
             # Undefined AUC if only one class is present.
             # Convention: return 0.5 (random guessing) or NaN.
@@ -61,11 +62,11 @@ def auc_graph_scores(targets: torch.Tensor, preds: torch.Tensor) -> torch.Tensor
         # Cumulative sums
         tps = torch.cumsum(yt_sorted, dim=0)
         fps = torch.cumsum(1 - yt_sorted, dim=0)
-        
+
         # TPR and FPR
         tpr = tps / tp_total
         fpr = fps / fp_total
-        
+
         # Trapezoidal rule for AUC: sum( (FPR_i - FPR_{i-1}) * TPR_i )
         # Prepend 0 to FPR and TPR for integration
         fpr_diff = torch.cat([fpr[0:1], fpr[1:] - fpr[:-1]])
@@ -465,7 +466,9 @@ class Metrics(BaseMetrics):
             batch_metrics["edge_entropy"] = float(edge_entropy(samples).item())
 
         if "auc" in self.metrics_list:
-            batch_metrics["auc"] = float(auc_graph_scores(targets, samples).mean().item())
+            batch_metrics["auc"] = float(
+                auc_graph_scores(targets, samples).mean().item()
+            )
 
         return batch_metrics
 
@@ -549,7 +552,9 @@ def log_prob_graph_scores(
     if targets.ndim != 3 or preds.ndim != 4:
         raise ValueError("targets must be 3D and preds must be 4D.")
     if preds.shape[1:] != targets.shape:
-        raise ValueError("preds shape must be (num_samples, batch, N, N) matching targets.")
+        raise ValueError(
+            "preds shape must be (num_samples, batch, N, N) matching targets."
+        )
 
     p = preds.float().mean(dim=0).clamp(eps, 1.0 - eps)
     y = targets.float()

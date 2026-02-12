@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Protocol
+from typing import Any, Dict, Mapping, Protocol
 
 from causal_meta.datasets.generators import configs
 
@@ -148,7 +148,9 @@ def load_mechanism_config(cfg: Any) -> configs.MechanismConfig:
     return config_cls(**_exclude_type(cfg))
 
 
-def load_family_config(cfg: Any) -> configs.FamilyConfig:
+def load_family_config(
+    cfg: Any, *, default_n_nodes: int | None = None
+) -> configs.FamilyConfig:
     cfg = _coerce_dict(cfg)
 
     if isinstance(cfg, configs.FamilyConfig):
@@ -163,9 +165,15 @@ def load_family_config(cfg: Any) -> configs.FamilyConfig:
     if graph_cfg is None or mech_cfg is None:
         raise ValueError("Family config must provide 'graph_cfg' and 'mech_cfg'.")
 
+    n_nodes_raw = cfg.get("n_nodes", default_n_nodes)
+    if n_nodes_raw is None:
+        raise ValueError(
+            "Family config must provide 'n_nodes' or a top-level data.n_nodes must be set."
+        )
+
     return configs.FamilyConfig(
         name=str(cfg.get("name", "")),
-        n_nodes=int(cfg["n_nodes"]),
+        n_nodes=int(n_nodes_raw),
         graph_cfg=load_graph_config(graph_cfg),
         mech_cfg=load_mechanism_config(mech_cfg),
     )
@@ -180,7 +188,10 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
     if not isinstance(cfg, Mapping):
         raise TypeError("DataModule config must be a dict or DataModuleConfig object.")
 
-    train_family = load_family_config(cfg["train_family"])
+    default_n_nodes = cfg.get("n_nodes", cfg.get("num_nodes", None))
+    train_family = load_family_config(
+        cfg["train_family"], default_n_nodes=default_n_nodes
+    )
 
     test_families_raw = cfg.get("test_families")
     if test_families_raw is None:
@@ -190,7 +201,8 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
         raise TypeError("'test_families' must be a dictionary of configs.")
 
     test_families = {
-        name: load_family_config(sub_cfg) for name, sub_cfg in test_families_raw.items()
+        name: load_family_config(sub_cfg, default_n_nodes=default_n_nodes)
+        for name, sub_cfg in test_families_raw.items()
     }
 
     val_families_raw = cfg.get("val_families")
@@ -200,7 +212,7 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
         if not isinstance(val_families_raw, Mapping):
             raise TypeError("'val_families' must be a dictionary of configs.")
         val_families = {
-            name: load_family_config(sub_cfg)
+            name: load_family_config(sub_cfg, default_n_nodes=default_n_nodes)
             for name, sub_cfg in val_families_raw.items()
         }
 

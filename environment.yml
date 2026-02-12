@@ -27,3 +27,7 @@ dependencies:
   # Dev / cluster extras:
   - pytest=7.4
   - hydra-submitit-launcher=1.2
+
+  - pip:
+      - dibs-lib
+      - git+https://github.com/microsoft/Project-BayesDAG.git#subdirectory=src
