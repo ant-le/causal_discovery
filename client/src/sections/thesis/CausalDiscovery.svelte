@@ -1,8 +1,6 @@
 <script lang="ts">
     import Cite from "../../lib/Cite.svelte";
     import Math from "../../lib/Math.svelte";
-    import BenchmarkOutputs from "../../lib/BenchmarkOutputs.svelte";
-    import MetricCatalog from "../../lib/MetricCatalog.svelte";
 </script>
 
 <section>
@@ -42,8 +40,4 @@
             </li>
         </ul>
     </article>
-
-    <BenchmarkOutputs />
-
-    <MetricCatalog />
 </section>

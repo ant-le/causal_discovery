@@ -1,6 +1,7 @@
 <script lang="ts">
     import { tweened } from "svelte/motion";
     import { cubicOut } from "svelte/easing";
+    import ContentStatus from "./ContentStatus.svelte";
 
     type ShiftType = "Mechanism shift" | "Graph-family shift" | "Noise shift";
     type MethodType = "Amortized" | "Explicit";
@@ -71,6 +72,11 @@
 <article>
     <header>
         <strong>Shift Stress Tester</strong>
+        <br />
+        <ContentStatus
+            status="illustrative"
+            text="Illustrative shift trend"
+        />
         <br />
         <small>Illustrative trend view for RQ1 (not benchmark output).</small>
     </header>

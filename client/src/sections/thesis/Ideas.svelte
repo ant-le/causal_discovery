@@ -38,11 +38,11 @@
     </article>
 
     <article>
-        <header>Flow to Method Section</header>
+        <header>How to Read This</header>
         <p>
-            The architecture explains <em>where</em> components live; the next
-            section explains <em>how</em> these components execute an end-to-end
-            Bayesian discovery run.
+            This view explains <em>where</em> benchmark components live. The
+            methodology and results pages then show <em>how</em> they are used
+            and <em>what</em> metrics are produced.
         </p>
     </article>
 

@@ -32,6 +32,6 @@ export interface SourceReferences {
 }
 
 export type SourceMapData = Record<
-  "Motivation" | "Background" | "Thesis",
+  "Motivation" | "Methodology" | "Benchmark" | "Results" | "Appendix",
   Record<string, Record<string, SourceReferences>>
 >;

@@ -46,39 +46,6 @@ export const motivationData: Record<string, TextData[]> = {
   ],
 };
 
-export const backgroundData: TextData[] = [
-  {
-    title: "Structural Causal Models",
-    content:
-      "An SCM combines a DAG with node-wise mechanisms. The graph captures direct causes; mechanisms capture how causes generate observations.",
-    topics: [
-      "<strong>Graph:</strong> Directed acyclic graph over observed variables.",
-      "<strong>Mechanisms:</strong> Structural equations with independent noise terms.",
-      "<strong>Interventions:</strong> Replace equations via do-operations to model actions.",
-    ],
-  },
-  {
-    title: "Bayesian Causal Discovery",
-    content:
-      "Instead of returning one graph, Bayesian methods infer a posterior over graphs and mechanism parameters to quantify epistemic uncertainty.",
-    topics: [
-      "<strong>Prior:</strong> Encodes structural and functional assumptions.",
-      "<strong>Likelihood:</strong> Scores how data fits candidate SCMs.",
-      "<strong>Posterior:</strong> Supports uncertainty-aware downstream decisions.",
-    ],
-  },
-  {
-    title: "Evaluation Under Shift",
-    content:
-      "Robustness analysis requires controlled out-of-distribution shifts and metrics that assess posterior quality, not only edge recovery.",
-    topics: [
-      "<strong>Graph metrics:</strong> Expected SHD, AUROC, edge-level scores.",
-      "<strong>Posterior metrics:</strong> MMD / intervention-based likelihood proxies.",
-      "<strong>Shift families:</strong> Mechanism, graph-structure, and noise shifts.",
-    ],
-  },
-];
-
 const thesisWorkflow: ExplainContent[] = [
   {
     title: "Hydra-Driven Experiment Configuration",

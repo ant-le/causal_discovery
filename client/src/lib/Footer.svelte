@@ -69,19 +69,19 @@
                     >
                     |
                     <a
-                        href="prevnted"
+                        href="prevented"
                         onclick={(e) => {
                             e.preventDefault();
-                            updateState("Background");
-                        }}>Background</a
+                            updateState("Methodology");
+                        }}>Methodology</a
                     >
                     |
                     <a
                         href="prevented"
                         onclick={(e) => {
                             e.preventDefault();
-                            updateState("Thesis");
-                        }}>Thesis</a
+                            updateState("Results");
+                        }}>Results</a
                     >
                 </p>
             </hgroup>

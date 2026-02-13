@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte";
+    import ContentStatus from "./ContentStatus.svelte";
 
     interface StepItem {
         title: string;
@@ -70,6 +71,11 @@
 <article>
     <header>
         <strong>Execution Flow</strong>
+        <br />
+        <ContentStatus
+            status="implemented"
+            text="Implements current pipeline stages"
+        />
         <br />
         <small>Animated process map of the benchmark pipeline.</small>
     </header>

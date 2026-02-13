@@ -7,6 +7,7 @@
         metricValue,
         type LoadedRunMetrics,
     } from "./metricsRuntime.ts";
+    import ContentStatus from "./ContentStatus.svelte";
 
     type MethodFamily = "Amortized path" | "Explicit path";
     type ReportingFocus = "Balanced" | "Graph-focused" | "Posterior-focused";
@@ -170,6 +171,13 @@
 <article>
     <header>
         <strong>Output Dimensions Explorer</strong>
+        <br />
+        <ContentStatus
+            status={hasRunData ? "measured" : "illustrative"}
+            text={hasRunData
+                ? "Measured from run artifact"
+                : "Illustrative fallback"}
+        />
         <br />
         {#if hasRunData}
             <small>Run-backed summary view loaded from {runMetrics?.source}.</small>

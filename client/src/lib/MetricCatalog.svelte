@@ -7,6 +7,7 @@
         metricValue,
         type LoadedRunMetrics,
     } from "./metricsRuntime.ts";
+    import ContentStatus from "./ContentStatus.svelte";
 
     interface MetricItem {
         key: string;
@@ -114,6 +115,13 @@
 <article>
     <header>
         <strong>Metrics Catalog</strong>
+        <br />
+        <ContentStatus
+            status={selectedSummary ? "measured" : "implemented"}
+            text={selectedSummary
+                ? "Measured values loaded"
+                : "Implemented metric schema"}
+        />
         <br />
         {#if selectedSummary}
             <small>Showing live values for dataset split: {selectedDataset}.</small>

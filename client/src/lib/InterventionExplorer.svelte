@@ -1,6 +1,7 @@
 <script lang="ts">
     import { tweened } from "svelte/motion";
     import { cubicOut } from "svelte/easing";
+    import ContentStatus from "./ContentStatus.svelte";
 
     type Mode = "Observational" | "Interventional";
 
@@ -37,6 +38,11 @@
 <article>
     <header>
         <strong>Intervention Lens</strong>
+        <br />
+        <ContentStatus
+            status="illustrative"
+            text="Illustrative intervention behavior"
+        />
         <br />
         <small>Illustrative SCM behavior for observation vs intervention.</small>
     </header>

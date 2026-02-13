@@ -1,6 +1,7 @@
 <script lang="ts">
     import { tweened } from "svelte/motion";
     import { cubicOut } from "svelte/easing";
+    import ContentStatus from "./ContentStatus.svelte";
 
     function clamp(value: number, min: number, max: number): number {
         return Math.max(min, Math.min(max, value));
@@ -49,6 +50,11 @@
 <article>
     <header>
         <strong>Convergence Signals</strong>
+        <br />
+        <ContentStatus
+            status="illustrative"
+            text="Illustrative diagnostics behavior"
+        />
         <br />
         <small>Illustrative diagnostics behavior for short-chain settings.</small>
     </header>

@@ -1,145 +1,99 @@
 {
   "Motivation": {
-    "Problem Setting": {
-      "From Correlation to Causal Models": {
-        "code": ["src/causal_meta/main.py", "src/causal_meta/models/base.py"],
-        "notes": [
-          "paper/markdown/keep_background/1_Background__1911.10500v2.md",
-          "paper/markdown/keep_background/1_Background__Pearl_2009_Causality.md"
+    "Problem & Scope": {
+      "Why This Benchmark": {
+        "code": [
+          "src/causal_meta/models/base.py",
+          "src/causal_meta/runners/tasks/evaluation.py"
         ],
-        "docs": ["docs/DESIGN.md"]
+        "notes": [
+          "paper/markdown/keep_background/1_Background__Pearl_2009_Causality.md",
+          "paper/markdown/keep_rq1/2_CausalDiscovery__Meta-Learning.md"
+        ],
+        "docs": ["README.md", "docs/DESIGN.md"]
       }
     },
     "Research Questions": {
       "RQ1: OOD Robustness": {
         "code": [
           "src/causal_meta/runners/tasks/evaluation.py",
-          "src/causal_meta/runners/metrics/graph.py",
-          "src/causal_meta/main.py"
+          "src/causal_meta/runners/metrics/graph.py"
         ],
         "notes": [
           "paper/markdown/keep_rq1/2_CausalDiscovery__Meta-Learning.md",
           "paper/markdown/keep_both/2_CausalDiscovery__Evaluation.md"
         ],
-        "docs": ["docs/RUNBOOK.md", "docs/DESIGN.md"]
+        "docs": ["docs/RUNBOOK.md"]
       },
       "RQ2: Full-SCM Approximation": {
         "code": [
-          "src/causal_meta/models/bcnp/model.py",
           "src/causal_meta/runners/metrics/scm.py",
           "src/causal_meta/runners/tasks/inference.py"
         ],
         "notes": [
-          "paper/markdown/keep_both/2_CausalDiscovery__Evaluation.md",
-          "paper/markdown/keep_rq2/3_EnhancedMCMC__short_chains.md"
+          "paper/markdown/keep_rq2/3_EnhancedMCMC__short_chains.md",
+          "paper/markdown/keep_both/2_CausalDiscovery__Evaluation.md"
         ],
         "docs": ["docs/CLASS_STRUCTURE.md"]
       }
     },
-    "Impact": {
-      "Applied Domains": {
+    "Decision Context": {
+      "Applied Stakes": {
         "code": [
           "src/causal_meta/runners/tasks/evaluation.py",
           "src/causal_meta/runners/metrics/scm.py"
         ],
         "notes": [
-          "paper/markdown/keep_rq1/0_Motivation__bayesian-causal-discovery-for-policy-decision-making.md",
-          "paper/markdown/meta/relevant_literature_proposal.md"
+          "paper/markdown/keep_rq1/0_Motivation__bayesian-causal-discovery-for-policy-decision-making.md"
         ],
         "docs": ["README.md"]
       }
     }
   },
-  "Background": {
-    "Foundations": {
-      "SCM and Bayesian Discovery": {
-        "code": [
-          "src/causal_meta/datasets/scm.py",
-          "src/causal_meta/models/base.py"
-        ],
-        "notes": [
-          "paper/markdown/keep_background/1_Background__Pearl_2009_Causality.md",
-          "paper/markdown/keep_rq1/2_CausalDiscovery__BayesDAG.md"
-        ],
-        "docs": ["docs/DESIGN.md"]
-      }
-    },
-    "Causal Inference": {
-      "Modeling Assumptions": {
-        "code": [
-          "src/causal_meta/datasets/architecture.md",
-          "src/causal_meta/models/architecture.md"
-        ],
-        "notes": [
-          "paper/markdown/keep_background/1_Background__caual_algorithms.md",
-          "paper/markdown/keep_background/1_Background__1911.10500v2.md"
-        ],
-        "docs": ["docs/CLASS_STRUCTURE.md"]
-      },
+  "Methodology": {
+    "Causal Assumptions": {
       "Structural Causal Models": {
         "code": [
           "src/causal_meta/datasets/scm.py",
           "src/causal_meta/datasets/generators/factory.py"
         ],
         "notes": [
-          "paper/markdown/keep_background/1_Background__Pearl_2009_Causality.md",
-          "paper/markdown/keep_background/1_Background__caual_algorithms.md"
-        ],
-        "docs": ["docs/DESIGN.md"]
-      },
-      "Potential Outcomes Framework": {
-        "code": ["src/causal_meta/runners/metrics/scm.py"],
-        "notes": [
           "paper/markdown/keep_background/1_Background__Pearl_2009_Causality.md"
         ],
         "docs": ["docs/DESIGN.md"]
-      }
-    },
-    "Mathematical Appendix": {
-      "Calculus": {
-        "code": ["src/causal_meta/models/utils/nn.py"],
-        "notes": [
-          "paper/markdown/drop_background/1_Background__measure_theory.md"
-        ],
-        "docs": ["docs/proposal.md"]
       },
-      "Measure Theory": {
-        "code": ["src/causal_meta/runners/metrics/scm.py"],
-        "notes": [
-          "paper/markdown/drop_background/1_Background__measure_theory.md"
-        ],
-        "docs": ["docs/proposal.md"]
-      },
-      "Probability Theory": {
-        "code": ["src/causal_meta/runners/utils/scoring.py"],
-        "notes": [
-          "paper/markdown/keep_background/1_Background__caual_algorithms.md"
-        ],
-        "docs": ["docs/proposal.md"]
-      },
-      "Information Theory": {
-        "code": ["src/causal_meta/runners/metrics/graph.py"],
-        "notes": ["paper/markdown/keep_both/2_CausalDiscovery__Evaluation.md"],
-        "docs": ["docs/proposal.md"]
-      }
-    }
-  },
-  "Thesis": {
-    "Architecture": {
-      "Codebase Overview": {
+      "Bayesian Causal Objective": {
         "code": [
           "src/causal_meta/main.py",
           "src/causal_meta/models/factory.py",
-          "src/causal_meta/datasets/data_module.py"
+          "src/causal_meta/runners/tasks/inference.py"
         ],
         "notes": [
-          "paper/markdown/keep_rq1/2_CausalDiscovery__Meta-Learning.md"
+          "paper/markdown/keep_rq1/2_CausalDiscovery__DIBS.md",
+          "paper/markdown/keep_rq1/2_CausalDiscovery__BayesDAG.md"
         ],
-        "docs": ["docs/CLASS_STRUCTURE.md", "docs/DESIGN.md"]
+        "docs": ["docs/RUNBOOK.md"]
       }
     },
-    "Method": {
-      "Bayesian Causal Discovery Pipeline": {
+    "Inference Design": {
+      "Amortized vs Explicit Inference": {
+        "code": [
+          "src/causal_meta/models/avici/model.py",
+          "src/causal_meta/models/bcnp/model.py",
+          "src/causal_meta/models/dibs/model.py",
+          "src/causal_meta/models/bayesdag/model.py"
+        ],
+        "notes": [
+          "paper/markdown/keep_rq1/2_CausalDiscovery__Meta-Learning.md",
+          "paper/markdown/keep_rq1/2_CausalDiscovery__DIBS.md"
+        ],
+        "docs": ["docs/CLASS_STRUCTURE.md"]
+      }
+    }
+  },
+  "Benchmark": {
+    "System": {
+      "Pipeline Architecture": {
         "code": [
           "src/causal_meta/main.py",
           "src/causal_meta/runners/tasks/pre_training.py",
@@ -147,24 +101,98 @@
           "src/causal_meta/runners/tasks/evaluation.py"
         ],
         "notes": [
-          "paper/markdown/keep_rq1/2_CausalDiscovery__DIBS.md",
-          "paper/markdown/keep_rq1/2_CausalDiscovery__BayesDAG.md",
-          "paper/markdown/keep_both/2_CausalDiscovery__Evaluation.md"
+          "paper/markdown/keep_rq1/2_CausalDiscovery__Meta-Learning.md"
         ],
-        "docs": ["docs/RUNBOOK.md", "docs/DESIGN.md"]
+        "docs": ["docs/DESIGN.md", "docs/CLASS_STRUCTURE.md"]
       }
     },
-    "Acceleration": {
-      "GPU and Parallel MCMC": {
+    "Synthetic Data": {
+      "Graph and Mechanism Families": {
         "code": [
-          "src/causal_meta/main.py",
-          "src/causal_meta/runners/utils/distributed.py"
+          "src/causal_meta/datasets/generators/factory.py",
+          "src/causal_meta/datasets/data_module.py"
         ],
         "notes": [
-          "paper/markdown/optional_rq2/3_EnhancedMCMC__gpu.md",
-          "paper/markdown/keep_rq2/3_EnhancedMCMC__short_chains.md"
+          "paper/markdown/keep_background/1_Background__caual_algorithms.md"
+        ],
+        "docs": ["docs/DESIGN.md"]
+      }
+    },
+    "Model Zoo": {
+      "Benchmarked Method Families": {
+        "code": [
+          "src/causal_meta/models/factory.py",
+          "src/causal_meta/models/base.py"
+        ],
+        "notes": [
+          "paper/markdown/keep_rq1/2_CausalDiscovery__Meta-Learning.md"
+        ],
+        "docs": ["docs/CLASS_STRUCTURE.md"]
+      }
+    }
+  },
+  "Results": {
+    "Current Evidence": {
+      "Run-backed Metric Snapshot": {
+        "code": [
+          "src/causal_meta/runners/tasks/evaluation.py",
+          "src/causal_meta/runners/metrics/graph.py",
+          "src/causal_meta/runners/metrics/scm.py"
+        ],
+        "notes": ["paper/markdown/keep_both/2_CausalDiscovery__Evaluation.md"],
+        "docs": ["docs/RUNBOOK.md"]
+      }
+    },
+    "Reliability": {
+      "Convergence and Diagnostics": {
+        "code": [
+          "src/causal_meta/runners/utils/distributed.py",
+          "src/causal_meta/main.py"
+        ],
+        "notes": [
+          "paper/markdown/keep_rq2/3_EnhancedMCMC__short_chains.md",
+          "paper/markdown/optional_rq2/3_EnhancedMCMC__gpu.md"
         ],
         "docs": ["docs/PROFILING.md"]
+      }
+    }
+  },
+  "Appendix": {
+    "Additional Causal Framing": {
+      "Potential Outcomes Perspective": {
+        "code": ["src/causal_meta/runners/metrics/scm.py"],
+        "notes": [
+          "paper/markdown/keep_background/1_Background__Pearl_2009_Causality.md"
+        ],
+        "docs": ["README.md"]
+      }
+    },
+    "Mathematical Notes": {
+      "Calculus Primer": {
+        "code": ["src/causal_meta/models/utils/nn.py"],
+        "notes": [
+          "paper/markdown/drop_background/1_Background__measure_theory.md"
+        ],
+        "docs": ["docs/proposal.md"]
+      },
+      "Measure Theory Primer": {
+        "code": ["src/causal_meta/runners/metrics/scm.py"],
+        "notes": [
+          "paper/markdown/drop_background/1_Background__measure_theory.md"
+        ],
+        "docs": ["docs/proposal.md"]
+      },
+      "Probability Primer": {
+        "code": ["src/causal_meta/runners/utils/scoring.py"],
+        "notes": [
+          "paper/markdown/keep_background/1_Background__caual_algorithms.md"
+        ],
+        "docs": ["docs/proposal.md"]
+      },
+      "Information Theory Primer": {
+        "code": ["src/causal_meta/runners/metrics/graph.py"],
+        "notes": ["paper/markdown/keep_both/2_CausalDiscovery__Evaluation.md"],
+        "docs": ["docs/proposal.md"]
       }
     }
   }

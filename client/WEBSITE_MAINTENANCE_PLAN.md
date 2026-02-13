@@ -23,7 +23,20 @@
   - `src/sections/thesis/{Ideas,CausalDiscovery,GPUMCMC}.svelte`
 - Refresh shared text content in `src/assets/data/textData.ts`.
 
-## Phase 3: Content + Visualization Roadmap (In Progress)
+## IA 2.0 (Implemented)
+
+The site now follows a linear thesis narrative:
+
+1. Motivation
+2. Methodology
+3. Benchmark
+4. Results
+5. Appendix
+
+Each top-level area must include at least one explanatory visual component and
+must avoid unsupported claims.
+
+## Phase 3: Content + Visualization Roadmap (Done)
 
 ### Milestone M1 (Done): Motivation Narrative + First Interactive
 
@@ -71,6 +84,22 @@ Acceptance:
 - Thesis page communicates end-to-end process without section jumps.
 - Visual modules remain lightweight and typed.
 
+### Milestone M4 (Done): IA Restructure + Run-backed Results Surface
+
+Scope:
+
+1. Replace old top-level grouping (Background/Thesis split) with a
+   thesis-oriented flow (Methodology/Benchmark/Results/Appendix).
+2. Add dedicated graphical examples for inference strategy and data-family
+   behavior.
+3. Keep result views explicitly tied to available run artifacts.
+
+Acceptance:
+
+- Navigation reflects the new 5-part flow.
+- Results panels consume `metrics.json` when available.
+- Source map is aligned with the active section structure.
+
 ## Phase 4: Ongoing Sync Workflow (Continuous)
 
 Current focus:
@@ -78,6 +107,7 @@ Current focus:
 1. Keep section claims synchronized with implementation and notes during iterative edits.
 2. Expand visual modules only when they clarify benchmark behavior.
 3. Maintain Pico.css-first layouts and avoid custom layout regressions.
+4. Keep results pages measured-first; place illustrative content behind explicit explainers toggles.
 
 For each website update:
 

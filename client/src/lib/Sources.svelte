@@ -14,6 +14,7 @@
         [/models\/base\.py$/, "Shared model contract used by amortized and explicit inference methods."],
         [/models\/factory\.py$/, "Factory-based model construction for benchmarked method families."],
         [/models\/bcnp\/model\.py$/, "BCNP-specific posterior modeling and inference behavior."],
+        [/models\/(avici|dibs|bayesdag)\/model\.py$/, "Model-family-specific inference behavior used in benchmark comparisons."],
         [/models\/utils\/nn\.py$/, "Neural building blocks and helper utilities for model components."],
         [/datasets\/data_module\.py$/, "Dataset module wiring for reproducible train/validation/test splits."],
         [/datasets\/scm\.py$/, "SCM sampling and mechanism definitions used in synthetic data generation."],

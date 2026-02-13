@@ -1,6 +1,9 @@
 <script lang="ts">
     import Cite from "../../lib/Cite.svelte";
+    import ContentStatus from "../../lib/ContentStatus.svelte";
     import ConvergenceSignals from "../../lib/ConvergenceSignals.svelte";
+
+    let showExplainers = $state(false);
 </script>
 
 <section>
@@ -39,5 +42,28 @@
         </p>
     </article>
 
-    <ConvergenceSignals />
+    <article>
+        <header>Explainers</header>
+        <ContentStatus
+            status="illustrative"
+            text="Optional diagnostic intuition panel"
+        />
+        <p>
+            Measured results stay primary. Open explainers only when you want a
+            conceptual view of convergence behavior.
+        </p>
+        <button
+            class="secondary outline"
+            aria-pressed={showExplainers}
+            onclick={() => {
+                showExplainers = !showExplainers;
+            }}
+        >
+            {showExplainers ? "Hide explainers" : "Show explainers"}
+        </button>
+    </article>
+
+    {#if showExplainers}
+        <ConvergenceSignals />
+    {/if}
 </section>
