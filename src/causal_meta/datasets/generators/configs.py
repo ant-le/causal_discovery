@@ -122,15 +122,33 @@ class LogisticMapMechanismConfig:
 
 @dataclass
 class GPMechanismConfig:
-    rff_dim: int = 256
-    length_scale_range: tuple[float, float] = (0.5, 2.0)
-    variance: float = 1.0
+    mode: str = "approximate"
+    rff_dim: int = 512
+    num_kernels: int = 4
+    length_scale_range: tuple[float, float] = (0.1, 10.0)
+    variance: Optional[float] = None
+    variance_range: Optional[tuple[float, float]] = None
+    exact_num_kernel_pairs: int = 2
+    alpha_range: tuple[float, float] = (0.1, 100.0)
+    gamma_range: tuple[float, float] = (1e-5, 0.99999)
+    exact_noise_concentration: float = 1.0
+    exact_noise_rate: float = 10.0
+    exact_jitter: float = 1e-4
 
     def instantiate(self) -> GPMechanismFactory:
         return GPMechanismFactory(
+            mode=self.mode,
             rff_dim=self.rff_dim,
+            num_kernels=self.num_kernels,
             length_scale_range=self.length_scale_range,
             variance=self.variance,
+            variance_range=self.variance_range,
+            exact_num_kernel_pairs=self.exact_num_kernel_pairs,
+            alpha_range=self.alpha_range,
+            gamma_range=self.gamma_range,
+            exact_noise_concentration=self.exact_noise_concentration,
+            exact_noise_rate=self.exact_noise_rate,
+            exact_jitter=self.exact_jitter,
         )
 
 

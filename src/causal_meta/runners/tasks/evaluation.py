@@ -68,6 +68,9 @@ def run(
     all_raw_metrics = {}
 
     n_samples = int(cfg.inference.get("n_samples", 100))
+    auc_num_shuffles = int(cfg.inference.get("auc_num_shuffles", 1000))
+    auc_balance_classes = bool(cfg.inference.get("auc_balance_classes", True))
+    auc_seed = int(cfg.inference.get("auc_seed", 0))
 
     # Initialize Metrics Handlers
     metrics_handler = Metrics(
@@ -79,7 +82,10 @@ def run(
             "edge_entropy",
             "ancestor_f1",
             "auc",
-        ]
+        ],
+        auc_num_shuffles=auc_num_shuffles,
+        auc_balance_classes=auc_balance_classes,
+        auc_seed=auc_seed,
     )
     scm_metrics_handler = SCMMetrics(metrics=["inil"])
 

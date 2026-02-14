@@ -4,6 +4,7 @@ from causal_meta.models.bayesdag.model import BayesDAGModel
 from causal_meta.models.bcnp.model import BCNP
 from causal_meta.models.dibs.model import DiBSModel
 from causal_meta.models.factory import ModelFactory, register_model
+from causal_meta.models.random.model import RandomModel
 
 __all__ = [
     "BaseModel",
@@ -13,4 +14,5 @@ __all__ = [
     "BayesDAGModel",
     "BCNP",
     "DiBSModel",
+    "RandomModel",
 ]

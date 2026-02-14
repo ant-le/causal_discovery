@@ -11,69 +11,127 @@ from .base import BaseMetrics
 
 
 def auc_graph_scores(targets: torch.Tensor, preds: torch.Tensor) -> torch.Tensor:
-    """
-    Compute Area Under the Receiver Operating Characteristic Curve (ROC AUC) for graph edges.
+    """Compute class-balanced AUC scores for graph edge predictions.
 
-    Since we don't have sklearn, this computes AUC manually using the trapezoidal rule
-    on sorted predictions.
+    This follows the paper's default evaluation behavior: edge classes are balanced
+    with repeated random shuffles before AUC computation. Balancing is important for
+    sparse DAGs where non-edges dominate edge labels.
 
     Args:
-        targets: (Batch, N, N) binary adjacency matrices.
-        preds: (NumSamples, Batch, N, N) binary graph samples or probabilities.
-               If binary samples, we average them to get probabilities.
+        targets: Binary adjacency matrices with shape ``(batch_size, n_nodes, n_nodes)``.
+        preds: Graph samples/probabilities with shape
+            ``(num_samples, batch_size, n_nodes, n_nodes)``.
 
     Returns:
-        Tensor of shape (Batch,) containing AUC score per graph.
+        A tensor of shape ``(batch_size,)`` with AUC per graph.
     """
+    return _auc_graph_scores_impl(
+        targets=targets,
+        preds=preds,
+        num_shuffles=1000,
+        balance_classes=True,
+        seed=0,
+    )
+
+
+def _auc_from_binary_labels(y_true: torch.Tensor, y_score: torch.Tensor) -> float:
+    """Compute trapezoidal AUC from binary labels and prediction scores."""
+    positives = float(y_true.sum().item())
+    negatives = float(y_true.numel() - y_true.sum().item())
+    if positives <= 0.0 or negatives <= 0.0:
+        return 0.5
+
+    sorted_indices = torch.argsort(y_score, descending=True)
+    sorted_true = y_true[sorted_indices]
+
+    tps = torch.cumsum(sorted_true, dim=0)
+    fps = torch.cumsum(1.0 - sorted_true, dim=0)
+    tpr = tps / positives
+    fpr = fps / negatives
+
+    fpr_diff = torch.cat([fpr[:1], fpr[1:] - fpr[:-1]])
+    return float(torch.sum(fpr_diff * tpr).item())
+
+
+def _auc_graph_scores_impl(
+    targets: torch.Tensor,
+    preds: torch.Tensor,
+    *,
+    num_shuffles: int,
+    balance_classes: bool,
+    seed: int,
+) -> torch.Tensor:
+    """Internal implementation used by both defaults and configurable mode."""
     if targets.ndim != 3 or preds.ndim != 4:
         raise ValueError("targets must be 3D and preds must be 4D.")
 
-    # 1. Get predicted probabilities: Mean over samples -> (Batch, N, N)
     probs = preds.float().mean(dim=0)
-
-    # 2. Flatten N,N dimensions -> (Batch, N*N)
     y_true = targets.reshape(targets.shape[0], -1).float()
     y_score = probs.reshape(probs.shape[0], -1)
 
-    # 3. Compute AUC per batch item
-    auc_scores = []
+    n_shuffles = max(1, int(num_shuffles))
+    rng = torch.Generator(device="cpu")
+    rng.manual_seed(int(seed))
+
+    auc_scores: list[float] = []
     device = targets.device
 
     for i in range(y_true.shape[0]):
-        yt = y_true[i]
-        ys = y_score[i]
+        yt = y_true[i].detach().cpu()
+        ys = y_score[i].detach().cpu()
 
-        # Sort by score descending
-        desc_score_indices = torch.argsort(ys, descending=True)
-        yt_sorted = yt[desc_score_indices]
-        # ys_sorted = ys[desc_score_indices]
+        if not balance_classes:
+            auc_scores.append(_auc_from_binary_labels(yt, ys))
+            continue
 
-        # Total positives and negatives
-        tp_total = yt_sorted.sum()
-        fp_total = yt_sorted.numel() - tp_total
-
-        if tp_total == 0 or fp_total == 0:
-            # Undefined AUC if only one class is present.
-            # Convention: return 0.5 (random guessing) or NaN.
-            # Here we return 0.5.
+        pos_idx = torch.nonzero(yt > 0.5, as_tuple=False).flatten()
+        neg_idx = torch.nonzero(yt <= 0.5, as_tuple=False).flatten()
+        if pos_idx.numel() == 0 or neg_idx.numel() == 0:
             auc_scores.append(0.5)
             continue
 
-        # Cumulative sums
-        tps = torch.cumsum(yt_sorted, dim=0)
-        fps = torch.cumsum(1 - yt_sorted, dim=0)
+        keep = int(min(pos_idx.numel(), neg_idx.numel()))
+        auc_samples: list[float] = []
+        for _ in range(n_shuffles):
+            pos_perm = torch.randperm(pos_idx.numel(), generator=rng)[:keep]
+            neg_perm = torch.randperm(neg_idx.numel(), generator=rng)[:keep]
+            selected = torch.cat([pos_idx[pos_perm], neg_idx[neg_perm]], dim=0)
+            selected = selected[torch.randperm(selected.numel(), generator=rng)]
+            auc_samples.append(_auc_from_binary_labels(yt[selected], ys[selected]))
 
-        # TPR and FPR
-        tpr = tps / tp_total
-        fpr = fps / fp_total
-
-        # Trapezoidal rule for AUC: sum( (FPR_i - FPR_{i-1}) * TPR_i )
-        # Prepend 0 to FPR and TPR for integration
-        fpr_diff = torch.cat([fpr[0:1], fpr[1:] - fpr[:-1]])
-        auc = torch.sum(fpr_diff * tpr).item()
-        auc_scores.append(auc)
+        auc_scores.append(float(sum(auc_samples) / len(auc_samples)))
 
     return torch.tensor(auc_scores, device=device)
+
+
+def auc_graph_scores_configurable(
+    targets: torch.Tensor,
+    preds: torch.Tensor,
+    *,
+    num_shuffles: int = 1000,
+    balance_classes: bool = True,
+    seed: int = 0,
+) -> torch.Tensor:
+    """Compute AUC with configurable class balancing options.
+
+    Args:
+        targets: Binary adjacency matrices with shape ``(batch_size, n_nodes, n_nodes)``.
+        preds: Graph samples/probabilities with shape
+            ``(num_samples, batch_size, n_nodes, n_nodes)``.
+        num_shuffles: Number of random balanced resamples. The paper uses 1000.
+        balance_classes: If ``True``, each shuffle uses equal positives/negatives.
+        seed: Seed for the deterministic shuffle generator.
+
+    Returns:
+        A tensor of shape ``(batch_size,)`` with AUC per graph.
+    """
+    return _auc_graph_scores_impl(
+        targets=targets,
+        preds=preds,
+        num_shuffles=num_shuffles,
+        balance_classes=balance_classes,
+        seed=seed,
+    )
 
 
 def expected_shd(
@@ -413,7 +471,14 @@ class Metrics(BaseMetrics):
     and distributed logic internally.
     """
 
-    def __init__(self, metrics: List[str] | None = None):
+    def __init__(
+        self,
+        metrics: List[str] | None = None,
+        *,
+        auc_num_shuffles: int = 1000,
+        auc_balance_classes: bool = True,
+        auc_seed: int = 0,
+    ):
         super().__init__()
         self.metrics_list = (
             metrics
@@ -428,6 +493,9 @@ class Metrics(BaseMetrics):
                 "auc",
             ]
         )
+        self.auc_num_shuffles = max(1, int(auc_num_shuffles))
+        self.auc_balance_classes = bool(auc_balance_classes)
+        self.auc_seed = int(auc_seed)
 
     def _compute_batch_metrics(
         self, targets: torch.Tensor, samples: torch.Tensor
@@ -467,7 +535,15 @@ class Metrics(BaseMetrics):
 
         if "auc" in self.metrics_list:
             batch_metrics["auc"] = float(
-                auc_graph_scores(targets, samples).mean().item()
+                auc_graph_scores_configurable(
+                    targets,
+                    samples,
+                    num_shuffles=self.auc_num_shuffles,
+                    balance_classes=self.auc_balance_classes,
+                    seed=self.auc_seed,
+                )
+                .mean()
+                .item()
             )
 
         return batch_metrics

@@ -149,5 +149,4 @@ def test_ddp_evaluation_does_not_hang_and_writes_results(tmp_path) -> None:
     exit_codes = [p.exitcode for p in procs]
     assert exit_codes == [0, 0]
 
-    assert (tmp_path / "results" / "model.json").exists()
-    assert (tmp_path / "results" / "aggregated.json").exists()
+    assert (tmp_path / "metrics.json").exists()

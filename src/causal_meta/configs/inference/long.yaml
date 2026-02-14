@@ -1,6 +1,9 @@
 # @package inference
 
 n_samples: 20
+auc_num_shuffles: 1000
+auc_balance_classes: true
+auc_seed: 0
 use_cached_inference: true
 cache_inference: true
 

@@ -12,6 +12,7 @@ MODEL_IMPORTS: dict[str, str] = {
     "bcnp": "causal_meta.models.bcnp.model",
     "dibs": "causal_meta.models.dibs.model",
     "bayesdag": "causal_meta.models.bayesdag.model",
+    "random": "causal_meta.models.random.model",
 }
 
 

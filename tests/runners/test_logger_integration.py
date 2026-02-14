@@ -2,11 +2,10 @@ import logging
 from typing import Any, Dict
 
 import pytest
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 
-from causal_meta.runners.logger.base import BaseLogger
+from causal_meta.main import run_pipeline
 from causal_meta.runners.logger.local import LocalLogger
-from causal_meta.runners.pipe import run_pipeline
 
 
 class TestLocalLogger:
@@ -111,11 +110,11 @@ def test_pipeline_integration_smoke(tmp_path):
 
     # Check for artifacts
     # The default behavior writes to os.getcwd() if hydra config is missing
-    # Structure: <cwd>/checkpoints/last_<model_name>.pt
-    # Structure: <cwd>/results/<model_name>.json
+    # Structure: <cwd>/checkpoints/last.pt
+    # Structure: <cwd>/metrics.json
 
-    assert (tmp_path / "checkpoints" / "last_avici.pt").exists()
-    assert (tmp_path / "results" / "avici.json").exists()
+    assert (tmp_path / "checkpoints" / "last.pt").exists()
+    assert (tmp_path / "metrics.json").exists()
 
 
 def test_pipeline_rejects_multiple_models(tmp_path) -> None:

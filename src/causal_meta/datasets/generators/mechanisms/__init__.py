@@ -1,28 +1,19 @@
 from causal_meta.datasets.generators.mechanisms.base import MechanismFactory
-from causal_meta.datasets.generators.mechanisms.linear import (
-    LinearMechanism,
-    LinearMechanismFactory,
-)
-from causal_meta.datasets.generators.mechanisms.mlp import (
-    MLPMechanism,
-    MLPMechanismFactory,
-)
-from causal_meta.datasets.generators.mechanisms.mixture import MixtureMechanismFactory
-from causal_meta.datasets.generators.mechanisms.constant import ConstantMechanism
+from causal_meta.datasets.generators.mechanisms.constant import \
+    ConstantMechanism
 from causal_meta.datasets.generators.mechanisms.functional import (
-    FunctionalMechanism,
-    SquareMechanismFactory,
-    PeriodicMechanismFactory,
-    LogisticMapMechanismFactory,
-)
-from causal_meta.datasets.generators.mechanisms.pnl import (
-    PNLMechanism,
-    PNLMechanismFactory,
-)
+    FunctionalMechanism, LogisticMapMechanismFactory, PeriodicMechanismFactory,
+    SquareMechanismFactory)
 from causal_meta.datasets.generators.mechanisms.gpcde import (
-    GPMechanism,
-    GPMechanismFactory,
-)
+    ApproximateGPMechanism, ExactGPMechanism, GPMechanism, GPMechanismFactory)
+from causal_meta.datasets.generators.mechanisms.linear import (
+    LinearMechanism, LinearMechanismFactory)
+from causal_meta.datasets.generators.mechanisms.mixture import \
+    MixtureMechanismFactory
+from causal_meta.datasets.generators.mechanisms.mlp import (
+    MLPMechanism, MLPMechanismFactory)
+from causal_meta.datasets.generators.mechanisms.pnl import (
+    PNLMechanism, PNLMechanismFactory)
 
 __all__ = [
     "MechanismFactory",
@@ -38,6 +29,8 @@ __all__ = [
     "LogisticMapMechanismFactory",
     "PNLMechanism",
     "PNLMechanismFactory",
+    "ApproximateGPMechanism",
+    "ExactGPMechanism",
     "GPMechanism",
     "GPMechanismFactory",
 ]

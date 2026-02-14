@@ -64,7 +64,7 @@ def test_evaluation_uses_cached_inference_artifact(tmp_path) -> None:
     data_module = _DummyDataModule(dataset)
     model = _ModelThatShouldNotSample()
 
-    out_dir = tmp_path / "inference" / "model" / "dummy"
+    out_dir = tmp_path / "inference" / "dummy"
     out_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = out_dir / "seed_123.pt.gz"
 
@@ -86,5 +86,4 @@ def test_evaluation_uses_cached_inference_artifact(tmp_path) -> None:
 
     evaluation_run(cfg, model, data_module, output_dir=tmp_path)
 
-    assert (tmp_path / "results" / "model.json").exists()
-    assert (tmp_path / "results" / "aggregated.json").exists()
+    assert (tmp_path / "metrics.json").exists()

@@ -1,3 +1,5 @@
+import json
+
 from omegaconf import OmegaConf
 
 from causal_meta.datasets.data_module import CausalMetaModule
@@ -48,5 +50,10 @@ def test_evaluation_writes_results_to_output_dir(tmp_path) -> None:
 
     evaluation_run(cfg, model, data_module, output_dir=tmp_path)
 
-    assert (tmp_path / "results" / "avici.json").exists()
-    assert (tmp_path / "results" / "aggregated.json").exists()
+    metrics_path = tmp_path / "metrics.json"
+    assert metrics_path.exists()
+
+    payload = json.loads(metrics_path.read_text())
+    assert "summary" in payload
+    assert "raw" in payload
+    assert "test" in payload["summary"]

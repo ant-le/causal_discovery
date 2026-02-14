@@ -17,5 +17,5 @@ hydra:
     dir: ${oc.env:CAUSAL_META_RUN_DIR,experiments/runs/${name}/${model.id}}
   sweep:
     dir: ${oc.env:CAUSAL_META_SWEEP_DIR,experiments/runs/${name}}
-    subdir: ""
+    subdir: ${model.id}
   output_subdir: null
