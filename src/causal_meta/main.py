@@ -22,7 +22,7 @@ from causal_meta.models.factory import ModelFactory
 from causal_meta.runners.logger.base import BaseLogger
 from causal_meta.runners.logger.local import LocalLogger
 from causal_meta.runners.logger.wandb import WandbLogger
-from causal_meta.runners.tasks import evaluation, inference, pre_training
+from causal_meta.runners.tasks import analysis, evaluation, inference, pre_training
 from causal_meta.runners.utils.artifacts import resolve_output_dir
 from causal_meta.runners.utils.distributed import DistributedContext
 from causal_meta.runners.utils.env import log_environment_info
@@ -160,6 +160,12 @@ def main(cfg: DictConfig) -> None:
 
 
 def run_pipeline(cfg: DictConfig) -> None:
+    # Check for analysis task (e.g. python main.py +task=analysis analysis.target_dir=...)
+    if cfg.get("task") == "analysis":
+        base_output_dir = resolve_output_dir(cfg)
+        analysis.run(cfg, base_output_dir)
+        return
+
     def _validate_experiment_config(cfg_obj: DictConfig) -> None:
         missing = []
         for key in ["name", "data", "inference"]:
