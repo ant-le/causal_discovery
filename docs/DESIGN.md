@@ -42,7 +42,7 @@ Wraps diverse BCD algorithms into a uniform API.
 
 Orchestrates the experiment (Hydra config -> data module -> model -> tasks).
 
-- **Entry point:** `causal_meta.runners.pipe`
+- **Entry point:** `causal_meta.main`
   1. Validates config keys early.
   2. Sets up distributed context (optional).
   3. Builds `CausalMetaModule` (datasets).

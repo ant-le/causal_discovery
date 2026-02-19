@@ -33,7 +33,7 @@ tmpdir=$(mktemp -d) && \
 ## 4. Run the pipeline using the external env
 
 ```bash
-python -m causal_meta.runners.pipe \
+causal-meta \
   model.type=bayesdag \
   model.num_nodes=10 \
   +model.pyenv_env=bayesdag-3.9 \

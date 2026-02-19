@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-causal-meta = "causal_meta.runners.pipe:main"
+causal-meta = "causal_meta.main:main"
 
 [project.optional-dependencies]
 dev = [
@@ -37,8 +37,11 @@ wandb = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/causal_meta"]
 include = [
-    "src/causal_meta/runners/configs/**/*.yaml",
+    "src/causal_meta/configs/**/*.yaml",
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [build-system]
 requires = ["hatchling"]

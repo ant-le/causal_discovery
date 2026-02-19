@@ -4,7 +4,7 @@ This documents the _current_ pre-training setup as implemented by the runner cod
 
 ## Where Pre-Training Lives
 
-- Entrypoint: `src/causal_meta/runners/pipe.py`
+- Entrypoint: `src/causal_meta/main.py`
   - Builds `CausalMetaModule` from `cfg.data`
   - Builds a model from `cfg.model` via `ModelFactory`
   - If `model.needs_pretraining == True`:
@@ -18,7 +18,7 @@ This documents the _current_ pre-training setup as implemented by the runner cod
 
 ### Minimal default (installed usage / smoke)
 
-- `src/causal_meta/runners/configs/default.yaml`
+- `src/causal_meta/configs/default.yaml`
   - Small ER+Linear toy setup, `trainer.max_steps=10`, WandB disabled.
 
 ### Canonical “competence curriculum” pre-training (Avici)
@@ -195,7 +195,7 @@ Implemented in `src/causal_meta/runners/tasks/pre_training.py`.
 
 ## Distributed (DDP) Notes
 
-- DDP wrapping is done in `src/causal_meta/runners/pipe.py` using `torch.nn.parallel.DistributedDataParallel`.
+- DDP wrapping is done in `src/causal_meta/main.py` using `torch.nn.parallel.DistributedDataParallel`.
 - Rank 0:
   - prints/logs most status
   - writes checkpoints
@@ -239,7 +239,7 @@ Implemented in `src/causal_meta/runners/tasks/pre_training.py`.
 
 1. **Config drift / unused config**
    - `cfg.objective` is present in YAMLs (e.g. `objective.name=bce`) but the runner never uses it; loss is entirely model-defined via `model.calculate_loss(...)`.
-   - `src/causal_meta/runners/configs/default.yaml` includes `inference.inil_graph_samples` but there is no runtime usage of that key in `src/`.
+   - `src/causal_meta/configs/default.yaml` includes `inference.inil_graph_samples` but there is no runtime usage of that key in `src/`.
 
 2. **Acyclicity regulariser schedule likely misconfigured**
    - Avici’s dual update is gated by `trainer.regulariser_update_interval`.

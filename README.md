@@ -21,14 +21,14 @@ pip install -e .
 
 ```bash
 # Run a minimal local test
-python -m causal_meta.runners.pipe name=smoke_test
+causal-meta name=smoke_test
 ```
 
 ### Running on a Cluster (Slurm)
 
 ```bash
 # Submit to Slurm via Submitit
-python -m causal_meta.runners.pipe hydra/launcher=submitit_slurm
+causal-meta hydra/launcher=submitit_slurm
 ```
 
 ## Documentation
