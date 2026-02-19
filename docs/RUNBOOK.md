@@ -43,6 +43,39 @@ causal-meta --multirun \
     trainer.lr=0.001,0.0001
 ```
 
+### TU Wien VSC H100 preset
+
+Use the dedicated launcher preset with the full multimodel sweep:
+
+```bash
+causal-meta --multirun \
+  --config-name full_multimodel \
+  hydra/launcher=vsc_h100
+```
+
+This preset keeps the 4x H100 resource layout and sets per-job naming/output to
+avoid collisions: each multirun job gets its own Slurm name (`cm_${model.id}_${hydra.job.num}`)
+and its own Hydra sweep subdirectory (`${model.id}_${hydra.job.num}`).
+
+### Per-job naming
+
+You can override naming patterns directly when launching:
+
+```bash
+causal-meta --multirun \
+  --config-name full_multimodel \
+  hydra/launcher=vsc_h100 \
+  hydra.launcher.name='cm_${model.id}_${hydra.job.num}' \
+  hydra.sweep.subdir='${model.id}_${hydra.job.num}'
+```
+
+Example alternatives:
+
+```bash
+hydra.launcher.name='cm_${model.id}'
+hydra.sweep.subdir='${model.id}'
+```
+
 ### Resource Overrides
 
 You can override Slurm resources directly from the command line:

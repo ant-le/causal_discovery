@@ -16,7 +16,7 @@ hydra:
     dir: ${oc.env:CAUSAL_META_RUN_DIR,experiments/runs/${name}}
   sweep:
     dir: ${oc.env:CAUSAL_META_SWEEP_DIR,experiments/runs/${name}}
-    subdir: "${model.id}"
+    subdir: "${model.id}_${hydra.job.num}"
   output_subdir: null
   sweeper:
     params:
