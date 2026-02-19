@@ -11,10 +11,19 @@ A scalable, Hydra-configured framework for benchmarking Bayesian Causal Discover
 
 ## Quick Start
 
-### Installation
+### Installation (uv)
 
 ```bash
-pip install -e .
+uv venv .venv --python 3.11
+source .venv/bin/activate
+uv pip install -e ".[cluster,wandb]"
+```
+
+For full multimodel runs including BayesDAG, use:
+
+```bash
+./bootstrap_uv.sh
+export CAUSAL_META_BAYESDAG_PYTHON="$PWD/.venv-bayesdag/bin/python"
 ```
 
 ### Running a Smoke Test

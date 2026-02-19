@@ -93,14 +93,18 @@ causal-meta --multirun \
 
 - **W&B Logging:** If using W&B (`logger.wandb.enabled=true`), set `WANDB_MODE=offline` on clusters without internet access.
 - **Errors:** Use `HYDRA_FULL_ERROR=1` for detailed tracebacks.
-- **Environment:**
+- **Environment (uv, recommended):**
   ```bash
-  conda env create -f environment.yml
-  conda activate causal_meta
-  pip install -e .
+  uv venv .venv --python 3.11
+  source .venv/bin/activate
+  uv pip install -e ".[cluster,wandb]"
   ```
-- **BayesDAG External Env:** See `docs/BAYESDAG_SETUP.md` for the required pyenv
-  environment and pinned dependencies to run `model.type=bayesdag`.
+- **BayesDAG External Env (required for multimodel):**
+  ```bash
+  ./bootstrap_uv.sh
+  export CAUSAL_META_BAYESDAG_PYTHON="$PWD/.venv-bayesdag/bin/python"
+  ```
+  See `docs/BAYESDAG_SETUP.md` for details.
 
 ## 4. Output Structure
 
