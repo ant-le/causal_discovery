@@ -19,7 +19,6 @@ name: "cm_${model.id}"
 additional_parameters:
   mail-user: "e12229950@student.tuwien.ac.at"
   mail-type: "BEGIN,END,FAIL"
-  gres: "gpu:h100:4" # Request 4 H100 GPUs per job
 
 setup:
   - export OMP_NUM_THREADS=${hydra.launcher.cpus_per_task}
