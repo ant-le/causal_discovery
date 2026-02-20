@@ -60,6 +60,36 @@ This preset keeps the 4x H100 resource layout and sets per-job naming/output to
 avoid collisions: each multirun job gets its own Slurm name (`cm_${model.id}`)
 and its own Hydra sweep subdirectory (`${model.id}_${hydra.job.num}`).
 
+### TU Wien VSC A100 preset
+
+Use the A100 launcher preset:
+
+```bash
+# Prevent eager CUDA initialization on login node (fixes pickling errors)
+export CUDA_VISIBLE_DEVICES=""
+
+causal-meta --multirun \
+  --config-name full_multimodel \
+  hydra/launcher=vsc_a100
+```
+
+This preset requests 1 A100 GPU per job and submits to the `GPU-a100` partition.
+
+### TU Wien VSC A100s preset
+
+Use the multi-GPU A100 launcher preset:
+
+```bash
+# Prevent eager CUDA initialization on login node (fixes pickling errors)
+export CUDA_VISIBLE_DEVICES=""
+
+causal-meta --multirun \
+  --config-name full_multimodel \
+  hydra/launcher=vsc_a100s
+```
+
+This preset requests 4 A100 GPUs per job (DDP).
+
 ### Per-job naming
 
 You can override naming patterns directly when launching:

@@ -1,0 +1,25 @@
+# @package hydra.launcher
+_target_: hydra_plugins.hydra_submitit_launcher.submitit_launcher.SlurmLauncher
+submitit_folder: ${hydra.sweep.dir}/.submitit
+
+# Job Resources (Per Model/Task)
+timeout_min: 1440 # 24 hours
+cpus_per_task: 5 # CPUs per GPU task
+gpus_per_node: 1 # 1 A100 GPU per job
+tasks_per_node: 1
+mem_gb: 50
+nodes: 1
+
+# Scheduler Directives
+partition: "GPU-a100"
+name: "cm_${model.id}"
+# account: <YOUR_ACCOUNT>   # Uncomment if required
+
+# specific SBATCH flags
+additional_parameters:
+  mail-user: "e12229950@student.tuwien.ac.at"
+  mail-type: "BEGIN,END,FAIL"
+
+setup:
+  - export OMP_NUM_THREADS=${hydra.launcher.cpus_per_task}
+  - export HYDRA_FULL_ERROR=1
