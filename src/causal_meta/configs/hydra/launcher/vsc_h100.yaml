@@ -12,7 +12,7 @@ nodes: 1
 
 # Scheduler Directives
 partition: "GPU-h100"
-name: "cm_${model.id}_${hydra.job.num}"
+name: "cm_${model.id}"
 # account: <YOUR_ACCOUNT>   # Uncomment if required
 
 # specific SBATCH flags

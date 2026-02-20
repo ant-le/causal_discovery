@@ -48,13 +48,16 @@ causal-meta --multirun \
 Use the dedicated launcher preset with the full multimodel sweep:
 
 ```bash
+# Prevent eager CUDA initialization on login node (fixes pickling errors)
+export CUDA_VISIBLE_DEVICES=""
+
 causal-meta --multirun \
   --config-name full_multimodel \
   hydra/launcher=vsc_h100
 ```
 
 This preset keeps the 4x H100 resource layout and sets per-job naming/output to
-avoid collisions: each multirun job gets its own Slurm name (`cm_${model.id}_${hydra.job.num}`)
+avoid collisions: each multirun job gets its own Slurm name (`cm_${model.id}`)
 and its own Hydra sweep subdirectory (`${model.id}_${hydra.job.num}`).
 
 ### Per-job naming
