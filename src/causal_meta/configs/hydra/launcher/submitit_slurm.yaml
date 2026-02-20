@@ -8,6 +8,7 @@ tasks_per_node: 1
 mem_gb: 32
 nodes: 1
 partition: gpu
+name: "cm_${model.id}_${hydra.job.num}"
 setup:
   - export OMP_NUM_THREADS=1
   - export HYDRA_FULL_ERROR=1
