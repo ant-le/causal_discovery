@@ -23,7 +23,8 @@ This creates:
 ```bash
 uv python install 3.11 3.9
 uv venv .venv --python 3.11
-uv pip install --python .venv/bin/python -e ".[cluster,wandb]"
+uv lock
+uv sync --python .venv/bin/python --extra cluster --extra wandb --frozen --no-editable
 
 uv venv .venv-bayesdag --python 3.9
 uv pip install --python .venv-bayesdag/bin/python -r requirements-bayesdag.txt

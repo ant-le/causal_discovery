@@ -14,10 +14,12 @@ A scalable, Hydra-configured framework for benchmarking Bayesian Causal Discover
 ### Installation (uv)
 
 ```bash
-uv venv .venv --python 3.11
+uv lock
+uv sync --extra cluster --extra wandb --frozen --no-editable
 source .venv/bin/activate
-uv pip install -e ".[cluster,wandb]"
 ```
+
+Use `--no-editable` for robust cross-platform imports of `causal_meta`.
 
 For full multimodel runs including BayesDAG, use:
 
@@ -37,7 +39,7 @@ causal-meta name=smoke_test
 
 ```bash
 # Submit to Slurm via Submitit
-causal-meta hydra/launcher=submitit_slurm
+causal-meta --multirun --config-name smoke_multimodel hydra/launcher=submitit_slurm
 ```
 
 ## Documentation

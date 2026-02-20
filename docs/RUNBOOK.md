@@ -10,10 +10,10 @@ To run a single experiment locally using the default configuration:
 causal-meta
 ```
 
-To run a specific YAML config from the repo:
+To run a specific packaged config:
 
 ```bash
-causal-meta --config-path experiments/examples --config-name smoke_test
+causal-meta --config-name smoke_multimodel
 ```
 
 ## 2. Distributed & Cluster Execution (Slurm)
@@ -26,7 +26,7 @@ To submit a single job to the cluster:
 
 ```bash
 causal-meta --multirun \
-  --config-path experiments/benchmark_suite --config-name train_competence \
+  --config-name default \
   hydra/launcher=submitit_slurm \
   name=my_slurm_run
 ```
@@ -37,10 +37,9 @@ To run multiple seeds or hyperparameter variations in parallel on the cluster:
 
 ```bash
 causal-meta --multirun \
-    --config-path experiments/benchmark_suite --config-name train_competence \
+    --config-name smoke_multimodel \
     hydra/launcher=submitit_slurm \
-    data.base_seed=0,1,2,3 \
-    trainer.lr=0.001,0.0001
+    data.base_seed=0,1,2,3
 ```
 
 ### TU Wien VSC H100 preset
@@ -98,7 +97,7 @@ You can override naming patterns directly when launching:
 causal-meta --multirun \
   --config-name full_multimodel \
   hydra/launcher=vsc_h100 \
-  hydra.launcher.name='cm_${model.id}_${hydra.job.num}' \
+  hydra.launcher.name='cm_${model.id}' \
   hydra.sweep.subdir='${model.id}_${hydra.job.num}'
 ```
 
@@ -128,9 +127,9 @@ causal-meta --multirun \
 - **Errors:** Use `HYDRA_FULL_ERROR=1` for detailed tracebacks.
 - **Environment (uv, recommended):**
   ```bash
-  uv venv .venv --python 3.11
+  uv lock
+  uv sync --extra cluster --extra wandb --frozen --no-editable
   source .venv/bin/activate
-  uv pip install -e ".[cluster,wandb]"
   ```
 - **BayesDAG External Env (required for multimodel):**
   ```bash

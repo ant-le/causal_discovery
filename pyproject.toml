@@ -13,7 +13,6 @@ dependencies = [
     "scipy>=1.10.0",
     "matplotlib>=3.7.0",
     "hydra-core>=1.3.0",
-    "gpytorch>=1.11.0",
 ]
 
 [project.scripts]
@@ -23,12 +22,9 @@ causal-meta = "causal_meta.main:main"
 dev = [
     "pytest>=7.0.0",
 ]
-explicit = [
-    "dibs-lib",
-    "causica @ git+https://github.com/microsoft/Project-BayesDAG.git#subdirectory=src",
-]
 cluster = [
     "hydra-submitit-launcher>=1.2.0",
+    "dibs-lib",
 ]
 wandb = [
     "wandb>=0.15.0",
@@ -39,9 +35,6 @@ packages = ["src/causal_meta"]
 include = [
     "src/causal_meta/configs/**/*.yaml",
 ]
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [build-system]
 requires = ["hatchling"]
