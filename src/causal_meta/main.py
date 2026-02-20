@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import traceback
 from pathlib import Path
 from typing import Mapping, cast
 
@@ -12,10 +13,12 @@ from omegaconf import DictConfig, open_dict
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from causal_meta.datasets.data_module import CausalMetaModule
-from causal_meta.datasets.generators.configs import (ErdosRenyiConfig,
-                                                     MixtureGraphConfig,
-                                                     SBMConfig,
-                                                     ScaleFreeConfig)
+from causal_meta.datasets.generators.configs import (
+    ErdosRenyiConfig,
+    MixtureGraphConfig,
+    SBMConfig,
+    ScaleFreeConfig,
+)
 from causal_meta.datasets.generators.factory import load_data_module_config
 from causal_meta.models.base import BaseModel
 from causal_meta.models.factory import ModelFactory
@@ -26,8 +29,7 @@ from causal_meta.runners.tasks import analysis, evaluation, inference, pre_train
 from causal_meta.runners.utils.artifacts import resolve_output_dir
 from causal_meta.runners.utils.distributed import DistributedContext
 from causal_meta.runners.utils.env import log_environment_info
-from causal_meta.runners.utils.seeding import (get_experiment_seed,
-                                               seed_everything)
+from causal_meta.runners.utils.seeding import get_experiment_seed, seed_everything
 
 log = logging.getLogger(__name__)
 
@@ -408,16 +410,18 @@ def run_pipeline(cfg: DictConfig) -> None:
                 logger=logger,
                 output_dir=base_output_dir,
             )
-        except Exception:
-            if (not is_distributed) or dist_ctx.is_main_process:
-                log.exception("Pipeline failed.")
-            raise
         finally:
             if logger is not None:
                 logger.finish()
 
         if (not is_distributed) or dist_ctx.is_main_process:
             log.info("Pipeline Finished.")
+    except Exception:
+        if (not is_distributed) or dist_ctx.is_main_process:
+            log.error("Pipeline failed.")
+            print("[causal_meta.main][ERROR] Pipeline failed.", flush=True)
+            traceback.print_exc()
+        raise
     finally:
         # Cleanup distributed context at the very end
         try:
