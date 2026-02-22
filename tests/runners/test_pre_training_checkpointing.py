@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
 import torch
 from omegaconf import OmegaConf
 
 from causal_meta.models.base import BaseModel
+from causal_meta.runners.tasks.pre_training import _augment_validation_group_metrics
 from causal_meta.runners.tasks.pre_training import _build_scheduler
 from causal_meta.runners.tasks.pre_training import run as pre_training_run
 from causal_meta.runners.tasks.pre_training import save_checkpoint
@@ -185,3 +187,49 @@ def test_build_scheduler_none_and_invalid() -> None:
         assert "trainer.scheduler" in str(exc)
     else:
         raise AssertionError("Expected ValueError for unsupported scheduler type")
+
+
+def test_build_scheduler_with_linear_warmup() -> None:
+    param = torch.nn.Parameter(torch.tensor(0.0))
+    optimizer = torch.optim.AdamW([param], lr=1e-3)
+    cfg = OmegaConf.create(
+        {
+            "trainer": {
+                "scheduler": "cosine",
+                "max_steps": 10,
+                "scheduler_t_max": 10,
+                "scheduler_warmup_ratio": 0.2,
+                "scheduler_warmup_start_factor": 0.1,
+            }
+        }
+    )
+
+    scheduler = _build_scheduler(optimizer, cfg)
+    assert isinstance(scheduler, torch.optim.lr_scheduler.SequentialLR)
+
+    lrs = []
+    for _ in range(10):
+        optimizer.step()
+        scheduler.step()
+        lrs.append(float(optimizer.param_groups[0]["lr"]))
+
+    assert lrs[0] < lrs[1]
+    assert lrs[-1] < lrs[1]
+
+
+def test_augment_validation_group_metrics_adds_id_and_ood_means() -> None:
+    metrics = {
+        "id_val_linear_er20/e-edgef1": 0.20,
+        "id_val_neuralnet_er40/e-edgef1": 0.40,
+        "ood_val_mechanism_periodic_er40/e-edgef1": 0.10,
+        "id_val_linear_er20/auc": 0.70,
+        "id_val_neuralnet_er40/auc": 0.80,
+        "ood_val_mechanism_periodic_er40/auc": 0.50,
+    }
+
+    _augment_validation_group_metrics(metrics)
+
+    assert metrics["mean_id_e-edgef1"] == pytest.approx(0.30)
+    assert metrics["mean_ood_e-edgef1"] == pytest.approx(0.10)
+    assert metrics["mean_id_auc"] == pytest.approx(0.75)
+    assert metrics["mean_ood_auc"] == pytest.approx(0.50)

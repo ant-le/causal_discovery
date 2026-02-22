@@ -11,9 +11,18 @@ from causal_meta.datasets.data_module import CausalMetaModule
 from causal_meta.datasets.torch_datasets import MetaFixedDataset
 from causal_meta.models.base import BaseModel
 from causal_meta.runners.utils.artifacts import (
-    atomic_torch_save, cache_settings, cache_suffix, get_model_name,
-    prepare_graph_samples_for_cache, resolve_output_dir)
+    atomic_torch_save,
+    cache_settings,
+    cache_suffix,
+    get_model_name,
+    prepare_graph_samples_for_cache,
+    resolve_output_dir,
+)
 from causal_meta.runners.utils.distributed import DistributedContext
+from causal_meta.runners.utils.explicit_profiles import (
+    apply_explicit_profile,
+    infer_explicit_profile,
+)
 
 log = logging.getLogger(__name__)
 
@@ -85,9 +94,14 @@ def run(
     written: Dict[str, int] = {}
 
     test_datasets: Dict[str, MetaFixedDataset] = getattr(data_module, "test_datasets")
+    test_families = getattr(data_module, "test_families", {}) or {}
     for name, dataset in test_datasets.items():
+        profile = infer_explicit_profile(name, test_families.get(name))
+        profile_applied = apply_explicit_profile(model, profile)
         if rank == 0:
             log.info(f"Running inference cache for dataset '{name}'...")
+            if profile_applied and profile is not None:
+                log.info(f"Applying explicit profile '{profile}' for dataset '{name}'.")
 
         # If using a shared/persistent cache_dir, keep a model namespace.
         # For per-run artifacts, keep files directly under the model's run folder.

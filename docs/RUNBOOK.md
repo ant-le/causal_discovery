@@ -61,7 +61,7 @@ and its own Hydra sweep subdirectory (`${model.id}_${hydra.job.num}`).
 
 ### TU Wien VSC A100 preset
 
-Use the A100 launcher preset:
+Use the A100 launcher preset (recommended for the RQ1 all-data sweep):
 
 ```bash
 # Prevent eager CUDA initialization on login node (fixes pickling errors)
@@ -73,6 +73,7 @@ causal-meta --multirun \
 ```
 
 This preset requests 1 A100 GPU per job and submits to the `GPU-a100` partition.
+`full_multimodel` currently resolves to run name `rq1_all_data_multimodel`.
 
 ### TU Wien VSC A100s preset
 
@@ -151,3 +152,13 @@ Hydra manages output directories:
 
 **Note:** If you sweep different hyperparameters for the same model, use different `name` values
 to avoid overwriting artifacts in a shared run folder.
+
+## 5. Validation And Baseline Profiles
+
+- Validation uses multiple ID families (`id_*`) and one OOD family (`ood_*`) to
+  track robustness during pre-training.
+- DiBS and BayesDAG use YAML-driven profile overrides (Linear/NeuralNet/GPCDE)
+  selected automatically per evaluation family.
+- For reporting, separate your summary into:
+  - ID slice (`id_*`) for paper-comparable metrics.
+  - OOD slice (`ood_*`) for robustness checks.

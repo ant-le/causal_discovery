@@ -17,8 +17,7 @@ from causal_meta.datasets.data_module import CausalMetaModule
 from causal_meta.models.base import BaseModel
 from causal_meta.runners.logger.base import BaseLogger
 from causal_meta.runners.metrics.graph import Metrics
-from causal_meta.runners.utils.artifacts import (get_model_name,
-                                                 resolve_output_dir)
+from causal_meta.runners.utils.artifacts import get_model_name, resolve_output_dir
 from causal_meta.runners.utils.distributed import DistributedContext
 from causal_meta.runners.utils.seeding import get_experiment_seed
 
@@ -222,7 +221,6 @@ def run(
     train_iter = iter(train_loader)
 
     while step < max_steps:
-
         model.train()
         optimizer.zero_grad()
 
@@ -312,12 +310,19 @@ def run(
                 if logger:
                     prefixed = {k: v for k, v in val_metrics.items() if "/" in k}
                     log_payload = {f"val/{k}": v for k, v in prefixed.items()}
-                    if "mean_e-edgef1" in val_metrics:
-                        log_payload["val/mean_e-edgef1"] = val_metrics["mean_e-edgef1"]
+                    aggregate = {
+                        k: v
+                        for k, v in val_metrics.items()
+                        if k.startswith("mean_") and "/" not in k
+                    }
+                    log_payload.update({f"val/{k}": v for k, v in aggregate.items()})
                     logger.log_metrics(log_payload, step=step)
 
-                # Save Best (using E-F1 as metric)
-                current_metric = val_metrics.get("mean_e-edgef1", 0.0)
+                # Save best model by ID validation E-F1 (fallback: global mean E-F1).
+                current_metric = val_metrics.get(
+                    "mean_id_e-edgef1",
+                    val_metrics.get("mean_e-edgef1", 0.0),
+                )
                 if current_metric > best_val_metric:
                     best_val_metric = current_metric
                     save_checkpoint(
@@ -408,11 +413,44 @@ def validate(
                 )
     avg_metrics = metrics_handler.compute(summary_stats=False)
 
+    _augment_validation_group_metrics(avg_metrics)
+
     # Calculate mean F1 across all datasets (Alias for checkpointing)
-    if "e-edgef1" in avg_metrics:
+    if "mean_id_e-edgef1" in avg_metrics:
+        avg_metrics["mean_e-edgef1"] = avg_metrics["mean_id_e-edgef1"]
+    elif "e-edgef1" in avg_metrics:
         avg_metrics["mean_e-edgef1"] = avg_metrics["e-edgef1"]
 
     return avg_metrics
+
+
+def _augment_validation_group_metrics(metrics: dict[str, float]) -> None:
+    """Add grouped ID/OOD means for validation monitoring.
+
+    Args:
+        metrics: In-place metric dictionary from ``Metrics.compute``.
+    """
+    grouped: dict[str, dict[str, float]] = {}
+    for key, value in metrics.items():
+        if "/" not in key:
+            continue
+        family_name, metric_name = key.split("/", 1)
+        grouped.setdefault(metric_name, {})[family_name] = float(value)
+
+    for metric_name, family_values in grouped.items():
+        id_values = [
+            val for family, val in family_values.items() if family.startswith("id_")
+        ]
+        ood_values = [
+            val for family, val in family_values.items() if family.startswith("ood_")
+        ]
+
+        if id_values:
+            metrics[f"mean_id_{metric_name}"] = float(sum(id_values) / len(id_values))
+        if ood_values:
+            metrics[f"mean_ood_{metric_name}"] = float(
+                sum(ood_values) / len(ood_values)
+            )
 
 
 def save_checkpoint(
@@ -467,7 +505,44 @@ def _build_scheduler(optimizer: optim.Optimizer, cfg: DictConfig) -> Any | None:
     max_steps = int(cfg.trainer.max_steps)
     t_max = int(cfg.trainer.get("scheduler_t_max", max_steps))
     eta_min = float(cfg.trainer.get("scheduler_eta_min", 0.0))
-    return optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max, eta_min=eta_min)
+
+    warmup_steps_cfg = cfg.trainer.get("scheduler_warmup_steps", None)
+    if warmup_steps_cfg is None:
+        warmup_ratio = float(cfg.trainer.get("scheduler_warmup_ratio", 0.0))
+        warmup_steps = int(round(max_steps * max(0.0, warmup_ratio)))
+    else:
+        warmup_steps = int(warmup_steps_cfg)
+
+    warmup_steps = max(0, min(warmup_steps, max(0, max_steps - 1)))
+    if warmup_steps <= 0:
+        return optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=max(1, t_max),
+            eta_min=eta_min,
+        )
+
+    start_factor = float(cfg.trainer.get("scheduler_warmup_start_factor", 1e-3))
+    start_factor = min(max(start_factor, 1e-8), 1.0)
+
+    warmup = optim.lr_scheduler.LinearLR(
+        optimizer,
+        start_factor=start_factor,
+        end_factor=1.0,
+        total_iters=warmup_steps,
+    )
+
+    cosine_t_max = max(1, t_max - warmup_steps)
+    cosine = optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=cosine_t_max,
+        eta_min=eta_min,
+    )
+
+    return optim.lr_scheduler.SequentialLR(
+        optimizer,
+        schedulers=[warmup, cosine],
+        milestones=[warmup_steps],
+    )
 
 
 def _maybe_clip_grad_norm(

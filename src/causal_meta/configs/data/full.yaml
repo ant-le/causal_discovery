@@ -1,6 +1,6 @@
 # @package data
 
-# Full Syntren reproduction data config.
+# Full RQ1 all-data config with additional OOD suites.
 n_nodes: 20
 
 train_family:
@@ -8,7 +8,7 @@ train_family:
 
   graph_cfg:
     type: mixture
-    weights: [0.25, 0.25, 0.25, 0.25]
+    weights: [0.3333, 0.3333, 0.3334]
     generators:
       - type: er
         sparsity: 0.0526
@@ -16,12 +16,10 @@ train_family:
         sparsity: 0.1053
       - type: er
         sparsity: 0.1579
-      - type: sf
-        m: 2
 
   mech_cfg:
     type: mixture
-    weights: [0.33, 0.33, 0.34]
+    weights: [0.3333, 0.3333, 0.3334]
     factories:
       - type: linear
         weight_scale: 10.0
@@ -37,8 +35,19 @@ train_family:
         variance_range: [0.1, 10.0]
 
 val_families:
-  id_val:
-    name: id_val
+  id_val_linear_er20:
+    name: id_val_linear_er20
+    graph_cfg:
+      type: er
+      sparsity: 0.0526
+    mech_cfg:
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+
+  id_val_neuralnet_er40:
+    name: id_val_neuralnet_er40
     graph_cfg:
       type: er
       sparsity: 0.1053
@@ -46,48 +55,169 @@ val_families:
       type: mlp
       hidden_dim: 32
 
-test_families:
-  ood_square:
-    name: ood_square
+  id_val_gpcde_er60:
+    name: id_val_gpcde_er60
     graph_cfg:
       type: er
-      sparsity: 0.1
+      sparsity: 0.1579
+    mech_cfg:
+      type: gp
+      mode: approximate
+      rff_dim: 512
+      num_kernels: 4
+      length_scale_range: [0.1, 10.0]
+      variance_range: [0.1, 10.0]
+
+  ood_val_mechanism_periodic_er40:
+    name: ood_val_mechanism_periodic_er40
+    graph_cfg:
+      type: er
+      sparsity: 0.1053
+    mech_cfg:
+      type: periodic
+      weight_scale: 1.0
+
+test_families:
+  id_linear_er20:
+    name: id_linear_er20
+    graph_cfg:
+      type: er
+      sparsity: 0.0526
+    mech_cfg:
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+
+  id_linear_er40:
+    name: id_linear_er40
+    graph_cfg:
+      type: er
+      sparsity: 0.1053
+    mech_cfg:
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+
+  id_linear_er60:
+    name: id_linear_er60
+    graph_cfg:
+      type: er
+      sparsity: 0.1579
+    mech_cfg:
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+
+  id_neuralnet_er20:
+    name: id_neuralnet_er20
+    graph_cfg:
+      type: er
+      sparsity: 0.0526
+    mech_cfg:
+      type: mlp
+      hidden_dim: 32
+
+  id_neuralnet_er40:
+    name: id_neuralnet_er40
+    graph_cfg:
+      type: er
+      sparsity: 0.1053
+    mech_cfg:
+      type: mlp
+      hidden_dim: 32
+
+  id_neuralnet_er60:
+    name: id_neuralnet_er60
+    graph_cfg:
+      type: er
+      sparsity: 0.1579
+    mech_cfg:
+      type: mlp
+      hidden_dim: 32
+
+  id_gpcde_er20:
+    name: id_gpcde_er20
+    graph_cfg:
+      type: er
+      sparsity: 0.0526
+    mech_cfg:
+      type: gp
+      mode: approximate
+      rff_dim: 512
+      num_kernels: 4
+      length_scale_range: [0.1, 10.0]
+      variance_range: [0.1, 10.0]
+
+  id_gpcde_er40:
+    name: id_gpcde_er40
+    graph_cfg:
+      type: er
+      sparsity: 0.1053
+    mech_cfg:
+      type: gp
+      mode: approximate
+      rff_dim: 512
+      num_kernels: 4
+      length_scale_range: [0.1, 10.0]
+      variance_range: [0.1, 10.0]
+
+  id_gpcde_er60:
+    name: id_gpcde_er60
+    graph_cfg:
+      type: er
+      sparsity: 0.1579
+    mech_cfg:
+      type: gp
+      mode: approximate
+      rff_dim: 512
+      num_kernels: 4
+      length_scale_range: [0.1, 10.0]
+      variance_range: [0.1, 10.0]
+
+  ood_mechanism_square_er40:
+    name: ood_mechanism_square_er40
+    graph_cfg:
+      type: er
+      sparsity: 0.1053
     mech_cfg:
       type: square
       weight_scale: 1.0
       noise_scale: 0.1
 
-  ood_logistic_map:
-    name: ood_logistic_map
+  ood_mechanism_logistic_map_er40:
+    name: ood_mechanism_logistic_map_er40
     graph_cfg:
       type: er
-      sparsity: 0.1
+      sparsity: 0.1053
     mech_cfg:
       type: logistic_map
       weight_scale: 1.0
 
-  ood_periodic:
-    name: ood_periodic
+  ood_mechanism_periodic_er40:
+    name: ood_mechanism_periodic_er40
     graph_cfg:
       type: er
-      sparsity: 0.1
+      sparsity: 0.1053
     mech_cfg:
       type: periodic
       weight_scale: 1.0
 
-  ood_pnl_tanh:
-    name: ood_pnl_tanh
+  ood_mechanism_pnl_tanh_er40:
+    name: ood_mechanism_pnl_tanh_er40
     graph_cfg:
       type: er
-      sparsity: 0.1
+      sparsity: 0.1053
     mech_cfg:
       type: pnl
       nonlinearity_type: tanh
       inner_config:
         type: linear
 
-  ood_sbm_strong:
-    name: ood_sbm_strong
+  ood_graph_sbm_strong_linear:
+    name: ood_graph_sbm_strong_linear
     graph_cfg:
       type: sbm
       n_blocks: 4
@@ -96,15 +226,66 @@ test_families:
     mech_cfg:
       type: linear
 
+  ood_graph_scale_free_linear:
+    name: ood_graph_scale_free_linear
+    graph_cfg:
+      type: sf
+      m: 2
+    mech_cfg:
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+
+  ood_mechanism_gp_wide_er40:
+    name: ood_mechanism_gp_wide_er40
+    graph_cfg:
+      type: er
+      sparsity: 0.1053
+    mech_cfg:
+      type: gp
+      mode: approximate
+      rff_dim: 1024
+      num_kernels: 8
+      length_scale_range: [0.01, 20.0]
+      variance_range: [0.01, 20.0]
+
 samples_per_task: 1000
 seeds_val: [1000, 1001, 1002, 1003, 1004]
-seeds_test: [2000, 2001, 2002, 2003, 2004]
+seeds_test:
+  [
+    2000,
+    2001,
+    2002,
+    2003,
+    2004,
+    2005,
+    2006,
+    2007,
+    2008,
+    2009,
+    2010,
+    2011,
+    2012,
+    2013,
+    2014,
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+  ]
 base_seed: 42
 safety_checks: true
 num_workers: 4
 pin_memory: true
 normalize_data: true
-batch_size_train: 1
+batch_size_train: 32
 batch_size_val: 1
 batch_size_test: 1
 batch_size_test_interventional: 1

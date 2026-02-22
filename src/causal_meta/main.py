@@ -317,7 +317,16 @@ def run_pipeline(cfg: DictConfig) -> None:
         if (not is_distributed) or dist_ctx.is_main_process:
             if use_wandb:
                 log.info("Initializing WandB Logger...")
-                logger = WandbLogger(cfg, output_dir=str(base_output_dir))
+                try:
+                    logger = WandbLogger(cfg, output_dir=str(base_output_dir))
+                except Exception as exc:
+                    log.warning(
+                        "W&B initialization failed (%s). Falling back to LocalLogger. "
+                        "Use logger.wandb.enabled=false or logger.wandb.mode=offline "
+                        "to suppress this warning.",
+                        exc,
+                    )
+                    logger = LocalLogger()
             else:
                 log.info("Initializing Local Logger...")
                 logger = LocalLogger()

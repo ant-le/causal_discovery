@@ -5,7 +5,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple
 
 import numpy as np
 import torch
@@ -48,6 +48,7 @@ class BayesDAGModel(BaseModel):
         external_timeout_s: int = 3600,
         device: str = "auto",
         skip_evaluation: bool = True,
+        profile_overrides: Mapping[str, Mapping[str, Any]] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -74,6 +75,42 @@ class BayesDAGModel(BaseModel):
         self.external_timeout_s = external_timeout_s
         self.device = device
         self.skip_evaluation = skip_evaluation
+        self._base_profile = {
+            "variant": variant,
+            "lambda_sparse": lambda_sparse,
+            "num_chains": num_chains,
+            "scale_noise": scale_noise,
+            "scale_noise_p": scale_noise_p,
+        }
+        self._profile_overrides: dict[str, dict[str, Any]] = {}
+        if profile_overrides is not None:
+            for name, values in profile_overrides.items():
+                self._profile_overrides[str(name).lower()] = dict(values)
+        self._active_profile: str | None = None
+
+    def set_inference_profile(self, profile: str | None) -> None:
+        """Apply named BayesDAG profile overrides for explicit comparisons.
+
+        Args:
+            profile: Profile identifier or ``None`` for defaults.
+        """
+        profile_key = str(profile).lower() if profile is not None else "default"
+        override = self._profile_overrides.get(profile_key, {})
+
+        self.variant = str(override.get("variant", self._base_profile["variant"]))
+        self.lambda_sparse = float(
+            override.get("lambda_sparse", self._base_profile["lambda_sparse"])
+        )
+        self.num_chains = int(
+            override.get("num_chains", self._base_profile["num_chains"])
+        )
+        self.scale_noise = float(
+            override.get("scale_noise", self._base_profile["scale_noise"])
+        )
+        self.scale_noise_p = float(
+            override.get("scale_noise_p", self._base_profile["scale_noise_p"])
+        )
+        self._active_profile = profile_key
 
     @property
     def needs_pretraining(self) -> bool:
@@ -319,8 +356,7 @@ class BayesDAGModel(BaseModel):
             from causica.datasets.dataset import CausalDataset
             from causica.datasets.variables import Variables
             from causica.models.bayesdag.bayesdag_linear import BayesDAGLinear
-            from causica.models.bayesdag.bayesdag_nonlinear import \
-                BayesDAGNonLinear
+            from causica.models.bayesdag.bayesdag_nonlinear import BayesDAGNonLinear
         except Exception as exc:  # pragma: no cover - exercised via tests
             raise RuntimeError(
                 "BayesDAG requires the 'causica' package from Project-BayesDAG. "

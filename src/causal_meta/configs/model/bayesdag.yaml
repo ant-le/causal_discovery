@@ -5,16 +5,16 @@ id: "bayesdag"
 
 # BayesDAG explicit inference parameters.
 variant: "nonlinear"
-lambda_sparse: 1.0
+lambda_sparse: 10.0
 
-# Keep this tiny for smoke. Increase for real runs.
-num_chains: 1
-sinkhorn_n_iter: 200
+# Long-run settings for explicit comparisons.
+num_chains: 10
+sinkhorn_n_iter: 3000
 
-scale_noise: 0.1
-scale_noise_p: 1.0
-batch_size: 32
-max_epochs: 1
+scale_noise: 0.001
+scale_noise_p: 0.01
+batch_size: 64
+max_epochs: 100
 
 standardize_data_mean: false
 standardize_data_std: false
@@ -27,3 +27,30 @@ external_python: ${oc.env:CAUSAL_META_BAYESDAG_PYTHON,null}
 pyenv_env: ${oc.env:CAUSAL_META_BAYESDAG_PYENV_ENV,bayesdag-3.9}
 external_timeout_s: 1200
 device: "auto"
+
+# Paper-aligned per-family profiles (Appendix B.3, Table 6).
+profile_overrides:
+  linear:
+    variant: "linear"
+    lambda_sparse: 500.0
+    num_chains: 20
+    scale_noise: 0.001
+    scale_noise_p: 1.0
+  neuralnet:
+    variant: "nonlinear"
+    lambda_sparse: 10.0
+    num_chains: 10
+    scale_noise: 0.001
+    scale_noise_p: 0.01
+  gpcde:
+    variant: "nonlinear"
+    lambda_sparse: 1.0
+    num_chains: 10
+    scale_noise: 0.1
+    scale_noise_p: 0.001
+  default:
+    variant: "nonlinear"
+    lambda_sparse: 10.0
+    num_chains: 10
+    scale_noise: 0.001
+    scale_noise_p: 0.01

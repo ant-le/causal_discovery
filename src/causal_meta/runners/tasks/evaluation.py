@@ -16,10 +16,20 @@ from causal_meta.models.base import BaseModel
 from causal_meta.runners.metrics.graph import Metrics
 from causal_meta.runners.metrics.scm import SCMMetrics
 from causal_meta.runners.utils.artifacts import (
-    atomic_torch_save, cache_settings, cache_suffix, find_inference_artifact,
-    get_model_name, prepare_graph_samples_for_cache, resolve_output_dir,
-    torch_load)
+    atomic_torch_save,
+    cache_settings,
+    cache_suffix,
+    find_inference_artifact,
+    get_model_name,
+    prepare_graph_samples_for_cache,
+    resolve_output_dir,
+    torch_load,
+)
 from causal_meta.runners.utils.distributed import DistributedContext
+from causal_meta.runners.utils.explicit_profiles import (
+    apply_explicit_profile,
+    infer_explicit_profile,
+)
 
 log = logging.getLogger(__name__)
 
@@ -113,6 +123,10 @@ def run(
         # Retrieve family for on-the-fly interventional evaluation
         test_families = getattr(data_module, "test_families", {}) or {}
         family = test_families.get(name)
+        profile = infer_explicit_profile(name, family)
+        profile_applied = apply_explicit_profile(model_unwrapped, profile)
+        if rank == 0 and profile_applied and profile is not None:
+            log.info(f"Applying explicit profile '{profile}' for dataset '{name}'.")
 
         # Reset internal state for this dataset
         metrics_handler.reset()

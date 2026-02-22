@@ -117,6 +117,86 @@ def test_pipeline_integration_smoke(tmp_path):
     assert (tmp_path / "metrics.json").exists()
 
 
+def test_pipeline_falls_back_to_local_logger_when_wandb_init_fails(
+    tmp_path, monkeypatch
+):
+    class _FailingWandbLogger:
+        def __init__(self, *_args, **_kwargs) -> None:
+            raise RuntimeError("401 unauthorized")
+
+    monkeypatch.setattr("causal_meta.main.WandbLogger", _FailingWandbLogger)
+
+    cfg = OmegaConf.create(
+        {
+            "name": "integration_test_wandb_fallback",
+            "logger": {
+                "wandb": {
+                    "enabled": True,
+                    "mode": "online",
+                    "project": "causal_meta",
+                }
+            },
+            "data": {
+                "train_family": {
+                    "name": "train",
+                    "n_nodes": 5,
+                    "graph_cfg": {"type": "er", "sparsity": 0.5},
+                    "mech_cfg": {"type": "linear", "weight_scale": 1.0},
+                },
+                "test_families": {
+                    "test_1": {
+                        "name": "test",
+                        "n_nodes": 5,
+                        "graph_cfg": {"type": "er", "sparsity": 0.5},
+                        "mech_cfg": {"type": "linear", "weight_scale": 1.0},
+                    }
+                },
+                "seeds_val": [100],
+                "seeds_test": [200],
+                "base_seed": 42,
+                "samples_per_task": 10,
+                "safety_checks": False,
+                "num_workers": 0,
+                "pin_memory": False,
+            },
+            "model": {
+                "type": "avici",
+                "num_nodes": 5,
+                "d_model": 8,
+                "nhead": 2,
+                "num_layers": 2,
+                "dim_feedforward": 16,
+                "dropout": 0.0,
+            },
+            "trainer": {
+                "max_steps": 2,
+                "log_every_n_steps": 1,
+                "val_check_interval": 2,
+                "lr": 0.001,
+                "tf32": False,
+            },
+            "inference": {
+                "n_samples": 2,
+                "inil_graph_samples": 1,
+                "use_cached_inference": False,
+                "cache_inference": False,
+            },
+        }
+    )
+
+    import os
+
+    original_cwd = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        run_pipeline(cfg)
+    finally:
+        os.chdir(original_cwd)
+
+    assert (tmp_path / "checkpoints" / "last.pt").exists()
+    assert (tmp_path / "metrics.json").exists()
+
+
 def test_pipeline_rejects_multiple_models(tmp_path) -> None:
     cfg = OmegaConf.create(
         {

@@ -1,6 +1,6 @@
 # @package inference
 
-n_samples: 3
+n_samples: 8
 auc_num_shuffles: 1000
 auc_balance_classes: true
 auc_seed: 0
@@ -10,3 +10,14 @@ cache_inference: true
 cache_compress: false
 cache_dtype: "uint8"
 cache_n_samples: null
+
+# Minimal explicit inference overrides for fast cluster smoke runs.
+dibs:
+  steps: 50
+  n_particles: 8
+
+bayesdag:
+  max_epochs: 1
+  num_chains: 2
+  sinkhorn_n_iter: 200
+  external_timeout_s: 600

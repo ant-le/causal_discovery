@@ -4,6 +4,7 @@ submitit_folder: ${hydra.sweep.dir}/.submitit
 
 # Job Resources (Per Model/Task)
 timeout_min: 1440 # 24 hours
+max_num_timeout: 3 # Auto-requeue timed-out jobs (up to 4 total attempts)
 cpus_per_task: 5 # CPUs per GPU task
 gpus_per_node: 4 # 4 A100 GPUs per job (DDP)
 tasks_per_node: 4 # 4 tasks per node (matches GPUs)
@@ -17,6 +18,7 @@ name: "cm_${model.id}"
 
 # specific SBATCH flags
 additional_parameters:
+  requeue: true
   mail-user: "e12229950@student.tuwien.ac.at"
   mail-type: "BEGIN,END,FAIL"
 

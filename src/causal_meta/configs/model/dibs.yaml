@@ -5,7 +5,40 @@ id: "dibs"
 
 # DiBS explicit inference parameters.
 mode: "nonlinear"
-steps: 20
+steps: 1000
 seed: 0
 use_marginal: false
 xla_preallocate: false
+
+# Default profile (used when dataset family cannot be mapped).
+alpha: 0.02
+gamma_z: 5.0
+gamma_theta: 1000.0
+n_particles: 32
+
+# Paper-aligned per-family profiles (Appendix B.3, Table 5).
+profile_overrides:
+  linear:
+    mode: "linear"
+    alpha: 0.2
+    gamma_z: 5.0
+    gamma_theta: 500.0
+    n_particles: 64
+  neuralnet:
+    mode: "nonlinear"
+    alpha: 0.02
+    gamma_z: 5.0
+    gamma_theta: 1000.0
+    n_particles: 32
+  gpcde:
+    mode: "nonlinear"
+    alpha: 0.02
+    gamma_z: 5.0
+    gamma_theta: 1000.0
+    n_particles: 32
+  default:
+    mode: "nonlinear"
+    alpha: 0.02
+    gamma_z: 5.0
+    gamma_theta: 1000.0
+    n_particles: 32

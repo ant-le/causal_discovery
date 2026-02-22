@@ -20,7 +20,7 @@ Top-level configs:
 - `src/causal_meta/configs/smoke_multimodel.yaml`
   - Multirun sweep over smoke model variants.
 - `src/causal_meta/configs/full_multimodel.yaml`
-  - Multirun sweep over full models (`avici_full,bcnp_full,dibs,bayesdag`).
+  - Multirun sweep over RQ1 all-data models (`avici_full,bcnp_full,dibs,bayesdag`).
 
 Config groups used by those top-level configs:
 
@@ -42,6 +42,8 @@ Long trainer (`trainer=long`):
 - `max_steps: 500000`
 - `lr: 1e-4`
 - `amp: true` (`bf16`)
+- `scheduler_warmup_ratio: 0.1` (linear warmup, then cosine)
+- `regulariser_update_interval: 500` (AVICI dual update cadence)
 
 ## How To Run
 
@@ -80,6 +82,24 @@ export CAUSAL_META_BAYESDAG_PYTHON="$PWD/.venv-bayesdag/bin/python"
 ```
 
 See `docs/BAYESDAG_SETUP.md` for full setup.
+
+## Validation Monitoring
+
+`trainer=long` validation now tracks grouped metrics across multiple validation
+families:
+
+- several in-distribution families (`id_*`)
+- one OOD family (`ood_*`)
+
+The training loop logs per-family metrics and aggregate group metrics such as
+`mean_id_e-edgef1`, `mean_id_auc`, and `mean_ood_e-edgef1`. Checkpoint
+selection uses `mean_id_e-edgef1`.
+
+## Explicit Baseline Profiles
+
+DiBS and BayesDAG are configured via YAML profile overrides keyed by dataset
+family type (`linear`, `neuralnet`, `gpcde`). The runner maps each evaluation
+family to the corresponding profile automatically.
 
 ## Legacy Note
 

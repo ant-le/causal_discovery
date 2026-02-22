@@ -3,13 +3,13 @@
 defaults:
   - logger: offline
   - data: smoke
-  - model: bcnp_smoke
+  - model: bcnp_full
   - trainer: smoke
   - inference: smoke
   - _self_
   - override hydra/job_logging: console
 
-name: "smoke_multimodel"
+name: "smoke_actual_multimodel"
 
 hydra:
   run:
@@ -20,4 +20,4 @@ hydra:
   output_subdir: null
   sweeper:
     params:
-      model: avici_smoke,bcnp_smoke,dibs,bayesdag
+      model: avici_full,bcnp_full,dibs,bayesdag

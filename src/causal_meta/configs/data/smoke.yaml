@@ -1,102 +1,136 @@
 # @package data
 
-n_nodes: 10
+n_nodes: 20
 
 train_family:
-  name: bcnp_all_data_train_smoke
+  name: bcnp_all_data_train_smoke_actual
 
   graph_cfg:
     type: mixture
-    weights: [0.25, 0.25, 0.25, 0.25]
+    weights: [0.3333, 0.3333, 0.3334]
     generators:
       - type: er
-        sparsity: 0.15
+        sparsity: 0.0526
       - type: er
-        sparsity: 0.25
+        sparsity: 0.1053
       - type: er
-        sparsity: 0.35
-      - type: sf
-        m: 2
+        sparsity: 0.1579
 
   mech_cfg:
     type: mixture
-    weights: [0.33, 0.33, 0.34]
+    weights: [0.3333, 0.3333, 0.3334]
     factories:
       - type: linear
-        weight_scale: 2.0
+        weight_scale: 10.0
         noise_concentration: 2.0
         noise_rate: 2.0
       - type: mlp
-        hidden_dim: 8
+        hidden_dim: 32
       - type: gp
         mode: approximate
-        rff_dim: 64
-        num_kernels: 2
+        rff_dim: 512
+        num_kernels: 4
         length_scale_range: [0.1, 10.0]
         variance_range: [0.1, 10.0]
 
 val_families:
-  id_val:
-    name: id_val
+  id_val_linear_er20:
+    name: id_val_linear_er20
     graph_cfg:
       type: er
-      sparsity: 0.25
+      sparsity: 0.0526
+    mech_cfg:
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+
+  id_val_neuralnet_er40:
+    name: id_val_neuralnet_er40
+    graph_cfg:
+      type: er
+      sparsity: 0.1053
     mech_cfg:
       type: mlp
-      hidden_dim: 8
+      hidden_dim: 32
 
-test_families:
-  ood_square:
-    name: ood_square
+  id_val_gpcde_er60:
+    name: id_val_gpcde_er60
     graph_cfg:
       type: er
-      sparsity: 0.25
+      sparsity: 0.1579
     mech_cfg:
-      type: square
-      weight_scale: 1.0
-      noise_scale: 0.1
+      type: gp
+      mode: approximate
+      rff_dim: 512
+      num_kernels: 4
+      length_scale_range: [0.1, 10.0]
+      variance_range: [0.1, 10.0]
 
-  ood_logistic_map:
-    name: ood_logistic_map
+  ood_val_mechanism_periodic_er40:
+    name: ood_val_mechanism_periodic_er40
     graph_cfg:
       type: er
-      sparsity: 0.25
-    mech_cfg:
-      type: logistic_map
-      weight_scale: 1.0
-
-  ood_periodic:
-    name: ood_periodic
-    graph_cfg:
-      type: er
-      sparsity: 0.25
+      sparsity: 0.1053
     mech_cfg:
       type: periodic
       weight_scale: 1.0
 
-  ood_pnl_tanh:
-    name: ood_pnl_tanh
+test_families:
+  id_linear_er20:
+    name: id_linear_er20
     graph_cfg:
       type: er
-      sparsity: 0.25
-    mech_cfg:
-      type: pnl
-      nonlinearity_type: tanh
-      inner_config:
-        type: linear
-
-  ood_sbm_strong:
-    name: ood_sbm_strong
-    graph_cfg:
-      type: sbm
-      n_blocks: 3
-      p_intra: 0.6
-      p_inter: 0.02
+      sparsity: 0.0526
     mech_cfg:
       type: linear
-      weight_scale: 2.0
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
 
-samples_per_task: 128
+  id_neuralnet_er40:
+    name: id_neuralnet_er40
+    graph_cfg:
+      type: er
+      sparsity: 0.1053
+    mech_cfg:
+      type: mlp
+      hidden_dim: 32
+
+  id_gpcde_er60:
+    name: id_gpcde_er60
+    graph_cfg:
+      type: er
+      sparsity: 0.1579
+    mech_cfg:
+      type: gp
+      mode: approximate
+      rff_dim: 512
+      num_kernels: 4
+      length_scale_range: [0.1, 10.0]
+      variance_range: [0.1, 10.0]
+
+  ood_mechanism_periodic_er40:
+    name: ood_mechanism_periodic_er40
+    graph_cfg:
+      type: er
+      sparsity: 0.1053
+    mech_cfg:
+      type: periodic
+      weight_scale: 1.0
+
+  ood_graph_scale_free_linear:
+    name: ood_graph_scale_free_linear
+    graph_cfg:
+      type: sf
+      m: 2
+    mech_cfg:
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+
+samples_per_task: 1000
 seeds_val: [1000]
 seeds_test: [2000]
 base_seed: 42
@@ -104,7 +138,7 @@ safety_checks: true
 num_workers: 0
 pin_memory: false
 normalize_data: true
-batch_size_train: 1
+batch_size_train: 8
 batch_size_val: 1
 batch_size_test: 1
 batch_size_test_interventional: 1

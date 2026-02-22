@@ -3,10 +3,10 @@
 type: "bcnp"
 id: "bcnp_full"
 
-# Large transformer (paper-scale).
+# RQ1-sized transformer (section 4.2 scale).
 d_model: 512
-dim_feedforward: 2048
-nhead: 16
+dim_feedforward: 1024
+nhead: 8
 num_layers: 4
 dropout: 0.1
 emb_depth: 2
