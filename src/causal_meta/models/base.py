@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
 
 import torch
 import torch.nn as nn
@@ -34,12 +36,22 @@ class BaseModel(nn.Module, ABC):
         return False
 
     @abstractmethod
-    def forward(self, x: torch.Tensor) -> Any:
+    def forward(
+        self,
+        x: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> Any:
         """
         Forward pass of the model.
 
         Args:
             x: Input data tensor of shape (Batch, Samples, Variables).
+            mask: Optional padding mask for variable-size graphs.  When
+                provided, padded node positions are marked so that
+                attention layers and output heads can ignore them.
+                Shape conventions are model-specific (e.g.
+                ``(Batch, Samples, Variables)`` with ``-inf`` at padded
+                positions for transformer key-padding masks).
 
         Returns:
             Model-specific output (e.g., logits, distribution parameters).
@@ -47,13 +59,19 @@ class BaseModel(nn.Module, ABC):
         pass
 
     @abstractmethod
-    def sample(self, x: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
+    def sample(
+        self,
+        x: torch.Tensor,
+        num_samples: int = 1,
+        mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         """
         Generate causal structure samples.
 
         Args:
             x: Input data tensor of shape (Batch, Samples, Variables).
             num_samples: Number of graph samples to return per batch element.
+            mask: Optional padding mask (see :meth:`forward`).
 
         Returns:
             Predicted adjacency matrices of shape (Batch, num_samples, Variables, Variables).
@@ -61,7 +79,9 @@ class BaseModel(nn.Module, ABC):
         pass
 
     @abstractmethod
-    def calculate_loss(self, output: Any, target: torch.Tensor, **kwargs) -> torch.Tensor:
+    def calculate_loss(
+        self, output: Any, target: torch.Tensor, **kwargs
+    ) -> torch.Tensor:
         """
         Calculate model-specific loss.
 

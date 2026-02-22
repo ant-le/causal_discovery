@@ -95,12 +95,18 @@ class AviciModel(CausalTNPEncoder, BaseModel):
     def decode(self, representation: torch.Tensor) -> torch.Tensor:
         return self.decoder(representation)
 
-    def forward(self, input_data: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        input_data: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         """
         Forward pass of the Avici model.
 
         Args:
             input_data: Input tensor of shape (Batch, Samples, Variables).
+            mask: Optional padding mask for variable-size graphs (currently
+                unused — reserved for future padding support).
 
         Returns:
             logits: Predicted adjacency logits of shape (Batch, Variables, Variables).
@@ -122,18 +128,24 @@ class AviciModel(CausalTNPEncoder, BaseModel):
 
         return adj_matrix
 
-    def sample(self, input_data: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
+    def sample(
+        self,
+        input_data: torch.Tensor,
+        num_samples: int = 1,
+        mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         """
         Bernoulli sampling from edge probabilities.
 
         Args:
             input_data: Input tensor of shape (Batch, Samples, Variables).
             num_samples: Number of graph samples to generate.
+            mask: Optional padding mask (see :meth:`forward`).
 
         Returns:
             torch.Tensor: Sampled adjacency matrices (Batch, num_samples, Variables, Variables).
         """
-        logits = self.forward(input_data)
+        logits = self.forward(input_data, mask=mask)
         probs = torch.sigmoid(logits)
         probs = probs * (
             1 - torch.eye(probs.size(-1), device=probs.device, dtype=probs.dtype)

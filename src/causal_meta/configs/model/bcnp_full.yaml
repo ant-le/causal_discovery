@@ -17,5 +17,5 @@ num_layers_decoder: 4
 
 # Sinkhorn permutation sampling.
 n_perm_samples: 100
-sinkhorn_iter: 1000
+sinkhorn_iter: 20
 q_before_l: true

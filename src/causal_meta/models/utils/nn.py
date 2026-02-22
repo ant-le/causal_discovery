@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import copy
 import math
 from typing import Callable, Optional
@@ -11,7 +13,6 @@ from torch.nn.parameter import Parameter
 
 
 class PositionalEncoding(nn.Module):
-
     def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
@@ -72,9 +73,9 @@ class CausalTransformerEncoder(nn.Module):
     ) -> None:
         super(CausalTransformerEncoder, self).__init__()
         assert len(encoder_layers) > 0, "Encoder must have at least one layer."
-        assert (
-            len(encoder_layers) % 2 == 0
-        ), "Encoder must have an even number of layers."
+        assert len(encoder_layers) % 2 == 0, (
+            "Encoder must have an even number of layers."
+        )
         self.layers = encoder_layers
 
     def forward(
@@ -204,7 +205,6 @@ class CausalTransformerDecoderLayer(nn.TransformerDecoderLayer):
 
 
 class CausalAdjacencyMatrix(nn.Module):
-
     def __init__(
         self,
         nhead,

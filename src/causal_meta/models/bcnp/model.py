@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import math
 from typing import Any, Optional
 
@@ -7,10 +9,12 @@ import torch.nn.functional as F
 
 from causal_meta.models.base import BaseModel
 from causal_meta.models.factory import register_model
-from causal_meta.models.utils.nn import (CausalAdjacencyMatrix,
-                                         CausalTNPEncoder,
-                                         CausalTransformerDecoderLayer,
-                                         build_mlp)
+from causal_meta.models.utils.nn import (
+    CausalAdjacencyMatrix,
+    CausalTNPEncoder,
+    CausalTransformerDecoderLayer,
+    build_mlp,
+)
 from causal_meta.models.utils.permutations import sample_permutation
 
 
@@ -89,9 +93,13 @@ class BCNP(CausalTNPEncoder, BaseModel):
             num_layers=decoder_layers_half,
         )
 
-        self.Q_param = CausalAdjacencyMatrix(
-            nhead=nhead, d_model=d_model, device=None, dtype=None
-        )
+        # NOTE: Q_param is defined in the reference but never called (the
+        # permutation logits are produced by ``permutation_logit_network``
+        # instead).  We keep the definition commented out to avoid wasting
+        # ~788K parameters.
+        # self.Q_param = CausalAdjacencyMatrix(
+        #     nhead=nhead, d_model=d_model, device=None, dtype=None
+        # )
         self.L_param = CausalAdjacencyMatrix(
             nhead=nhead, d_model=d_model, device=None, dtype=None
         )
@@ -123,30 +131,55 @@ class BCNP(CausalTNPEncoder, BaseModel):
 
         return L_param, Q_rep
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Returns edge probabilities marginalized over permutations.
+    def forward(
+        self,
+        x: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Return edge probabilities marginalized over permutations.
 
         Args:
-            x: Input tensor of shape (Batch, Samples, Variables).
+            x: Input tensor of shape ``(Batch, Samples, Variables)``.
+            mask: Optional padding mask for variable-size graphs.  When
+                provided it should be a boolean-like tensor of shape
+                ``(Batch, Variables)`` with ``True`` / ``-inf`` at padded
+                positions (matching the transformer ``key_padding_mask``
+                convention).  Padded nodes will be masked out of the
+                permutation logits so that only real nodes participate.
 
         Returns:
-            all_probs: Tensor of shape (n_perm_samples, Batch, Variables, Variables).
+            all_probs: Tensor of shape
+                ``(n_perm_samples, Batch, Variables, Variables)``.
         """
         input_data = x
         B, S, V = input_data.shape
-        # if V != self.num_nodes:
-        #     # In meta-learning, V might vary if model allows, but this implementation binds specific sizes
-        #     # for PositionalEncoding/masks. Reference throws error.
-        #     raise ValueError(
-        #         "Number of nodes in the input data should be equal to num_nodes."
-        #     )
+
+        if V > self.num_nodes:
+            raise ValueError(
+                f"Number of input variables ({V}) exceeds the configured "
+                f"num_nodes ({self.num_nodes}).  Use V <= num_nodes and "
+                f"supply a padding mask for smaller graphs."
+            )
+
+        # Build decoder padding mask from the provided mask.  The
+        # encoder already accepts ``mask`` directly; the decoder
+        # ``tgt_key_padding_mask`` uses the same convention (``-inf``
+        # at padded positions, ``0`` elsewhere).
+        decoder_mask: Optional[torch.Tensor] = None
+        if mask is not None:
+            # Normalise to the ``-inf / 0`` convention expected by
+            # ``nn.TransformerDecoder.tgt_key_padding_mask``.
+            if mask.dtype == torch.bool:
+                decoder_mask = torch.zeros_like(mask, dtype=input_data.dtype)
+                decoder_mask.masked_fill_(mask, float("-inf"))
+            else:
+                decoder_mask = mask.to(dtype=input_data.dtype)
 
         target_data = input_data.unsqueeze(-1)
-        representation = self.encode(target_data=target_data, mask=None)
+        representation = self.encode(target_data=target_data, mask=mask)
         representation = representation.squeeze(2)  # (B, V, D)
 
-        L_param, Q_rep = self.decode(representation, mask=None)
+        L_param, Q_rep = self.decode(representation, mask=decoder_mask)
 
         # Calculate Q parameters (permutation logits)
         permutation_logits = self.permutation_logit_network(Q_rep).squeeze(-1)  # (B, V)
@@ -158,16 +191,17 @@ class BCNP(CausalTNPEncoder, BaseModel):
         Q_param = torch.einsum("bn,m->bnm", permutation_logits, ovector)
         Q_param = F.logsigmoid(Q_param)
 
-        # Mask diagonal
-        Q_mask = 1 - torch.eye(V, device=input_data.device)
-        # The reference logic for Q_mask seems to apply to Q_param addition?
-        # Reference: Q_mask = ...; Q_param = Q_param + Q_mask
-        # If Q_mask is 0 on diagonal and 1 elsewhere?
-        # Reference: Q_mask = decoder_mask... triu/tril?
-        # Actually reference: Q_mask = (1 - eye). This ensures diagonal is not suppressed?
-        # Wait, if Q_param is log_sigmoid (negative), adding 0 changes nothing.
-        # Reference logic is slightly opaque on masking without variable size.
-        # We will assume standard full permutation for now.
+        # Apply padding mask to Q_param when a mask is provided.
+        # Reference logic: Q_mask = decoder_mask[:,None,:] + decoder_mask[:,:,None]
+        #                  Q_mask *= (1 - eye);  Q_param += Q_mask
+        # This drives padded rows/columns of Q_param to -inf so that
+        # Sinkhorn normalisation assigns near-zero mass to padded nodes.
+        if decoder_mask is not None:
+            Q_mask = decoder_mask.unsqueeze(1) + decoder_mask.unsqueeze(2)
+            Q_mask = Q_mask * (
+                1 - torch.eye(V, device=input_data.device, dtype=Q_mask.dtype)
+            )
+            Q_param = Q_param + Q_mask
 
         # Sample Permutations
         perm, _ = sample_permutation(
@@ -180,22 +214,16 @@ class BCNP(CausalTNPEncoder, BaseModel):
             squeeze=False,
             device=input_data.device,
         )
-        # perm: (B, K, N, N) -> Transpose to (B, K, N, N) (Reference returns (B, K, N, N) then transposes?)
-        # Reference: perm = perm.transpose(1, 0) (Sample, Batch, ...) ??
-        # Reference `sample_permutation` returns (B, K, N, N).
-        # Reference forward: perm = perm.transpose(1, 0) -> (K, B, N, N).
         perm = perm.transpose(1, 0)  # (K, B, N, N)
         perm_inv = perm.transpose(3, 2)
 
-        # Lower Triangular Mask
-        mask = torch.tril(torch.ones((V, V), device=input_data.device), diagonal=-1)
+        # Lower Triangular Mask (strictly below diagonal)
+        tril_mask = torch.tril(
+            torch.ones((V, V), device=input_data.device), diagonal=-1
+        )
 
-        # P @ Mask @ P.T
-        # perm: (K, B, N, N)
-        # mask: (N, N)
-        # Einstein sum:
-        # perm (K, B, i, j) * mask (j, k) * perm_inv (K, B, k, l) -> (K, B, i, l)
-        all_masks = torch.einsum("nbij,jk,nbkl->nbil", perm, mask, perm_inv)
+        # DAG construction: P @ L_mask @ P.T
+        all_masks = torch.einsum("nbij,jk,nbkl->nbil", perm, tril_mask, perm_inv)
 
         # Probs from L
         probs = torch.sigmoid(L_param)  # (B, N, N)
@@ -205,17 +233,29 @@ class BCNP(CausalTNPEncoder, BaseModel):
 
         return all_probs
 
-    def sample(self, x: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
-        """
-        Returns sampled graphs.
-        Shape: (Batch, num_samples, N, N)
+    def sample(
+        self,
+        x: torch.Tensor,
+        num_samples: int = 1,
+        mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Return sampled graphs.
+
+        Args:
+            x: Input data of shape ``(Batch, Samples, Variables)``.
+            num_samples: Number of graph samples to return per batch element.
+            mask: Optional padding mask (see :meth:`forward`).
+
+        Returns:
+            Sampled adjacency matrices of shape
+            ``(Batch, num_samples, Variables, Variables)``.
         """
         input_data = x
-        # We temporarily set n_perm_samples to requested n_samples to get K=n_samples
+        # We temporarily set n_perm_samples to requested num_samples
         original_k = self.n_perm_samples
         self.n_perm_samples = num_samples
 
-        all_probs = self.forward(input_data)  # (K, B, N, N)
+        all_probs = self.forward(input_data, mask=mask)  # (K, B, N, N)
 
         self.n_perm_samples = original_k
 

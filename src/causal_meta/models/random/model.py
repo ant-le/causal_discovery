@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 import torch
 
@@ -48,24 +48,36 @@ class RandomModel(BaseModel):
         """Random baseline has no trainable inference procedure."""
         return False
 
-    def forward(self, x: torch.Tensor) -> Any:
+    def forward(
+        self,
+        x: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> Any:
         """Forward is unsupported for explicit sampling baselines.
 
         Args:
             x: Input data tensor.
+            mask: Unused — accepted for interface compatibility.
 
         Raises:
             RuntimeError: Always raised, use :meth:`sample` instead.
         """
         _ = x
+        _ = mask
         raise RuntimeError("RandomModel does not implement forward(); use sample().")
 
-    def sample(self, x: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
+    def sample(
+        self,
+        x: torch.Tensor,
+        num_samples: int = 1,
+        mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         """Sample random DAGs.
 
         Args:
             x: Input data of shape ``(batch_size, n_observations, n_nodes)``.
             num_samples: Number of graph samples per task.
+            mask: Unused — accepted for interface compatibility.
 
         Returns:
             Tensor of sampled graphs with shape

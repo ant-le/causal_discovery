@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 import os
-from typing import Any, Callable, Mapping, Tuple
+from typing import Any, Callable, Mapping, Optional, Tuple
 
 import numpy as np
 import torch
@@ -110,25 +110,36 @@ class DiBSModel(BaseModel):
     def needs_pretraining(self) -> bool:
         return False
 
-    def forward(self, x: torch.Tensor) -> Any:
+    def forward(
+        self,
+        x: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> Any:
         """
         Forward pass placeholder for explicit inference models.
 
         Args:
             x: Input data tensor of shape (Batch, Samples, Variables).
+            mask: Unused — accepted for interface compatibility.
 
         Raises:
             RuntimeError: Always raised since DiBS is sampled via `sample`.
         """
         raise RuntimeError("DiBSModel does not implement forward(); use sample().")
 
-    def sample(self, x: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
+    def sample(
+        self,
+        x: torch.Tensor,
+        num_samples: int = 1,
+        mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         """
         Sample adjacency matrices from the DiBS posterior.
 
         Args:
             x: Input data tensor of shape (Batch, Samples, Variables).
             num_samples: Number of graph samples to generate per batch element.
+            mask: Unused — accepted for interface compatibility.
 
         Returns:
             Sampled adjacency matrices of shape (Batch, num_samples, Variables, Variables).

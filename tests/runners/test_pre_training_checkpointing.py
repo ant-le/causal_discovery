@@ -22,12 +22,12 @@ class _DummyPretrainModel(BaseModel):
     def needs_pretraining(self) -> bool:
         return True
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, mask=None) -> torch.Tensor:
         batch = x.shape[0]
         n_nodes = x.shape[-1]
         return self.weight * torch.ones(batch, n_nodes, n_nodes, device=x.device)
 
-    def sample(self, x: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
+    def sample(self, x: torch.Tensor, num_samples: int = 1, mask=None) -> torch.Tensor:
         batch = x.shape[0]
         n_nodes = x.shape[-1]
         return torch.zeros(batch, num_samples, n_nodes, n_nodes, device=x.device)
