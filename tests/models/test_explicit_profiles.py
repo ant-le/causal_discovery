@@ -21,7 +21,7 @@ def test_infer_explicit_profile_from_family_mechanism() -> None:
         pass
 
     family = SimpleNamespace(mechanism_factory=GPMechanismFactory())
-    assert infer_explicit_profile("ood_mechanism_gp_wide_er40", family) == "gpcde"
+    assert infer_explicit_profile("ood_mech_periodic_er40", family) == "gpcde"
 
 
 def test_apply_explicit_profile_calls_setter() -> None:

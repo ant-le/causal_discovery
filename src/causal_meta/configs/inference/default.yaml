@@ -1,6 +1,6 @@
 # @package inference
 
-n_samples: 20
+n_samples: 100
 auc_num_shuffles: 1000
 auc_balance_classes: true
 auc_seed: 0
