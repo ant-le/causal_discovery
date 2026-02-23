@@ -110,17 +110,24 @@ causal-meta --multirun \
 > **Note:** On VSC, GPU allocation uses `--gres=gpu:a100:N` (not `--gpus-per-node`).
 > The `vsc_a100s` preset already configures this correctly for 4 GPUs with DDP.
 
-### Quick Deploy (Recommended)
+### Cluster Submission
 
-Use `deploy.sh` for one-command cluster submission (handles git pull, uv sync, env vars):
+After running `./bootstrap_uv.sh` (which installs JAX CUDA and both venvs), submit jobs directly:
 
 ```bash
-./deploy.sh                             # full RQ1 sweep, single A100
-./deploy.sh --config smoke_multimodel   # smoke test
-./deploy.sh --launcher vsc_a100s        # 4× A100 DDP
-./deploy.sh --dry-run                   # print command without submitting
-./deploy.sh --skip-sync                 # skip git pull + uv sync (fast re-submit)
-./deploy.sh -- trainer.max_steps=1000   # extra Hydra overrides after --
+source .bootstrap_env.sh  # sets CAUSAL_META_BAYESDAG_PYTHON
+
+# Full RQ1 sweep, single A100
+.venv/bin/python -m causal_meta.main --multirun --config-name full_multimodel hydra/launcher=vsc_a100
+
+# Smoke test
+.venv/bin/python -m causal_meta.main --multirun --config-name smoke_multimodel hydra/launcher=vsc_a100
+
+# 4× A100 DDP
+.venv/bin/python -m causal_meta.main --multirun --config-name full_multimodel hydra/launcher=vsc_a100s
+
+# Extra Hydra overrides
+.venv/bin/python -m causal_meta.main --multirun --config-name full_multimodel hydra/launcher=vsc_a100 trainer.max_steps=1000
 ```
 
 ## 3. Environment & Setup
