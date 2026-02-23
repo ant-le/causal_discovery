@@ -31,7 +31,7 @@
                 katex.renderToString(
                     "\\mathbb{R}^n \\rightarrow \\mathbb{R}^m",
                 ) +
-                " is called continous at " +
+                " is called continuous at " +
                 katex.renderToString("x") +
                 " if for all sequences " +
                 katex.renderToString("(x_k)_{k\\in \\mathbb{N}}") +
@@ -164,11 +164,11 @@
                 "\\int_X f d\\mu = I(f) = \\sum_{i=1}^n c_i \\cdot \\mu(A_i) \\in [0,\\infty]",
         },
         lebeque: {
-            title: "Lebeque Integral",
+            title: "Lebesgue Integral",
             text:
                 "For a measurable map " +
                 katex.renderToString("f:X\\rightarrow [0,\\infty)") +
-                ", the lebesque integral is defined as:",
+                ", the Lebesgue integral is defined as:",
             formula:
                 "\\int_{x}f d\\mu := \\sup\\left\\{ I(h) \\mid h \\in S^+, h \\leq f \\right\\}",
         },
@@ -184,7 +184,7 @@
                 "\\int_{x} \\lim_{n\\to\\infty} \\inf\\{f_n d\\mu\\} \\leq \\lim_{n\\to\\infty} \\inf\\{\\int_X f_n d\\mu\\}",
         },
         lebesque2: {
-            title: "Lebesque's dominated convergence theorem",
+            title: "Lebesgue's Dominated Convergence Theorem",
             text:
                 "For a sequence of functions:" +
                 katex.renderToString(
@@ -269,7 +269,7 @@
             formula: `\\mathbb{P}_X(B):= \\mathbb{P}\\left(X^{-1}(B)\\right) = \\mathbb{P}(X\\in B)`,
         },
         cdf: {
-            title: "Comulative Distribution Function (CDF)",
+            title: "Cumulative Distribution Function (CDF)",
             text: `A CDF given a probability space and a random variable is 
                 defined as:`,
             formula: `F_X:\\mathbb{R} \\rightarrow [0,1], \\quad F_X(x):= \\mathbb{P}_X \\left( (-\\infty, x] \\right)=\\mathbb{P}(X\\leq x)`,
@@ -315,7 +315,7 @@
             formula: `\\rho_{X,Y} := \\frac{Cov(X,Y)}{\\sigma(X)\\cdot \\sigma(Y)}\\in [-1,1]`,
         },
         marginalDistribution: {
-            title: "Marignal Distribution of Random Variable",
+            title: "Marginal Distribution of Random Variable",
             text:
                 "The marginal distribution of random variables " +
                 katex.renderToString("X: \\Omega \\rightarrow \\mathbb{R}^n") +
@@ -347,7 +347,7 @@
             formula: `g(y):=\\mathbb{E}(X\\mid Y=y)=\\sum_x x \\frac{\\mathbb{P}(X=x \\land Y=y)}{\\mathbb{P}(Y=y)}`,
         },
         conditionalContinousExpectation: {
-            title: "Conditional Expectation (continous RV)",
+            title: "Conditional Expectation (continuous RV)",
             text: `Given some probability space and two random variables, 
             the conditional expectation of a random variable is given by:`,
             formula: `g(y):=\\mathbb{E}(X\\mid Y=y)=\\int_\\mathbb{R} x \\frac{f_{(X,Y)}(x,y)}{f_Y(y)}dx`,
@@ -399,7 +399,7 @@
                 katex.renderToString("\\mathbb{E}(|X_1|<\\infty)") +
                 ", then for " +
                 katex.renderToString("\\omega\\in\\Omega)") +
-                " alomst surely:",
+                " almost surely:",
             formula: `\\frac{1}{n}\\sum_{k=1}^nX_k(\\omega)=: \\frac{1}{n}\\sum_{k=1}^n X_k (\\omega) \\xrightarrow{n\\to\\infty} \\mathbb{E}(X_1)`,
         },
         centralLimit: {
@@ -417,7 +417,7 @@
 </script>
 
 <article>
-    <header>Defintion: {definition.title}</header>
+    <header>Definition: {definition.title}</header>
     <p>{@html definition.text}</p>
     <Math expression={definition.formula} inline={false} />
 </article>

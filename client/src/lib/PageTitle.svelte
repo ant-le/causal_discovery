@@ -10,7 +10,7 @@
 </script>
 
 {#if superscript}
-    <p style="c">{superscript}</p>
+    <p class="superscript">{superscript}</p>
 {/if}
 <div id="title">
     <hgroup>
@@ -24,5 +24,11 @@
 <style>
     hgroup p {
         color: var(--pico-primary);
+    }
+
+    .superscript {
+        font-size: 0.85rem;
+        color: var(--pico-secondary);
+        margin-bottom: 0.25rem;
     }
 </style>

@@ -3,8 +3,15 @@ export interface DatasetSummary {
   metrics: Record<string, number>;
 }
 
+export interface ModelMetrics {
+  model: string;
+  datasets: DatasetSummary[];
+}
+
 export interface LoadedRunMetrics {
   source: string;
+  models: ModelMetrics[];
+  /** Flat view for backward compat — first model or merged */
   datasets: DatasetSummary[];
 }
 
@@ -16,12 +23,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function normalizeSummary(payload: unknown): DatasetSummary[] | null {
-  if (!isRecord(payload) || !isRecord(payload.summary)) {
+function parseSummary(summary: unknown): DatasetSummary[] | null {
+  if (!isRecord(summary)) {
     return null;
   }
 
-  const summary = payload.summary;
   const datasets: DatasetSummary[] = [];
 
   for (const [dataset, rawMetrics] of Object.entries(summary)) {
@@ -44,17 +50,61 @@ function normalizeSummary(payload: unknown): DatasetSummary[] | null {
   return datasets.length > 0 ? datasets : null;
 }
 
+function normalizePayload(payload: unknown): {
+  models: ModelMetrics[];
+  datasets: DatasetSummary[];
+} | null {
+  if (!isRecord(payload)) {
+    return null;
+  }
+
+  // Multi-model format: { models: { ModelName: { summary: {...} } } }
+  if (isRecord(payload.models)) {
+    const models: ModelMetrics[] = [];
+
+    for (const [modelName, modelData] of Object.entries(payload.models)) {
+      if (!isRecord(modelData) || !isRecord(modelData.summary)) {
+        continue;
+      }
+
+      const datasets = parseSummary(modelData.summary);
+      if (datasets) {
+        models.push({ model: modelName, datasets });
+      }
+    }
+
+    if (models.length > 0) {
+      return { models, datasets: models[0].datasets };
+    }
+  }
+
+  // Legacy single-model format: { summary: {...} }
+  if (isRecord(payload.summary)) {
+    const datasets = parseSummary(payload.summary);
+    if (datasets) {
+      return { models: [{ model: "default", datasets }], datasets };
+    }
+  }
+
+  return null;
+}
+
 function candidateSources(): string[] {
   if (typeof window === "undefined") {
     return [...DEFAULT_CANDIDATES];
   }
 
+  const base = import.meta.env.BASE_URL ?? "/";
+  const withBase = DEFAULT_CANDIDATES.map(
+    (c) => `${base.replace(/\/$/, "")}${c}`,
+  );
+
   const querySource = new URL(window.location.href).searchParams.get("metrics");
   if (!querySource) {
-    return [...DEFAULT_CANDIDATES];
+    return [...withBase, ...DEFAULT_CANDIDATES];
   }
 
-  return [querySource, ...DEFAULT_CANDIDATES];
+  return [querySource, ...withBase, ...DEFAULT_CANDIDATES];
 }
 
 async function fetchRunMetrics(): Promise<LoadedRunMetrics | null> {
@@ -66,12 +116,12 @@ async function fetchRunMetrics(): Promise<LoadedRunMetrics | null> {
       }
 
       const payload: unknown = await response.json();
-      const datasets = normalizeSummary(payload);
-      if (!datasets) {
+      const result = normalizePayload(payload);
+      if (!result) {
         continue;
       }
 
-      return { source, datasets };
+      return { source, ...result };
     } catch {
       continue;
     }
@@ -100,5 +150,16 @@ export function metricValue(
     return metrics[meanKey];
   }
 
+  return null;
+}
+
+export function metricSem(
+  metrics: Record<string, number>,
+  key: string,
+): number | null {
+  const semKey = `${key}_sem`;
+  if (typeof metrics[semKey] === "number") {
+    return metrics[semKey];
+  }
   return null;
 }

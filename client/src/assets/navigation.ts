@@ -15,6 +15,7 @@ import Ideas from "../sections/thesis/Ideas.svelte";
 import InferenceStrategies from "../sections/methodology/InferenceStrategies.svelte";
 import DataFamilies from "../sections/benchmark/DataFamilies.svelte";
 import ModelFamilies from "../sections/benchmark/ModelFamilies.svelte";
+import EvaluationMetrics from "../sections/benchmark/EvaluationMetrics.svelte";
 import CurrentFindings from "../sections/results/CurrentFindings.svelte";
 
 export type SectionsData = Record<string, Component>;
@@ -61,6 +62,9 @@ export const appMetaData: AppMetaData = {
     },
     "Model Zoo": {
       "Benchmarked Method Families": ModelFamilies,
+    },
+    Evaluation: {
+      "Metrics and Scoring": EvaluationMetrics,
     },
   },
   Results: {
