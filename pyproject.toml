@@ -1,6 +1,6 @@
 [project]
 name = "causal_meta"
-version = "0.1.0"
+version = "0.3.0"
 description = "Bayesian Causal Discovery Benchmarking Framework"
 authors = [{name = "Anton Lechuga", email = "anton.luis.lechuga@proton.me"}]
 readme = "README.md"

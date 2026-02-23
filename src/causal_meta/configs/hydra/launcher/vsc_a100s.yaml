@@ -25,3 +25,9 @@ additional_parameters:
 setup:
   - export OMP_NUM_THREADS=${hydra.launcher.cpus_per_task}
   - export HYDRA_FULL_ERROR=1
+  # Map SLURM env vars to PyTorch distributed (required for DDP init via env://)
+  - export RANK=$SLURM_PROCID
+  - export LOCAL_RANK=$SLURM_LOCALID
+  - export WORLD_SIZE=$SLURM_NTASKS
+  - export MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
+  - export MASTER_PORT=${oc.env:MASTER_PORT,29500}
