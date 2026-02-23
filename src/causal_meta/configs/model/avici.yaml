@@ -1,7 +1,7 @@
 # @package model
 
 type: "avici"
-id: "avici_full"
+id: "avici"
 
 # RQ1-sized transformer (section 4.2 scale).
 d_model: 512

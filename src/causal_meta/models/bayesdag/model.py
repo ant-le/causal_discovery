@@ -44,7 +44,6 @@ class BayesDAGModel(BaseModel):
         norm_layers: bool = False,
         res_connection: bool = False,
         external_python: Optional[str] = None,
-        pyenv_env: Optional[str] = None,
         external_timeout_s: int = 3600,
         device: str = "auto",
         skip_evaluation: bool = True,
@@ -71,7 +70,6 @@ class BayesDAGModel(BaseModel):
         self.norm_layers = norm_layers
         self.res_connection = res_connection
         self.external_python = external_python
-        self.pyenv_env = pyenv_env
         self.external_timeout_s = external_timeout_s
         self.device = device
         self.skip_evaluation = skip_evaluation
@@ -150,7 +148,7 @@ class BayesDAGModel(BaseModel):
         Returns:
             Sampled adjacency matrices of shape (Batch, num_samples, Variables, Variables).
         """
-        if self.external_python or self.pyenv_env:
+        if self.external_python:
             return self._sample_external(x, num_samples)
 
         CausalDataset, Variables, model_cls = self._require_causica()
@@ -379,23 +377,15 @@ class BayesDAGModel(BaseModel):
         return CausalDataset, Variables, model_cls
 
     def _resolve_external_python(self) -> str:
-        if self.external_python:
-            python_path = Path(os.path.expandvars(self.external_python)).expanduser()
-            if not python_path.is_absolute():
-                python_path = (Path.cwd() / python_path).resolve()
-            if not python_path.exists():
-                raise FileNotFoundError(
-                    f"Resolved BayesDAG external_python does not exist: {python_path}"
-                )
-            return str(python_path)
-        if not self.pyenv_env:
+        if not self.external_python:
             raise RuntimeError(
-                "BayesDAG external inference requires external_python or pyenv_env."
+                "BayesDAG external inference requires external_python to be set."
             )
-
-        env = os.environ.copy()
-        env["PYENV_VERSION"] = self.pyenv_env
-        python_path = subprocess.check_output(
-            ["pyenv", "which", "python"], env=env, text=True
-        ).strip()
-        return python_path
+        python_path = Path(os.path.expandvars(self.external_python)).expanduser()
+        if not python_path.is_absolute():
+            python_path = (Path.cwd() / python_path).resolve()
+        if not python_path.exists():
+            raise FileNotFoundError(
+                f"Resolved BayesDAG external_python does not exist: {python_path}"
+            )
+        return str(python_path)

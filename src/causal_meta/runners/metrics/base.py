@@ -9,6 +9,7 @@ import torch
 import torch.distributed as dist
 
 from causal_meta.datasets.scm import SCMFamily
+from causal_meta.datasets.utils.normalization import compute_scm_stats
 
 log = logging.getLogger(__name__)
 
@@ -50,8 +51,7 @@ class BaseMetrics:
             torch.manual_seed(seed)
             x_obs_raw = instance.sample(n_samples)
 
-        mean = x_obs_raw.mean(dim=0, keepdim=True)
-        std = x_obs_raw.std(dim=0, unbiased=False, keepdim=True).clamp_min(1e-8)
+        mean, std = compute_scm_stats(x_obs_raw)
 
         # 2. Generate Interventions
         interventional_data = []
@@ -74,23 +74,7 @@ class BaseMetrics:
         return interventional_data
 
     def _gather_history(self) -> Dict[str, List[float]]:
-        if not (dist.is_available() and dist.is_initialized()):
-            return dict(self.history)
-
-        world_size = dist.get_world_size()
-        gathered_results: List[Dict[str, List[float]] | None] = [
-            None for _ in range(world_size)
-        ]
-        dist.all_gather_object(gathered_results, dict(self.history))
-
-        merged: Dict[str, List[float]] = defaultdict(list)
-        for res in gathered_results:
-            if not res:
-                continue
-            for k, v in res.items():
-                merged[k].extend(v)
-
-        return dict(merged)
+        return self.gather(dict(self.history))
 
     def gather(self, local_obj: Dict[str, List[float]]) -> Dict[str, List[float]]:
         """

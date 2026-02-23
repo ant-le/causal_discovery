@@ -1,10 +1,10 @@
-import torch
-
 from causal_meta.datasets.data_module import CausalMetaModule
-from causal_meta.datasets.generators.configs import (DataModuleConfig,
-                                                     ErdosRenyiConfig,
-                                                     FamilyConfig,
-                                                     LinearMechanismConfig)
+from causal_meta.datasets.generators.configs import (
+    DataModuleConfig,
+    ErdosRenyiConfig,
+    FamilyConfig,
+    LinearMechanismConfig,
+)
 
 
 def test_registry_based_initialization() -> None:

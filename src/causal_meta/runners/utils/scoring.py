@@ -1,13 +1,12 @@
 import torch
-import torch.nn as nn
-import numpy as np
-from typing import Dict, Any, List
+
 
 class LinearGaussianScorer:
     """
     Fits a Linear Gaussian SCM to the predicted graph and observational data,
     then evaluates Negative Log Likelihood (NIL) on held-out data (observational or interventional).
     """
+
     def __init__(self, adjacency: torch.Tensor, obs_data: torch.Tensor):
         """
         Args:
@@ -18,98 +17,106 @@ class LinearGaussianScorer:
         self.n_nodes = adjacency.shape[0]
         self.obs_data = obs_data.float()
         self.device = obs_data.device
-        
+
         # Parameters (learned)
         self.weights = torch.zeros_like(adjacency)
         self.biases = torch.zeros(self.n_nodes, device=self.device)
         self.variances = torch.ones(self.n_nodes, device=self.device)
-        
+
         self.fitted = False
 
     def fit(self):
         """Fit Linear Gaussian parameters via Least Squares."""
         num_samples = self.obs_data.shape[0]
-        
+
         for j in range(self.n_nodes):
             parents = torch.nonzero(self.adjacency[:, j], as_tuple=False).flatten()
-            
+
             if parents.numel() == 0:
                 # No parents: Estimate mean and variance
                 self.biases[j] = self.obs_data[:, j].mean()
                 resid = self.obs_data[:, j] - self.biases[j]
-                self.variances[j] = (resid ** 2).mean()
+                self.variances[j] = (resid**2).mean()
             else:
                 # Parents exist: Linear Regression
                 X = self.obs_data[:, parents]  # (Batch, |Pa|)
-                y = self.obs_data[:, j]        # (Batch,)
-                
+                y = self.obs_data[:, j]  # (Batch,)
+
                 # Add bias column
-                X_bias = torch.cat([X, torch.ones((num_samples, 1), device=self.device)], dim=1)
-                
+                X_bias = torch.cat(
+                    [X, torch.ones((num_samples, 1), device=self.device)], dim=1
+                )
+
                 # Least Squares: (X^T X)^-1 X^T y
                 # Add small ridge for stability
-                XtX = X_bias.T @ X_bias + 1e-6 * torch.eye(X_bias.shape[1], device=self.device)
+                XtX = X_bias.T @ X_bias + 1e-6 * torch.eye(
+                    X_bias.shape[1], device=self.device
+                )
                 Xty = X_bias.T @ y
                 theta = torch.linalg.solve(XtX, Xty)
-                
+
                 # Store weights
                 self.weights[parents, j] = theta[:-1]
                 self.biases[j] = theta[-1]
-                
+
                 # Variance
                 pred = X_bias @ theta
                 resid = y - pred
-                self.variances[j] = (resid ** 2).mean()
-        
+                self.variances[j] = (resid**2).mean()
+
         # Clamp variances to avoid singularities
         self.variances.clamp_min_(1e-6)
         self.fitted = True
 
-    def score_nll(self, data: torch.Tensor, intervention_target: int = -1, intervention_value: float = 0.0) -> float:
+    def score_nll(
+        self,
+        data: torch.Tensor,
+        intervention_target: int = -1,
+        intervention_value: float = 0.0,
+    ) -> float:
         """
         Compute Negative Log Likelihood (NLL) of data.
-        
+
         Args:
             data: (Batch, N) data to evaluate.
             intervention_target: Node index if this is interventional data. -1 for observational.
             intervention_value: Value of the intervention.
-        
+
         Returns:
             float: Average NLL per sample.
         """
         if not self.fitted:
             raise RuntimeError("Model must be fitted before scoring.")
-            
+
         num_samples = data.shape[0]
         total_nll = 0.0
-        
+
         for j in range(self.n_nodes):
             if j == intervention_target:
                 # Skip scoring the intervened node (probability is 1.0 / delta)
                 # Or check if it matches value (usually assumed valid by generation)
                 continue
-                
+
             parents = torch.nonzero(self.adjacency[:, j], as_tuple=False).flatten()
-            
+
             # If parents include intervention target, use the intervention value
-            # In data, the target column should already have the value, 
+            # In data, the target column should already have the value,
             # so standard regression prediction works as long as 'data' is correct.
             # However, we must ensure we use the *observational* weights (which we have).
-            
+
             # Predict
             if parents.numel() > 0:
                 pred = data[:, parents] @ self.weights[parents, j] + self.biases[j]
             else:
                 pred = self.biases[j]
-            
+
             # Gaussian Log Likelihood
             # log p(x) = -0.5 * log(2pi) - 0.5 * log(var) - (x-mu)^2 / (2var)
             resid = data[:, j] - pred
             term1 = 0.5 * torch.log(2 * torch.pi * self.variances[j])
-            term2 = (resid ** 2) / (2 * self.variances[j])
-            
+            term2 = (resid**2) / (2 * self.variances[j])
+
             nll_j = term1 + term2
             total_nll += nll_j.sum()
-            
-        return float(total_nll.item() / num_samples)
 
+        return float(total_nll.item() / num_samples)

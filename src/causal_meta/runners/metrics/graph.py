@@ -10,30 +10,6 @@ from causal_meta.datasets.scm import SCMFamily
 from .base import BaseMetrics
 
 
-def auc_graph_scores(targets: torch.Tensor, preds: torch.Tensor) -> torch.Tensor:
-    """Compute class-balanced AUC scores for graph edge predictions.
-
-    This follows the paper's default evaluation behavior: edge classes are balanced
-    with repeated random shuffles before AUC computation. Balancing is important for
-    sparse DAGs where non-edges dominate edge labels.
-
-    Args:
-        targets: Binary adjacency matrices with shape ``(batch_size, n_nodes, n_nodes)``.
-        preds: Graph samples/probabilities with shape
-            ``(num_samples, batch_size, n_nodes, n_nodes)``.
-
-    Returns:
-        A tensor of shape ``(batch_size,)`` with AUC per graph.
-    """
-    return _auc_graph_scores_impl(
-        targets=targets,
-        preds=preds,
-        num_shuffles=1000,
-        balance_classes=True,
-        seed=0,
-    )
-
-
 def _auc_from_binary_labels(y_true: torch.Tensor, y_score: torch.Tensor) -> float:
     """Compute trapezoidal AUC from binary labels and prediction scores."""
     positives = float(y_true.sum().item())
@@ -204,6 +180,24 @@ def expected_f1_score(
     return f1.mean(dim=0)
 
 
+def _bernoulli_log_prob(
+    targets: torch.Tensor, preds: torch.Tensor, eps: float = 1e-6
+) -> torch.Tensor:
+    """Per-graph Bernoulli log-probability of targets under mean(preds).
+
+    Args:
+        targets: (B, N, N) binary adjacency.
+        preds: (S, B, N, N) binary adjacency samples.
+        eps: clamp to avoid log(0).
+
+    Returns:
+        Tensor of shape (B,) with per-graph log-probabilities.
+    """
+    p = preds.float().mean(dim=0).clamp(eps, 1.0 - eps)
+    y = targets.float()
+    return (y * torch.log(p) + (1.0 - y) * torch.log(1.0 - p)).sum(dim=(-1, -2))
+
+
 def graph_nll_score(
     targets: torch.Tensor, preds: torch.Tensor, eps: float = 1e-6
 ) -> float:
@@ -218,13 +212,7 @@ def graph_nll_score(
     )
     preds_t = preds if isinstance(preds, torch.Tensor) else torch.as_tensor(preds)
 
-    # Mean probability per edge: (B, N, N)
-    p = preds_t.float().mean(dim=0).clamp(eps, 1.0 - eps)
-    y = targets_t.float()
-
-    # Bernoulli log-likelihood per batch item (vectorized):
-    # sum_{i} [ y_i * log(p_i) + (1-y_i) * log(1-p_i) ]
-    log_prob = (y * torch.log(p) + (1.0 - y) * torch.log(1.0 - p)).sum(dim=(-1, -2))
+    log_prob = _bernoulli_log_prob(targets_t, preds_t, eps=eps)
 
     # Return mean NLL across batch
     return -float(log_prob.mean().item())
@@ -632,7 +620,5 @@ def log_prob_graph_scores(
             "preds shape must be (num_samples, batch, N, N) matching targets."
         )
 
-    p = preds.float().mean(dim=0).clamp(eps, 1.0 - eps)
-    y = targets.float()
-    log_prob = (y * torch.log(p) + (1.0 - y) * torch.log(1.0 - p)).sum(dim=(-1, -2))
+    log_prob = _bernoulli_log_prob(targets, preds, eps=eps)
     return [float(v) for v in log_prob.detach().cpu().tolist()]

@@ -1,11 +1,13 @@
 import numpy as np
 import torch
 
-from causal_meta.runners.metrics.graph import (ancestor_f1_score,
-                                               auc_graph_scores,
-                                               auc_graph_scores_configurable,
-                                               expected_f1_score, expected_shd,
-                                               log_prob_graph_scores)
+from causal_meta.runners.metrics.graph import (
+    ancestor_f1_score,
+    auc_graph_scores_configurable,
+    expected_f1_score,
+    expected_shd,
+    log_prob_graph_scores,
+)
 
 
 def test_ancestor_f1() -> None:
@@ -76,7 +78,7 @@ def test_auc_graph_scores_default_is_perfect_for_perfect_predictions() -> None:
     targets = torch.tensor([[[0.0, 1.0], [0.0, 0.0]]])
     preds = torch.stack([targets, targets, targets], dim=0)
 
-    auc = auc_graph_scores(targets, preds)
+    auc = auc_graph_scores_configurable(targets, preds)
     assert auc.shape == (1,)
     assert np.isclose(auc[0].item(), 1.0)
 

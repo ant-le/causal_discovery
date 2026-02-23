@@ -10,3 +10,6 @@ cache_inference: true
 cache_compress: true
 cache_dtype: "uint8"
 cache_n_samples: 50
+
+# DiBS/BayesDAG use their full model-level defaults from
+# model/dibs.yaml and model/bayesdag.yaml (no overrides here).

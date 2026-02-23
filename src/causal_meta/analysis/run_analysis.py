@@ -4,10 +4,7 @@ import argparse
 import logging
 from pathlib import Path
 
-from causal_meta.analysis.plots.results import (generate_performance_figure,
-                                                generate_structural_figure)
-from causal_meta.analysis.tables.results import generate_robustness_table
-from causal_meta.analysis.utils import load_overview_json
+from causal_meta.analysis.utils import generate_all_artifacts
 
 log = logging.getLogger(__name__)
 
@@ -39,24 +36,9 @@ def main() -> None:
 
     input_dir = Path(args.input_dir)
     overview_path = input_dir / str(args.overview_name)
-    if not overview_path.exists():
-        raise FileNotFoundError(
-            f"Missing overview file: {overview_path}. "
-            "Generate overview.json first, then rerun this command."
-        )
-
     output_dir = Path(args.output_dir) if args.output_dir else (input_dir / "graphics")
-    output_dir.mkdir(parents=True, exist_ok=True)
 
-    log.info(f"Loading overview from {overview_path}")
-    df = load_overview_json(str(overview_path))
-    if df.empty:
-        raise RuntimeError(f"No data found in {overview_path}")
-
-    log.info(f"Writing artifacts to {output_dir}")
-    generate_structural_figure(df, output_dir / "structural_metrics.png")
-    generate_performance_figure(df, output_dir / "performance_metrics.png")
-    generate_robustness_table(df, output_dir / "robustness_table.tex")
+    generate_all_artifacts(overview_path, output_dir)
 
 
 if __name__ == "__main__":

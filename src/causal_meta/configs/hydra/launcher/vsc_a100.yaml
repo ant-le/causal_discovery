@@ -19,7 +19,7 @@ name: "cm_${model.id}"
 # specific SBATCH flags
 additional_parameters:
   requeue: true
-  mail-user: "e12229950@student.tuwien.ac.at"
+  mail-user: ${oc.env:SLURM_MAIL_USER,e12229950@student.tuwien.ac.at}
   mail-type: "BEGIN,END,FAIL"
 
 setup:

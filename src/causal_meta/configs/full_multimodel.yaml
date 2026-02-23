@@ -3,9 +3,9 @@
 defaults:
   - logger: wandb
   - data: full
-  - model: bcnp_full
-  - trainer: long
-  - inference: long
+  - model: bcnp
+  - trainer: default
+  - inference: default
   - _self_
   - override hydra/job_logging: console
 
@@ -21,4 +21,4 @@ hydra:
   output_subdir: null
   sweeper:
     params:
-      model: avici_full,bcnp_full,dibs,bayesdag
+      model: avici,bcnp,dibs,bayesdag

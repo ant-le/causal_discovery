@@ -3,15 +3,35 @@
 defaults:
   - logger: wandb
   - data: smoke
-  - model: avici_smoke
-  - trainer: smoke
-  - inference: smoke
+  - model: avici
+  - trainer: default
+  - inference: default
   - _self_
   - override hydra/job_logging: console
 
 # Minimal default config for installed usage (
 # `causal-meta` or `python -m causal_meta.main`).
 name: "smoke_test"
+
+# Smoke overrides: fast iteration with fewer steps.
+trainer:
+  max_steps: 30
+  log_every_n_steps: 1
+  val_check_interval: 10
+  checkpoint_every_n_steps: 0
+
+inference:
+  n_samples: 8
+  cache_compress: false
+  cache_n_samples: null
+  dibs:
+    steps: 50
+    n_particles: 8
+  bayesdag:
+    max_epochs: 1
+    num_chains: 2
+    sinkhorn_n_iter: 200
+    external_timeout_s: 600
 
 hydra:
   run:

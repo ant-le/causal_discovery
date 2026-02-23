@@ -55,3 +55,12 @@ python -m causal_meta.main \
 - Keep the main launcher in the 3.11 env (`.venv`) and let BayesDAG execute via
   the external interpreter path.
 - The external runner is `src/causal_meta/models/bayesdag/external_infer.py`.
+
+## Troubleshooting
+
+- If BayesDAG fails with `ModuleNotFoundError: No module named 'pkg_resources'`,
+  pin setuptools in the BayesDAG env and retry:
+
+```bash
+uv pip install --python .venv-bayesdag/bin/python "setuptools<81"
+```

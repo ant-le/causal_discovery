@@ -93,13 +93,6 @@ class BCNP(CausalTNPEncoder, BaseModel):
             num_layers=decoder_layers_half,
         )
 
-        # NOTE: Q_param is defined in the reference but never called (the
-        # permutation logits are produced by ``permutation_logit_network``
-        # instead).  We keep the definition commented out to avoid wasting
-        # ~788K parameters.
-        # self.Q_param = CausalAdjacencyMatrix(
-        #     nhead=nhead, d_model=d_model, device=None, dtype=None
-        # )
         self.L_param = CausalAdjacencyMatrix(
             nhead=nhead, d_model=d_model, device=None, dtype=None
         )

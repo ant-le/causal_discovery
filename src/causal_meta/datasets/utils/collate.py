@@ -4,7 +4,10 @@ from typing import Any, Dict, Iterable, List, Mapping
 
 import torch
 
-from causal_meta.datasets.utils.normalization import normalize_scm_data
+from causal_meta.datasets.utils.normalization import (
+    compute_scm_stats,
+    normalize_scm_data,
+)
 
 ScmItem = Mapping[str, Any]
 
@@ -74,8 +77,7 @@ def collate_fn_interventional(
         mean = torch.tensor(0.0)
         std = torch.tensor(1.0)
         if normalize:
-            mean = obs_data.mean(dim=0, keepdim=True)
-            std = obs_data.std(dim=0, unbiased=False, keepdim=True).clamp_min(1e-8)
+            mean, std = compute_scm_stats(obs_data)
             obs_data = (obs_data - mean) / std
 
         obs_data_list.append(obs_data)

@@ -4,7 +4,7 @@ lr: 0.0001
 weight_decay: 1e-4
 accumulate_grad_batches: 1
 
-# Matches the paper reproduction defaults.
+# Paper reproduction defaults (section 4.2).
 max_steps: 500000
 log_every_n_steps: 100
 val_check_interval: 5000
@@ -15,7 +15,7 @@ amp_dtype: bf16
 grad_clip_norm: 1.0
 
 scheduler: cosine
-scheduler_t_max: 500000
+scheduler_t_max: ${trainer.max_steps}
 scheduler_eta_min: 0.0
 scheduler_warmup_ratio: 0.1
 scheduler_warmup_start_factor: 0.001

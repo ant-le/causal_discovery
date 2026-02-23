@@ -17,6 +17,7 @@ gamma_theta: 1000.0
 n_particles: 32
 
 # Paper-aligned per-family profiles (Appendix B.3, Table 5).
+# Families not listed here fall back to the top-level defaults above.
 profile_overrides:
   linear:
     mode: "linear"
@@ -24,21 +25,3 @@ profile_overrides:
     gamma_z: 5.0
     gamma_theta: 500.0
     n_particles: 64
-  neuralnet:
-    mode: "nonlinear"
-    alpha: 0.02
-    gamma_z: 5.0
-    gamma_theta: 1000.0
-    n_particles: 32
-  gpcde:
-    mode: "nonlinear"
-    alpha: 0.02
-    gamma_z: 5.0
-    gamma_theta: 1000.0
-    n_particles: 32
-  default:
-    mode: "nonlinear"
-    alpha: 0.02
-    gamma_z: 5.0
-    gamma_theta: 1000.0
-    n_particles: 32

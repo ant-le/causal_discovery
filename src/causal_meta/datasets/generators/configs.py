@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Protocol, Union
+from typing import Any, Dict, List, Optional, Union
 
-from causal_meta.datasets.generators.graphs import (ErdosRenyiGenerator,
-                                                    MixtureGraphGenerator,
-                                                    SBMGenerator,
-                                                    ScaleFreeGenerator)
+from causal_meta.datasets.generators.graphs import (
+    ErdosRenyiGenerator,
+    MixtureGraphGenerator,
+    SBMGenerator,
+    ScaleFreeGenerator,
+)
 from causal_meta.datasets.generators.mechanisms import (
-    GPMechanismFactory, LinearMechanismFactory, LogisticMapMechanismFactory,
-    MixtureMechanismFactory, MLPMechanismFactory, PeriodicMechanismFactory,
-    PNLMechanismFactory, SquareMechanismFactory)
+    GPMechanismFactory,
+    LinearMechanismFactory,
+    LogisticMapMechanismFactory,
+    MixtureMechanismFactory,
+    MLPMechanismFactory,
+    PeriodicMechanismFactory,
+    PNLMechanismFactory,
+    SquareMechanismFactory,
+)
 
-
-class Instantiable(Protocol):
-    def instantiate(self) -> Any: ...
+from causal_meta.datasets.generators._protocols import Instantiable
 
 
 @dataclass

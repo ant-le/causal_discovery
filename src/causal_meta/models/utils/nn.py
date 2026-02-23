@@ -248,30 +248,24 @@ class CausalAdjacencyMatrix(nn.Module):
         """
         query = representation
         key = representation
-        # We don't need to compute the value tensor but helps with
-        # compatibility with the nn.MultiheadAttention class
-        value = representation
         # set up shape vars
         bsz, tgt_len, embed_dim = query.shape
 
-        # Tranpose the query, key, and value tensors
+        # Transpose the query and key tensors
         # shape [num_nodes, batch_size, d_model]
-        query, key, value = [x.transpose(1, 0) for x in (query, key, value)]
+        query, key = [x.transpose(1, 0) for x in (query, key)]
 
         #
         # compute in-projection
         #
-        # Since query, key, value are the same tensor (self-attention on representation)
-        # we can use a single linear projection and chunk it.
         # self.in_proj_weight shape: (3 * d_model, d_model)
         # query shape: (num_nodes, batch_size, d_model) (after transpose)
-
         # F.linear computes input @ weight.T + bias
         # Output shape: (num_nodes, batch_size, 3 * d_model)
+        # NOTE: The projection is 3-way (QKV) for checkpoint compatibility with
+        # nn.MultiheadAttention, but only Q and K are used for adjacency prediction.
         qkv = F.linear(query, self.in_proj_weight, self.in_proj_bias)
-        query_proj, key_proj, value_proj = qkv.chunk(3, dim=-1)
-
-        # value_proj is computed but not used for adjacency prediction logic below
+        query_proj, key_proj, _ = qkv.chunk(3, dim=-1)
 
         head_dim = self.d_model // self.num_heads
 
@@ -304,7 +298,6 @@ class CausalAdjacencyMatrix(nn.Module):
         attn_weight = attn_weight.permute(0, 2, 3, 1)
         pred = attn_weight @ self.out_proj_weight + self.out_proj_bias
         pred = pred.squeeze(-1)
-        pred = pred
         if padding_mask is not None:
             new_mask = padding_mask.unsqueeze(1) + padding_mask.unsqueeze(2)
             pred = pred + new_mask

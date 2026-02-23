@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Protocol
+from typing import Any, Dict, Mapping
 
 from causal_meta.datasets.generators import configs
+from causal_meta.datasets.generators._protocols import Instantiable
 
 # Optional Hydra support
 try:
@@ -12,10 +13,6 @@ except ImportError:
     hydra_instantiate = None
     DictConfig = None
     OmegaConf = None
-
-
-class Instantiable(Protocol):
-    def instantiate(self) -> Any: ...
 
 
 class _HydraConfigWrapper:

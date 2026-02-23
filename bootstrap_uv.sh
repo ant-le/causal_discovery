@@ -156,9 +156,20 @@ uv pip install --python "$BAYESDAG_PYTHON" --no-deps "$tmp_dir/Project-BayesDAG/
 info "Validating BayesDAG environment"
 "$BAYESDAG_PYTHON" - <<'PY'
 import causica
+import setuptools
 import torch
 
+try:
+    import pkg_resources
+except ModuleNotFoundError as exc:
+    raise SystemExit(
+        "Missing pkg_resources in .venv-bayesdag. "
+        "Install setuptools<81 (for example: uv pip install --python .venv-bayesdag/bin/python 'setuptools<81')."
+    ) from exc
+
 print(f"causica import path: {causica.__file__}")
+print(f"setuptools version: {setuptools.__version__}")
+print(f"pkg_resources path: {pkg_resources.__file__}")
 print(f"BayesDAG torch version: {torch.__version__}")
 PY
 

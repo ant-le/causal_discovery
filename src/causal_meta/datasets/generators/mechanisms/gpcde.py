@@ -9,6 +9,8 @@ import numpy as np
 import torch
 from torch import nn
 
+from .base import build_mechanisms_from_adjacency
+
 gpytorch = import_module("gpytorch") if find_spec("gpytorch") is not None else None
 
 
@@ -514,18 +516,6 @@ class GPMechanismFactory:
         rng: Optional[np.random.Generator] = None,
     ) -> List[nn.Module]:
         """Create one mechanism per node for the provided adjacency matrix."""
-        _ = rng
-        torch_generator = torch_generator or torch.Generator()
-
-        mechanisms: List[nn.Module] = []
-        n_nodes = int(adjacency_matrix.shape[0])
-        for node in range(n_nodes):
-            parents = torch.nonzero(adjacency_matrix[:, node], as_tuple=False).flatten()
-            mechanisms.append(
-                self.make_mechanism(int(parents.numel()), torch_generator)
-            )
-        return mechanisms
-
-
-# Backward-compatible alias used in imports and older tests.
-GPMechanism = ApproximateGPMechanism
+        return build_mechanisms_from_adjacency(
+            self, adjacency_matrix, torch_generator=torch_generator, rng=rng
+        )

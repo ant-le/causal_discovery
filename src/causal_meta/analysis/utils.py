@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 import pandas as pd
 
@@ -15,9 +16,12 @@ log = logging.getLogger(__name__)
 # Run directory / overview.json keys -> display names
 MODEL_NAME_MAP: dict[str, str] = {
     "avici": "AviCi",
+    # Backward compat: older runs logged smoke/full-suffixed model ids.
     "avici_smoke": "AviCi",
+    "avici_full": "AviCi",
     "bcnp": "BCNP",
     "bcnp_smoke": "BCNP",
+    "bcnp_full": "BCNP",
     "dibs": "DiBS",
     "random": "Random",
     "random_smoke": "Random",
@@ -96,3 +100,45 @@ def load_overview_json(file_path: str, *, translate_names: bool = True) -> pd.Da
                 rows.append(row)
 
     return pd.DataFrame(rows)
+
+
+def generate_all_artifacts(
+    overview_path: Path,
+    output_dir: Path,
+) -> None:
+    """Load an overview JSON and generate all standard analysis artifacts.
+
+    This is the shared implementation used by both the CLI entry point
+    (``run_analysis.py``) and the Hydra task runner (``runners/tasks/analysis``).
+
+    Args:
+        overview_path: Path to the ``overview.json`` file.
+        output_dir: Directory where generated figures and tables are written.
+
+    Raises:
+        FileNotFoundError: If *overview_path* does not exist.
+        RuntimeError: If the loaded DataFrame is empty.
+    """
+    from causal_meta.analysis.plots.results import (
+        generate_performance_figure,
+        generate_structural_figure,
+    )
+    from causal_meta.analysis.tables.results import generate_robustness_table
+
+    if not overview_path.exists():
+        raise FileNotFoundError(
+            f"Missing overview file: {overview_path}. "
+            "Generate overview.json first, then rerun this command."
+        )
+
+    log.info(f"Loading overview from {overview_path}")
+    df = load_overview_json(str(overview_path))
+    if df.empty:
+        raise RuntimeError(f"No data found in {overview_path}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    log.info(f"Writing artifacts to {output_dir}")
+
+    generate_structural_figure(df, output_dir / "structural_metrics.png")
+    generate_performance_figure(df, output_dir / "performance_metrics.png")
+    generate_robustness_table(df, output_dir / "robustness_table.tex")

@@ -1,21 +1,21 @@
 # @package model
 
 type: "bcnp"
-id: "bcnp_smoke"
+id: "bcnp"
 
-# Small transformer.
-d_model: 32
-dim_feedforward: 64
-nhead: 4
-num_layers: 2
+# RQ1-sized transformer (section 4.2 scale).
+d_model: 512
+dim_feedforward: 1024
+nhead: 8
+num_layers: 4
 dropout: 0.1
-emb_depth: 1
+emb_depth: 2
 use_positional_encoding: false
 
 # Decoder depth (split internally into Q/L halves).
-num_layers_decoder: 2
+num_layers_decoder: 4
 
 # Sinkhorn permutation sampling.
-n_perm_samples: 5
+n_perm_samples: 100
 sinkhorn_iter: 20
 q_before_l: true
