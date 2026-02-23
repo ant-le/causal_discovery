@@ -7,17 +7,18 @@ timeout_min: 1440 # 24 hours
 max_num_timeout: 3 # Auto-requeue timed-out jobs (up to 4 total attempts)
 cpus_per_task: 5 # CPUs per GPU task
 tasks_per_node: 4 # 4 tasks per node (matches GPUs)
+gpus_per_task: 1
 mem_gb: 200 # 50G * 4 = 200G total RAM per node
 nodes: 1
 
 # Scheduler Directives
 partition: "GPU-a100"
+gres: "gpu:a100:4"
 name: "cm_${model.id}"
 # account: <YOUR_ACCOUNT>   # Uncomment if required
 
 # specific SBATCH flags
 additional_parameters:
-  gres: "gpu:a100:4"
   requeue: true
   mail-user: ${oc.env:SLURM_MAIL_USER,e12229950@student.tuwien.ac.at}
   mail-type: "BEGIN,END,FAIL"

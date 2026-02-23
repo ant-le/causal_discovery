@@ -268,14 +268,13 @@ class BayesDAGModel(BaseModel):
         log.info(
             "BayesDAG external sample: python=%s, batch_size=%d, "
             "num_nodes=%d, num_samples=%d, variant=%s, "
-            "timeout=%ds, device=%s",
+            "timeout=%ds",
             python_path,
             batch_size,
             num_nodes,
             num_samples,
             self.variant,
             self.external_timeout_s,
-            self.device,
         )
 
         train_config = {
@@ -297,7 +296,6 @@ class BayesDAGModel(BaseModel):
             "vi_norm": bool(self.vi_norm),
             "norm_layers": bool(self.norm_layers),
             "res_connection": bool(self.res_connection),
-            "device": self.device,
         }
 
         samples_per_batch = []

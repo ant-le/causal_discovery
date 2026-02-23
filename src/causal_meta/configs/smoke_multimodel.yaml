@@ -39,5 +39,6 @@ hydra:
     subdir: "${model.id}"
   output_subdir: null
   sweeper:
+    max_batch_size: 1
     params:
       model: avici,bcnp,dibs,bayesdag
