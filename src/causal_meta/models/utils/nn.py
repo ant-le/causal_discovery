@@ -277,10 +277,10 @@ class CausalAdjacencyMatrix(nn.Module):
 
         # reshape q, k, v for multihead attention and make em batch first
         #
-        query_proj = query_proj.view(tgt_len, bsz * self.num_heads, head_dim).transpose(
-            0, 1
-        )
-        key_proj = key_proj.view(
+        query_proj = query_proj.reshape(
+            tgt_len, bsz * self.num_heads, head_dim
+        ).transpose(0, 1)
+        key_proj = key_proj.reshape(
             key_proj.shape[0], bsz * self.num_heads, head_dim
         ).transpose(0, 1)
 
@@ -290,8 +290,8 @@ class CausalAdjacencyMatrix(nn.Module):
         #
         # (deep breath) calculate attention and out projection
         #
-        query_proj = query_proj.view(bsz, self.num_heads, tgt_len, head_dim)
-        key_proj = key_proj.view(bsz, self.num_heads, src_len, head_dim)
+        query_proj = query_proj.reshape(bsz, self.num_heads, tgt_len, head_dim)
+        key_proj = key_proj.reshape(bsz, self.num_heads, src_len, head_dim)
 
         # Efficient implementation equivalent to the following:
         L, S = query_proj.size(-2), key_proj.size(-2)

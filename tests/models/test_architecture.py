@@ -91,6 +91,20 @@ def test_bcnp_instantiation():
     assert model.needs_pretraining is True
 
 
+def test_bcnp_forward_handles_non_contiguous_projection_layout():
+    model = causal_meta.models.BCNP(
+        num_nodes=5,
+        d_model=32,
+        nhead=4,
+        num_layers=2,
+        num_layers_decoder=2,
+    )
+    x = torch.randn(2, 3, 5)
+    output = model(x)
+
+    assert output.shape == (model.n_perm_samples, 2, 5, 5)
+
+
 def test_avici_sample_has_zero_diagonal():
     model = causal_meta.models.AviciModel(num_nodes=5, d_model=8, nhead=2, num_layers=2)
     x = torch.randn(3, 7, 5)

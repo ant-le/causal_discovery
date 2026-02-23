@@ -21,9 +21,16 @@ echo "==> Creating main environment (.venv, Python 3.11)"
 uv venv .venv --python 3.11
 uv sync --python .venv/bin/python --extra cluster --extra wandb --frozen --no-editable
 
+JAX_EXTRAS="${CAUSAL_META_JAX_EXTRAS:-cuda12-local}"
+if [[ "$JAX_EXTRAS" != "none" ]]; then
+  echo "==> Installing JAX backend in .venv: jax[${JAX_EXTRAS}]"
+  uv pip install --python .venv/bin/python --upgrade "jax[${JAX_EXTRAS}]"
+fi
+
 echo "==> Creating BayesDAG environment (.venv-bayesdag, Python 3.9)"
 uv venv .venv-bayesdag --python 3.9
 uv pip install --python .venv-bayesdag/bin/python -r requirements-bayesdag.txt
+uv pip install --python .venv-bayesdag/bin/python "wandb>=0.15.0"
 
 echo "==> Installing Project-BayesDAG (causica) into .venv-bayesdag"
 tmp_dir="$(mktemp -d)"
@@ -39,6 +46,9 @@ echo "BayesDAG env python:  $ROOT_DIR/.venv-bayesdag/bin/python"
 echo
 echo "Use this before runs that include BayesDAG:"
 echo "  export CAUSAL_META_BAYESDAG_PYTHON=\"$ROOT_DIR/.venv-bayesdag/bin/python\""
+echo "DiBS JAX backend defaults to CUDA 12 via jax[cuda12-local]."
+echo "Override with (example): CAUSAL_META_JAX_EXTRAS=cuda13 ./bootstrap_uv.sh"
+echo "Disable JAX extras install: CAUSAL_META_JAX_EXTRAS=none ./bootstrap_uv.sh"
 echo
 echo "Run local smoke test:"
 echo "  $ROOT_DIR/.venv/bin/python -m causal_meta.main name=smoke_test"

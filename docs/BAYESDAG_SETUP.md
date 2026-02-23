@@ -28,6 +28,7 @@ uv sync --python .venv/bin/python --extra cluster --extra wandb --frozen --no-ed
 
 uv venv .venv-bayesdag --python 3.9
 uv pip install --python .venv-bayesdag/bin/python -r requirements-bayesdag.txt
+uv pip install --python .venv-bayesdag/bin/python "wandb>=0.15.0"
 
 tmpdir=$(mktemp -d) && \
   git clone --depth 1 https://github.com/microsoft/Project-BayesDAG.git "$tmpdir/Project-BayesDAG" && \

@@ -17,6 +17,9 @@ A scalable, Hydra-configured framework for benchmarking Bayesian Causal Discover
 uv lock
 uv sync --extra cluster --extra wandb --frozen --no-editable
 source .venv/bin/activate
+
+# If DiBS should use NVIDIA GPUs on CUDA 12 clusters:
+uv pip install --python .venv/bin/python --upgrade "jax[cuda12-local]"
 ```
 
 Use `--no-editable` for robust cross-platform imports of `causal_meta`.

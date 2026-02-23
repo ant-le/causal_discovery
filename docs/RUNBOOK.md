@@ -130,6 +130,8 @@ causal-meta --multirun \
   ```bash
   uv lock
   uv sync --extra cluster --extra wandb --frozen --no-editable
+  # If DiBS should use NVIDIA GPUs on CUDA 12 clusters:
+  uv pip install --python .venv/bin/python --upgrade "jax[cuda12-local]"
   source .venv/bin/activate
   ```
 - **BayesDAG External Env (required for multimodel):**
