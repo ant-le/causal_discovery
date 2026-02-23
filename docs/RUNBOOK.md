@@ -29,7 +29,7 @@ To submit a single job to the cluster:
 ```bash
 causal-meta --multirun \
   --config-name default \
-  hydra/launcher=submitit_slurm \
+  hydra/launcher=vsc_a100 \
   name=my_slurm_run
 ```
 
@@ -40,26 +40,9 @@ To run multiple seeds or hyperparameter variations in parallel on the cluster:
 ```bash
 causal-meta --multirun \
     --config-name smoke_multimodel \
-    hydra/launcher=submitit_slurm \
+    hydra/launcher=vsc_a100 \
     data.base_seed=0,1,2,3
 ```
-
-### TU Wien VSC H100 preset
-
-Use the dedicated launcher preset with the full multimodel sweep:
-
-```bash
-# Prevent eager CUDA initialization on login node (fixes pickling errors)
-export CUDA_VISIBLE_DEVICES=""
-
-causal-meta --multirun \
-  --config-name full_multimodel \
-  hydra/launcher=vsc_h100
-```
-
-This preset keeps the 4x H100 resource layout and sets per-job naming/output to
-avoid collisions: each multirun job gets its own Slurm name (`cm_${model.id}`)
-and its own Hydra sweep subdirectory (`${model.id}_${hydra.job.num}`).
 
 ### TU Wien VSC A100 preset
 
@@ -99,7 +82,7 @@ You can override naming patterns directly when launching:
 ```bash
 causal-meta --multirun \
   --config-name full_multimodel \
-  hydra/launcher=vsc_h100 \
+  hydra/launcher=vsc_a100 \
   hydra.launcher.name='cm_${model.id}' \
   hydra.sweep.subdir='${model.id}_${hydra.job.num}'
 ```
@@ -117,7 +100,7 @@ You can override Slurm resources directly from the command line:
 
 ```bash
 causal-meta --multirun \
-  hydra/launcher=submitit_slurm \
+  hydra/launcher=vsc_a100 \
   hydra.launcher.partition=gpu_high \
   hydra.launcher.gpus_per_node=4 \
   hydra.launcher.tasks_per_node=4 \

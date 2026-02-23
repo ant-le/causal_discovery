@@ -5,7 +5,7 @@ from pathlib import Path
 
 from omegaconf import DictConfig
 
-from causal_meta.analysis.utils import generate_all_artifacts
+from causal_meta.analysis.utils import EmptyOverviewError, generate_all_artifacts
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ def run(cfg: DictConfig, output_dir: Path) -> None:
             "Generate overview.json for this multirun first, then rerun analysis."
         )
         return
-    except RuntimeError:
+    except EmptyOverviewError:
         log.warning("DataFrame is empty after loading/aggregation.")
         return
 

@@ -20,30 +20,33 @@ Top-level configs:
 - `src/causal_meta/configs/smoke_multimodel.yaml`
   - Multirun sweep over smoke model variants.
 - `src/causal_meta/configs/full_multimodel.yaml`
-  - Multirun sweep over RQ1 all-data models (`avici_full,bcnp_full,dibs,bayesdag`).
+  - Multirun sweep over RQ1 all-data models (`avici,bcnp,dibs,bayesdag`).
 
 Config groups used by those top-level configs:
 
 - Data: `src/causal_meta/configs/data/smoke.yaml`, `src/causal_meta/configs/data/full.yaml`
-- Trainer: `src/causal_meta/configs/trainer/smoke.yaml`, `src/causal_meta/configs/trainer/long.yaml`
-- Inference: `src/causal_meta/configs/inference/smoke.yaml`, `src/causal_meta/configs/inference/long.yaml`
+- Trainer: `src/causal_meta/configs/trainer/default.yaml`
+- Inference: `src/causal_meta/configs/inference/default.yaml`
 - Model: `src/causal_meta/configs/model/*.yaml`
 
 ## Current Training Defaults
 
-Smoke trainer (`trainer=smoke`):
-
-- `max_steps: 30`
-- `lr: 1e-3`
-- `amp: false`
-
-Long trainer (`trainer=long`):
+Base trainer (`trainer=default`):
 
 - `max_steps: 500000`
 - `lr: 1e-4`
 - `amp: true` (`bf16`)
 - `scheduler_warmup_ratio: 0.1` (linear warmup, then cosine)
 - `regulariser_update_interval: 500` (AVICI dual update cadence)
+
+Smoke overrides (defined directly in top-level configs like
+`default.yaml` and `smoke_multimodel.yaml`):
+
+- `max_steps: 30`
+- `log_every_n_steps: 1`
+- `val_check_interval: 10`
+- `checkpoint_every_n_steps: 0`
+- Inference overrides for DiBS/BayesDAG (faster explicit baseline evaluation)
 
 ## How To Run
 
@@ -85,7 +88,7 @@ See `docs/BAYESDAG_SETUP.md` for full setup.
 
 ## Validation Monitoring
 
-`trainer=long` validation now tracks grouped metrics across multiple validation
+Validation now tracks grouped metrics across multiple validation
 families:
 
 - several in-distribution families (`id_*`)

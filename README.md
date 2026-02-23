@@ -45,8 +45,11 @@ run in your environment.
 
 ```bash
 # Submit to Slurm via Submitit
-causal-meta --multirun --config-name smoke_multimodel hydra/launcher=submitit_slurm
+causal-meta --multirun --config-name smoke_multimodel hydra/launcher=vsc_a100
 ```
+
+Available launcher presets live under
+`src/causal_meta/configs/hydra/launcher/` (`vsc_a100`, `vsc_a100s`).
 
 ## Documentation
 

@@ -9,6 +9,10 @@ import pandas as pd
 log = logging.getLogger(__name__)
 
 
+class EmptyOverviewError(RuntimeError):
+    """Raised when an overview file exists but contains no usable rows."""
+
+
 # -----------------------------------------------------------------------------
 # Presentation mappings
 # -----------------------------------------------------------------------------
@@ -117,7 +121,7 @@ def generate_all_artifacts(
 
     Raises:
         FileNotFoundError: If *overview_path* does not exist.
-        RuntimeError: If the loaded DataFrame is empty.
+        EmptyOverviewError: If the loaded DataFrame is empty.
     """
     from causal_meta.analysis.plots.results import (
         generate_performance_figure,
@@ -134,7 +138,7 @@ def generate_all_artifacts(
     log.info(f"Loading overview from {overview_path}")
     df = load_overview_json(str(overview_path))
     if df.empty:
-        raise RuntimeError(f"No data found in {overview_path}")
+        raise EmptyOverviewError(f"No data found in {overview_path}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     log.info(f"Writing artifacts to {output_dir}")
