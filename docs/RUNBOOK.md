@@ -102,9 +102,25 @@ You can override Slurm resources directly from the command line:
 causal-meta --multirun \
   hydra/launcher=vsc_a100 \
   hydra.launcher.partition=gpu_high \
-  hydra.launcher.gpus_per_node=4 \
   hydra.launcher.tasks_per_node=4 \
+  'hydra.launcher.additional_parameters={gres: "gpu:a100:4"}' \
   hydra.launcher.mem_gb=128
+```
+
+> **Note:** On VSC, GPU allocation uses `--gres=gpu:a100:N` (not `--gpus-per-node`).
+> The `vsc_a100s` preset already configures this correctly for 4 GPUs with DDP.
+
+### Quick Deploy (Recommended)
+
+Use `deploy.sh` for one-command cluster submission (handles git pull, uv sync, env vars):
+
+```bash
+./deploy.sh                             # full RQ1 sweep, single A100
+./deploy.sh --config smoke_multimodel   # smoke test
+./deploy.sh --launcher vsc_a100s        # 4× A100 DDP
+./deploy.sh --dry-run                   # print command without submitting
+./deploy.sh --skip-sync                 # skip git pull + uv sync (fast re-submit)
+./deploy.sh -- trainer.max_steps=1000   # extra Hydra overrides after --
 ```
 
 ## 3. Environment & Setup
