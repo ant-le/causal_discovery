@@ -113,15 +113,30 @@ def _log_data_stats(data: np.ndarray, mask: np.ndarray) -> None:
 def _resolve_device(name: str) -> torch.device:
     if name == "auto":
         if torch.backends.mps.is_available():
-            return torch.device("mps")
-        if torch.cuda.is_available():
-            return torch.device("cuda")
-        return torch.device("cpu")
-    if name == "mps" and not torch.backends.mps.is_available():
-        return torch.device("cpu")
-    if name == "cuda" and not torch.cuda.is_available():
-        return torch.device("cpu")
-    return torch.device(name)
+            device = torch.device("mps")
+        elif torch.cuda.is_available():
+            device = torch.device("cuda")
+        else:
+            device = torch.device("cpu")
+    elif name == "mps" and not torch.backends.mps.is_available():
+        device = torch.device("cpu")
+    elif name == "cuda" and not torch.cuda.is_available():
+        device = torch.device("cpu")
+    else:
+        device = torch.device(name)
+
+    log.info(
+        "BayesDAG device: requested=%s, resolved=%s, "
+        "cuda_available=%s, cuda_device_count=%d, torch_version=%s",
+        name,
+        device,
+        torch.cuda.is_available(),
+        torch.cuda.device_count(),
+        torch.__version__,
+    )
+    if torch.cuda.is_available():
+        log.info("BayesDAG CUDA device: %s", torch.cuda.get_device_name(0))
+    return device
 
 
 def _build_model(config: Dict[str, Any], variables: Variables) -> Any:

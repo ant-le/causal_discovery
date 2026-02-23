@@ -7,11 +7,15 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple
 
+import logging
+
 import numpy as np
 import torch
 
 from causal_meta.models.base import BaseModel
 from causal_meta.models.factory import register_model
+
+log = logging.getLogger(__name__)
 
 
 @register_model("bayesdag")
@@ -162,6 +166,19 @@ class BayesDAGModel(BaseModel):
                 "Input data node count does not match configured num_nodes."
             )
 
+        log.info(
+            "BayesDAG in-process sample: device=%s, batch_size=%d, "
+            "num_nodes=%d, num_samples=%d, variant=%s, "
+            "cuda_available=%s, cuda_device_count=%d",
+            x.device,
+            batch_size,
+            num_nodes,
+            num_samples,
+            self.variant,
+            torch.cuda.is_available(),
+            torch.cuda.device_count(),
+        )
+
         train_config = {
             "batch_size": int(self.batch_size),
             "max_epochs": int(self.max_epochs),
@@ -247,6 +264,20 @@ class BayesDAGModel(BaseModel):
 
         python_path = self._resolve_external_python()
         script_path = Path(__file__).resolve().with_name("external_infer.py")
+
+        log.info(
+            "BayesDAG external sample: python=%s, batch_size=%d, "
+            "num_nodes=%d, num_samples=%d, variant=%s, "
+            "timeout=%ds, device=%s",
+            python_path,
+            batch_size,
+            num_nodes,
+            num_samples,
+            self.variant,
+            self.external_timeout_s,
+            self.device,
+        )
+
         train_config = {
             "batch_size": int(self.batch_size),
             "max_epochs": int(self.max_epochs),

@@ -24,7 +24,7 @@ skip_evaluation: true
 save_dir: ${hydra:runtime.output_dir}/bayesdag_output
 
 external_python: ${oc.env:CAUSAL_META_BAYESDAG_PYTHON,null}
-external_timeout_s: 1200
+external_timeout_s: 3600
 device: "auto"
 
 # Paper-aligned per-family profiles (Appendix B.3, Table 6).

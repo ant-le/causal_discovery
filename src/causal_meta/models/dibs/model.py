@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import os
 from typing import Any, Callable, Mapping, Optional, Tuple
 
@@ -9,6 +10,8 @@ import torch
 
 from causal_meta.models.base import BaseModel
 from causal_meta.models.factory import register_model
+
+log = logging.getLogger(__name__)
 
 
 @register_model("dibs")
@@ -154,6 +157,21 @@ class DiBSModel(BaseModel):
             raise ValueError(
                 "Input data node count does not match configured num_nodes."
             )
+
+        jax_platforms = sorted({d.platform for d in jax.devices()})
+        log.info(
+            "DiBS sample: jax_platforms=%s, jax_version=%s, "
+            "batch_size=%d, num_nodes=%d, num_samples=%d, "
+            "mode=%s, steps=%d, n_particles=%s",
+            jax_platforms,
+            jax.__version__,
+            batch_size,
+            num_nodes,
+            num_samples,
+            self.mode,
+            self.steps,
+            self.n_particles,
+        )
 
         if self._rng_key is None:
             self._rng_key = jax.random.PRNGKey(self.seed)
