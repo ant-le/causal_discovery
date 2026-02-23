@@ -54,6 +54,21 @@ if [[ "$SKIP_SYNC" == false ]]; then
   info "Syncing environment (uv)"
   uv sync --extra cluster --extra wandb --frozen --no-editable
 
+  # uv sync installs CPU-only JAX (via dibs-lib). Re-install CUDA JAX
+  # so DiBS can use the GPU. This must run after every uv sync.
+  JAX_EXTRAS="${CAUSAL_META_JAX_EXTRAS:-cuda12-local}"
+  if [[ "$JAX_EXTRAS" != "none" ]]; then
+    info "Installing JAX CUDA backend: jax[${JAX_EXTRAS}]"
+    uv pip install --python .venv/bin/python --upgrade "jax[${JAX_EXTRAS}]"
+  fi
+
+  info "Validating JAX backend:"
+  .venv/bin/python -c "
+import jax
+platforms = sorted({d.platform for d in jax.devices()})
+print(f'  jax {jax.__version__}, platforms: {platforms}')
+"
+
   info "Installed causal-meta version:"
   .venv/bin/python -c "import causal_meta; print(f'  {causal_meta.__version__}')"
 else
