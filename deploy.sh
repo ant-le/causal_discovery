@@ -62,11 +62,15 @@ if [[ "$SKIP_SYNC" == false ]]; then
     uv pip install --python .venv/bin/python --upgrade "jax[${JAX_EXTRAS}]"
   fi
 
-  info "Validating JAX backend:"
-  .venv/bin/python -c "
+  info "Validating JAX installation (GPU check deferred to SLURM worker):"
+  JAX_PLATFORMS=cpu .venv/bin/python -c "
 import jax
-platforms = sorted({d.platform for d in jax.devices()})
-print(f'  jax {jax.__version__}, platforms: {platforms}')
+print(f'  jax {jax.__version__} installed OK')
+try:
+    import jax_cuda12_plugin
+    print(f'  jax-cuda12-plugin found — GPU will be available in SLURM jobs')
+except ImportError:
+    print('  WARNING: jax-cuda12-plugin not found — DiBS will run on CPU')
 "
 
   info "Installed causal-meta version:"
@@ -77,7 +81,11 @@ fi
 
 # ── Environment ───────────────────────────────────────────────────────
 # Prevent eager CUDA init on login node (submitit pickling fix).
+# JAX_PLATFORMS=cpu stops the jax-cuda12-plugin from loading cuDNN
+# shared libraries, which otherwise makes the Hydra config unpicklable.
+# SLURM worker jobs unset this in their setup block (see launcher configs).
 export CUDA_VISIBLE_DEVICES=""
+export JAX_PLATFORMS=cpu
 
 # BayesDAG external python (if available).
 BAYESDAG_PYTHON="$ROOT_DIR/.venv-bayesdag/bin/python"

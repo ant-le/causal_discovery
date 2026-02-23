@@ -23,6 +23,9 @@ additional_parameters:
   mail-type: "BEGIN,END,FAIL"
 
 setup:
+  # Undo login-node env vars that block GPU access (set by deploy.sh)
+  - unset CUDA_VISIBLE_DEVICES
+  - unset JAX_PLATFORMS
   - export OMP_NUM_THREADS=${hydra.launcher.cpus_per_task}
   - export HYDRA_FULL_ERROR=1
   # Map SLURM env vars to PyTorch distributed (required for DDP init via env://)

@@ -342,6 +342,10 @@ class DiBSModel(BaseModel):
         if not self.xla_preallocate:
             os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 
+        # Remove JAX_PLATFORMS=cpu if inherited from the login-node deploy.sh.
+        # This must happen *before* the first `import jax` so JAX discovers GPUs.
+        os.environ.pop("JAX_PLATFORMS", None)
+
         try:
             import jax
             import jax.numpy as jnp
