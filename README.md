@@ -38,6 +38,9 @@ export CAUSAL_META_BAYESDAG_PYTHON="$PWD/.venv-bayesdag/bin/python"
 causal-meta name=smoke_test
 ```
 
+Smoke configs use online Weights & Biases logging. Ensure `wandb login` has been
+run in your environment.
+
 ### Running on a Cluster (Slurm)
 
 ```bash

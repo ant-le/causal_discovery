@@ -380,7 +380,14 @@ class BayesDAGModel(BaseModel):
 
     def _resolve_external_python(self) -> str:
         if self.external_python:
-            return self.external_python
+            python_path = Path(os.path.expandvars(self.external_python)).expanduser()
+            if not python_path.is_absolute():
+                python_path = (Path.cwd() / python_path).resolve()
+            if not python_path.exists():
+                raise FileNotFoundError(
+                    f"Resolved BayesDAG external_python does not exist: {python_path}"
+                )
+            return str(python_path)
         if not self.pyenv_env:
             raise RuntimeError(
                 "BayesDAG external inference requires external_python or pyenv_env."

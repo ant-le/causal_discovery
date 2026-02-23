@@ -16,6 +16,8 @@ To run a specific packaged config:
 causal-meta --config-name smoke_multimodel
 ```
 
+Both `default` and `smoke_multimodel` use online W&B logging by default.
+
 ## 2. Distributed & Cluster Execution (Slurm)
 
 We use the `hydra-submitit-launcher` to submit jobs to a Slurm cluster. This handles both single jobs and parallel sweeps.
@@ -134,6 +136,8 @@ causal-meta --multirun \
   uv pip install --python .venv/bin/python --upgrade "jax[cuda12-local]"
   source .venv/bin/activate
   ```
+- After pulling new commits, rerun `uv sync --extra cluster --extra wandb --frozen --no-editable`
+  so the installed `causal_meta` package is refreshed before launching jobs.
 - **BayesDAG External Env (required for multimodel):**
   ```bash
   ./bootstrap_uv.sh
