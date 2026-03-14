@@ -19,15 +19,17 @@ Use two environments:
 
 ```bash
 uv sync --extra cluster --extra wandb --frozen --no-editable
-uv pip sync --python .venv-bayesdag/bin/python requirements-bayesdag.txt
+uv pip install --python .venv-bayesdag/bin/python -r requirements-bayesdag.txt
 ```
+
+Note: do not use `uv pip sync` for `.venv-bayesdag`; it removes packages not
+listed in `requirements-bayesdag.txt` (including `causica`, installed from
+Project-BayesDAG source by `bootstrap_uv.sh`).
 
 GPU-only default notes:
 
 - `bootstrap_uv.sh` installs CUDA JAX (`jax[cuda12-local]`) by default.
 - Cluster scripts fail fast when CUDA is unavailable in main torch, DiBS JAX, or BayesDAG torch.
-- Setup-time strict GPU checks are off by default (`CAUSAL_META_STRICT_GPU=0`) so login-node setup works.
-- Optional strict setup-time checks: `CAUSAL_META_STRICT_GPU=1 ./bootstrap_uv.sh`.
 
 ## 4. Local Runs
 

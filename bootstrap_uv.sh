@@ -7,8 +7,6 @@ cd "$ROOT_DIR"
 MAIN_PYTHON_VERSION="${CAUSAL_META_MAIN_PYTHON_VERSION:-3.11}"
 BAYESDAG_PYTHON_VERSION="${CAUSAL_META_BAYESDAG_PYTHON_VERSION:-3.9}"
 JAX_EXTRAS="${CAUSAL_META_JAX_EXTRAS:-cuda12-local}"
-STRICT_GPU="${CAUSAL_META_STRICT_GPU:-0}"
-STRICT_CUDA_JAX="${CAUSAL_META_STRICT_CUDA_JAX:-${STRICT_GPU}}"
 BAYESDAG_REPO_URL="${CAUSAL_META_BAYESDAG_REPO_URL:-https://github.com/microsoft/Project-BayesDAG.git}"
 BAYESDAG_REPO_REF="${CAUSAL_META_BAYESDAG_REPO_REF:-}"
 
@@ -107,44 +105,16 @@ if ".view(tgt_len, bsz * self.num_heads, head_dim)" in forward_src:
 print(f"causal_meta import path: {module_path}")
 PY
 
-info "Validating PyTorch CUDA backend in .venv"
-CAUSAL_META_STRICT_GPU="$STRICT_GPU" "$MAIN_PYTHON" - <<'PY'
-import os
-
-import torch
-
-cuda_version = torch.version.cuda or "none"
-is_available = torch.cuda.is_available()
-device_count = torch.cuda.device_count() if is_available else 0
-
-print(f"main torch version: {torch.__version__}")
-print(f"main torch cuda version: {cuda_version}")
-print(f"main torch cuda available: {is_available}")
-print(f"main torch cuda devices: {device_count}")
-
-if os.environ.get("CAUSAL_META_STRICT_GPU") == "1":
-    if not is_available:
-        raise SystemExit(
-            "Main environment does not expose CUDA GPUs while "
-            "CAUSAL_META_STRICT_GPU=1"
-        )
-PY
-
 if [[ "$JAX_EXTRAS" != "none" ]]; then
-  info "Validating JAX backend"
-  CAUSAL_META_BOOTSTRAP_JAX_EXTRAS="$JAX_EXTRAS" \
-    CAUSAL_META_STRICT_CUDA_JAX="$STRICT_CUDA_JAX" \
-    "$MAIN_PYTHON" - <<'PY'
+  info "Validating JAX package installation"
+  CAUSAL_META_BOOTSTRAP_JAX_EXTRAS="$JAX_EXTRAS" "$MAIN_PYTHON" - <<'PY'
 from importlib import util
 import os
 
 import jax
 
 extras = os.environ["CAUSAL_META_BOOTSTRAP_JAX_EXTRAS"]
-platforms = sorted({device.platform for device in jax.devices()})
-platform_str = ", ".join(platforms) if platforms else "none"
 print(f"jax version: {jax.__version__}")
-print(f"jax platforms: {platform_str}")
 
 if extras.startswith("cuda"):
     plugin_prefix = extras.split("-", maxsplit=1)[0].replace("-", "_")
@@ -152,12 +122,6 @@ if extras.startswith("cuda"):
     if util.find_spec(plugin_module) is None:
         print(
             f"WARNING: expected CUDA plugin module '{plugin_module}' was not found."
-        )
-
-if os.environ.get("CAUSAL_META_STRICT_CUDA_JAX") == "1":
-    if extras.startswith("cuda") and not any(p in {"gpu", "cuda"} for p in platforms):
-        raise SystemExit(
-            "JAX CUDA backend is unavailable while CAUSAL_META_STRICT_CUDA_JAX=1"
         )
 PY
 fi
@@ -178,9 +142,8 @@ cp "$tmp_dir/Project-BayesDAG/README.md" "$tmp_dir/Project-BayesDAG/src/README.m
 uv pip install --python "$BAYESDAG_PYTHON" --no-deps "$tmp_dir/Project-BayesDAG/src"
 
 info "Validating BayesDAG environment"
-CAUSAL_META_STRICT_GPU="$STRICT_GPU" "$BAYESDAG_PYTHON" - <<'PY'
+"$BAYESDAG_PYTHON" - <<'PY'
 import causica
-import os
 import setuptools
 import torch
 
@@ -196,16 +159,6 @@ print(f"causica import path: {causica.__file__}")
 print(f"setuptools version: {setuptools.__version__}")
 print(f"pkg_resources path: {pkg_resources.__file__}")
 print(f"BayesDAG torch version: {torch.__version__}")
-print(f"BayesDAG torch cuda version: {torch.version.cuda or 'none'}")
-print(f"BayesDAG torch cuda available: {torch.cuda.is_available()}")
-if torch.cuda.is_available():
-    print(f"BayesDAG torch cuda devices: {torch.cuda.device_count()}")
-
-if os.environ.get("CAUSAL_META_STRICT_GPU") == "1" and not torch.cuda.is_available():
-    raise SystemExit(
-        "BayesDAG environment does not expose CUDA GPUs while "
-        "CAUSAL_META_STRICT_GPU=1"
-    )
 PY
 
 cat > "$ENV_SNIPPET" <<EOF
@@ -232,9 +185,6 @@ echo "  source \"$ENV_SNIPPET\""
 echo "DiBS JAX backend defaults to CUDA 12 via jax[cuda12-local]."
 echo "Override with (example): CAUSAL_META_JAX_EXTRAS=cuda13 ./bootstrap_uv.sh"
 echo "Disable JAX extras install: CAUSAL_META_JAX_EXTRAS=none ./bootstrap_uv.sh"
-echo "Setup-time GPU validation is disabled by default (CAUSAL_META_STRICT_GPU=0)."
-echo "Enable strict setup-time GPU checks (optional): CAUSAL_META_STRICT_GPU=1 ./bootstrap_uv.sh"
-echo "Override JAX strictness only: CAUSAL_META_STRICT_CUDA_JAX=1 ./bootstrap_uv.sh"
 echo
 echo "Run local smoke test:"
 echo "  $MAIN_PYTHON -m causal_meta.main name=smoke_test"

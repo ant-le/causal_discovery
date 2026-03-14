@@ -24,6 +24,7 @@ dev = [
 ]
 cluster = [
     "dibs-lib",
+    "jax[cuda12-local]>=0.4.30; platform_system == 'Linux' and platform_machine == 'x86_64'",
 ]
 wandb = [
     "wandb>=0.15.0",

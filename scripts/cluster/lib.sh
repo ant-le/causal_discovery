@@ -68,9 +68,9 @@ ensure_bayesdag_python() {
 require_bayesdag_torch_cuda() {
   local context="$1"
   local bayesdag_python="$2"
-  if ! "${bayesdag_python}" -c "import torch" >/dev/null 2>&1; then
-    echo "[${context}] ERROR: torch is not available in BayesDAG environment." >&2
-    echo "[${context}] Run: uv pip sync --python .venv-bayesdag/bin/python requirements-bayesdag.txt" >&2
+  if ! "${bayesdag_python}" -c "import causica, torch" >/dev/null 2>&1; then
+    echo "[${context}] ERROR: BayesDAG environment is incomplete (missing causica and/or torch)." >&2
+    echo "[${context}] Run: ./bootstrap_uv.sh" >&2
     exit 1
   fi
 
