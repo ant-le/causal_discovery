@@ -101,6 +101,10 @@ else
   modes=("${GPU_REQUEST_MODE}")
 fi
 
+if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+  echo "[submit_model] ignoring inherited CUDA_VISIBLE_DEVICES for Slurm submission" >&2
+fi
+
 for mode in "${modes[@]}"; do
   mapfile -t mode_args < <(build_mode_args "${mode}") || {
     echo "Unsupported GPU_REQUEST_MODE='${mode}'. Use one of: auto, gpus-per-node, gpus, gres." >&2
@@ -108,7 +112,7 @@ for mode in "${modes[@]}"; do
   }
 
   echo "[submit_model] trying GPU request mode='${mode}'" >&2
-  if output=$(sbatch "${SBATCH_ARGS[@]}" "${mode_args[@]}" "${JOB_SCRIPT}" "${MODEL}" "${CONFIG_NAME}" "${RUN_NAME}" "$@" 2>&1); then
+  if output=$(env -u CUDA_VISIBLE_DEVICES sbatch "${SBATCH_ARGS[@]}" "${mode_args[@]}" "${JOB_SCRIPT}" "${MODEL}" "${CONFIG_NAME}" "${RUN_NAME}" "$@" 2>&1); then
     printf '%s\n' "${output}"
     exit 0
   fi
