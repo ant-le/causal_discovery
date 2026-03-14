@@ -6,6 +6,15 @@ class BaseLogger(Protocol):
     Interface for experiment loggers (e.g., WandB, Local/Console).
     """
 
+    @property
+    def run_id(self) -> Optional[str]:
+        """
+        Return the logger's run ID for checkpoint persistence.
+
+        Returns None for loggers that don't support run resumption.
+        """
+        ...
+
     def log_metrics(
         self, metrics: Dict[str, float], step: Optional[int] = None
     ) -> None:

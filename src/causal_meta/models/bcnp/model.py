@@ -191,9 +191,8 @@ class BCNP(CausalTNPEncoder, BaseModel):
         # Sinkhorn normalisation assigns near-zero mass to padded nodes.
         if decoder_mask is not None:
             Q_mask = decoder_mask.unsqueeze(1) + decoder_mask.unsqueeze(2)
-            Q_mask = Q_mask * (
-                1 - torch.eye(V, device=input_data.device, dtype=Q_mask.dtype)
-            )
+            eye_mask = torch.eye(V, device=input_data.device, dtype=torch.bool)
+            Q_mask = Q_mask.masked_fill(eye_mask, 0.0)
             Q_param = Q_param + Q_mask
 
         # Sample Permutations

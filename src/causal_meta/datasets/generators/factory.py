@@ -226,6 +226,7 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
         "batch_size_val",
         "batch_size_test",
         "batch_size_test_interventional",
+        "hash_mechanisms",
     }
 
     kwargs = {k: v for k, v in cfg.items() if k in allowed_keys}

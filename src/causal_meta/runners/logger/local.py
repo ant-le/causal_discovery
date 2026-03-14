@@ -14,6 +14,11 @@ class LocalLogger(BaseLogger):
     def __init__(self):
         self.history: List[Dict[str, Any]] = []
 
+    @property
+    def run_id(self) -> Optional[str]:
+        """Return None as local logger doesn't support run resumption."""
+        return None
+
     def log_metrics(
         self, metrics: Dict[str, float], step: Optional[int] = None
     ) -> None:

@@ -32,12 +32,14 @@ class MetaIterableDataset(IterableDataset):
         base_seed: int,
         samples_per_task: int = 128,
         forbidden_hashes: Optional[Iterable[str]] = None,
+        hash_mechanisms: bool = False,
     ) -> None:
         super().__init__()
         self.family = family
         self.base_seed = int(base_seed)
         self.samples_per_task = samples_per_task
         self.forbidden_hashes: Set[str] = set(forbidden_hashes or [])
+        self.hash_mechanisms = hash_mechanisms
 
     def __iter__(self):
         worker_info = get_worker_info()
@@ -50,7 +52,11 @@ class MetaIterableDataset(IterableDataset):
         while True:
             instance = self.family.sample_task(seed)
             if self.forbidden_hashes:
-                graph_hash = compute_graph_hash(instance.adjacency_matrix)
+                graph_hash = compute_graph_hash(
+                    instance.adjacency_matrix,
+                    mechanisms=instance.mechanisms if self.hash_mechanisms else None,
+                    include_mechanisms=self.hash_mechanisms,
+                )
                 if graph_hash in self.forbidden_hashes:
                     seed += stride
                     continue

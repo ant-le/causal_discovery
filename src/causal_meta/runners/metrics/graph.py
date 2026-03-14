@@ -18,15 +18,28 @@ def _auc_from_binary_labels(y_true: torch.Tensor, y_score: torch.Tensor) -> floa
         return 0.5
 
     sorted_indices = torch.argsort(y_score, descending=True)
+    sorted_scores = y_score[sorted_indices]
     sorted_true = y_true[sorted_indices]
 
     tps = torch.cumsum(sorted_true, dim=0)
     fps = torch.cumsum(1.0 - sorted_true, dim=0)
-    tpr = tps / positives
-    fpr = fps / negatives
 
-    fpr_diff = torch.cat([fpr[:1], fpr[1:] - fpr[:-1]])
-    return float(torch.sum(fpr_diff * tpr).item())
+    if sorted_scores.numel() == 0:
+        return 0.5
+
+    score_diff = sorted_scores[1:] != sorted_scores[:-1]
+    change_indices = torch.nonzero(score_diff, as_tuple=False).flatten() + 1
+    group_ends = torch.cat(
+        [change_indices - 1, torch.tensor([sorted_scores.numel() - 1])]
+    )
+
+    tps = tps[group_ends]
+    fps = fps[group_ends]
+
+    tpr = torch.cat([torch.zeros(1), tps / positives])
+    fpr = torch.cat([torch.zeros(1), fps / negatives])
+
+    return float(torch.trapezoid(tpr, fpr).item())
 
 
 def _auc_graph_scores_impl(
@@ -593,9 +606,8 @@ class Metrics(BaseMetrics):
             # Callers can sync separately if desired.
             return self._compute_batch_metrics(targets, samples)
 
-        # Stateful mode: summarize gathered history.
-        full_history = self._gather_history()
-        return BaseMetrics._summarize_history(full_history, summary_stats=summary_stats)
+        # Stateful mode: use memory-efficient distributed aggregation.
+        return self.summarize_distributed(summary_stats=summary_stats, use_reduce=True)
 
 
 def log_prob_graph_scores(

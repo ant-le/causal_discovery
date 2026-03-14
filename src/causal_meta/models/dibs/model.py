@@ -313,8 +313,17 @@ class DiBSModel(BaseModel):
         if available == target_samples:
             return graphs_t
         if available > target_samples:
-            return graphs_t[:target_samples]
+            generator = torch.Generator(device=graphs_t.device)
+            generator.manual_seed(int(seed))
+            indices = torch.randperm(
+                available,
+                device=graphs_t.device,
+                generator=generator,
+            )[:target_samples]
+            return graphs_t.index_select(0, indices)
 
+        # Upsample with replacement (randperm only has `available` elements,
+        # so it cannot produce `target_samples > available`).
         generator = torch.Generator(device=graphs_t.device)
         generator.manual_seed(int(seed))
         indices = torch.randint(

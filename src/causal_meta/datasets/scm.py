@@ -8,8 +8,10 @@ import torch
 from torch import nn
 
 from causal_meta.datasets.generators.graphs import GraphGenerator
-from causal_meta.datasets.generators.mechanisms import (ConstantMechanism,
-                                                        MechanismFactory)
+from causal_meta.datasets.generators.mechanisms import (
+    ConstantMechanism,
+    MechanismFactory,
+)
 
 
 def _topological_order_from_adj(adjacency_matrix: torch.Tensor) -> List[int]:
@@ -39,6 +41,10 @@ class SCMInstance:
             if topological_order is not None
             else _topological_order_from_adj(self.adjacency_matrix)
         )
+        self.parent_indices = [
+            torch.nonzero(self.adjacency_matrix[:, node], as_tuple=False).flatten()
+            for node in range(self.adjacency_matrix.shape[0])
+        ]
 
     @property
     def n_nodes(self) -> int:
@@ -65,9 +71,7 @@ class SCMInstance:
 
         with torch.no_grad():
             for node in self.topological_order:
-                parents = torch.nonzero(
-                    self.adjacency_matrix[:, node], as_tuple=False
-                ).flatten()
+                parents = self.parent_indices[node].to(device)
 
                 parent_values = (
                     samples[:, parents]

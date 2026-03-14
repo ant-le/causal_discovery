@@ -137,15 +137,15 @@ class SCMMetrics(BaseMetrics):
             if valid_nlls.numel() > 0:
                 neg_nlls = -valid_nlls
                 log_sum_exp = torch.logsumexp(neg_nlls, dim=0)
-                inil_score = -(log_sum_exp - np.log(len(task_nlls)))
+                inil_score = -(log_sum_exp - np.log(int(valid_nlls.numel())))
 
                 self.history["inil"].append(inil_score.item())
                 if prefix:
                     self.history[f"{prefix}/inil"].append(inil_score.item())
 
     def compute(self, summary_stats: bool = True) -> Dict[str, Any]:
-        full_history = self._gather_history()
-        return BaseMetrics._summarize_history(full_history, summary_stats=summary_stats)
+        # Use memory-efficient distributed aggregation via all_reduce.
+        return self.summarize_distributed(summary_stats=summary_stats, use_reduce=True)
 
     def get_raw_results(self) -> Dict[str, List[float]]:
         return super().get_raw_results()

@@ -12,7 +12,9 @@ from omegaconf import DictConfig
 
 from causal_meta.datasets.data_module import CausalMetaModule
 from causal_meta.datasets.torch_datasets import MetaFixedDataset
+from causal_meta.datasets.utils.normalization import normalize_scm_data
 from causal_meta.models.base import BaseModel
+from causal_meta.runners.logger.base import BaseLogger
 from causal_meta.runners.metrics.graph import Metrics
 from causal_meta.runners.metrics.scm import SCMMetrics
 from causal_meta.runners.utils.artifacts import (
@@ -50,9 +52,9 @@ def run(
     model: nn.Module,
     data_module: CausalMetaModule,
     *,
-    logger=None,
+    logger: BaseLogger | None = None,
     output_dir: Path | None = None,
-):
+) -> None:
     # DDP Setup
     dist_ctx = DistributedContext.current()
     is_distributed = dist_ctx.is_distributed
@@ -145,6 +147,7 @@ def run(
                         item["data"],
                         item["adjacency"],
                     )
+                    input_data_norm = normalize_scm_data(input_data_raw)
 
                     # Find cached artifact
                     artifact_path = (
@@ -160,7 +163,7 @@ def run(
                         else None
                     )
 
-                    input_data = input_data_raw.to(device).unsqueeze(0)
+                    input_data = input_data_norm.to(device).unsqueeze(0)
                     adjacency_matrix = adjacency_matrix_true.to(device).unsqueeze(0)
 
                     if artifact_path is not None:

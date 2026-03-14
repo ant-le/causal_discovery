@@ -282,6 +282,7 @@ class BayesDAGModel(BaseModel):
             "max_epochs": int(self.max_epochs),
             "standardize_data_mean": bool(self.standardize_data_mean),
             "standardize_data_std": bool(self.standardize_data_std),
+            "skip_evaluation": bool(self.skip_evaluation),
         }
         model_config = {
             "variant": self.variant,

@@ -7,15 +7,19 @@ from typing import Any, Dict, Optional, Sequence, Set
 import torch
 from torch.utils.data import DataLoader
 
-from causal_meta.datasets.generators.configs import (DataModuleConfig,
-                                                     FamilyConfig)
+from causal_meta.datasets.generators.configs import DataModuleConfig, FamilyConfig
 from causal_meta.datasets.generators.factory import load_data_module_config
 from causal_meta.datasets.scm import SCMFamily
-from causal_meta.datasets.torch_datasets import (MetaFixedDataset,
-                                                 MetaInterventionalDataset,
-                                                 MetaIterableDataset)
-from causal_meta.datasets.utils import (collate_fn_interventional,
-                                        collate_fn_scm, compute_graph_hash)
+from causal_meta.datasets.torch_datasets import (
+    MetaFixedDataset,
+    MetaInterventionalDataset,
+    MetaIterableDataset,
+)
+from causal_meta.datasets.utils import (
+    collate_fn_interventional,
+    collate_fn_scm,
+    compute_graph_hash,
+)
 from causal_meta.datasets.utils.sampling import NoPaddingDistributedSampler
 
 
@@ -94,6 +98,7 @@ class CausalMetaModule:
             base_seed=self.config.base_seed,
             samples_per_task=self.config.samples_per_task,
             forbidden_hashes=all_reserved_hashes,
+            hash_mechanisms=getattr(self.config, "hash_mechanisms", False),
         )
 
         self.val_datasets = {
@@ -246,14 +251,31 @@ class CausalMetaModule:
     def _sample_hashes(self, family: SCMFamily, seeds: Sequence[int]) -> Set[str]:
         """
         Compute a set of graph hashes for a given list of seeds to ensure disjointness.
+
+        If ``config.hash_mechanisms`` is True, mechanism parameters are included in the
+        hash, enabling functional generalization testing on identical DAG structures.
         """
         hashes: Set[str] = set()
         # Use provided seeds or probe a default range if empty
         seeds_to_probe = list(seeds) if seeds else self._probe_seeds(seeds)
 
+        include_mechanisms = getattr(self.config, "hash_mechanisms", False)
+
         for seed in seeds_to_probe:
-            adjacency_matrix = family.sample_graph(seed)
-            hashes.add(compute_graph_hash(adjacency_matrix))
+            if include_mechanisms:
+                # sample_task returns the full SCMInstance with mechanisms
+                instance = family.sample_task(seed)
+                hashes.add(
+                    compute_graph_hash(
+                        instance.adjacency_matrix,
+                        mechanisms=instance.mechanisms,
+                        include_mechanisms=True,
+                    )
+                )
+            else:
+                # Fast path: only hash graph structure
+                adjacency_matrix = family.sample_graph(seed)
+                hashes.add(compute_graph_hash(adjacency_matrix))
         return hashes
 
     def _probe_seeds(self, seeds: Sequence[int], count: int = 3) -> Sequence[int]:

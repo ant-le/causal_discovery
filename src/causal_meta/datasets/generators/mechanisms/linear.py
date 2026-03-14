@@ -61,7 +61,11 @@ class LinearMechanismFactory:
         # Forking with set_state is robust.
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(
-                torch.randint(0, 1000000, (1,), generator=torch_generator).item()
+                int(
+                    torch.randint(
+                        0, torch.iinfo(torch.int64).max, (1,), generator=torch_generator
+                    ).item()
+                )
             )
             noise_scale = torch.distributions.Gamma(
                 self.noise_concentration, self.noise_rate

@@ -284,7 +284,7 @@ def run(
         step += 1
 
         # Logging
-        if step % log_every_n_steps == 0:
+        if log_every_n_steps > 0 and step % log_every_n_steps == 0:
             loss_value = _reduce_loss_for_logging(loss_accum, world_size)
             if rank == 0:
                 log_str = f"Step {step}/{max_steps} | Loss: {loss_value:.4f}"
@@ -294,7 +294,7 @@ def run(
                     logger.log_metrics({"train/loss": loss_value}, step=step)
 
         # Validation
-        if step % val_check_interval == 0:
+        if val_check_interval > 0 and step % val_check_interval == 0:
             val_n_samples = int(cfg.get("inference", {}).get("n_samples", 10))
             # Validate involves sampling, which might need unwrapped model or handling in validate
             val_metrics = validate(
@@ -337,6 +337,7 @@ def run(
                         world_size=world_size,
                         train_batch_size=train_batch_size,
                         accumulate_grad_batches=accumulate_grad_batches,
+                        wandb_run_id=logger.run_id if logger else None,
                     )
                     log.info(f"New best model saved! E-F1: {best_val_metric:.4f}")
 
@@ -355,6 +356,7 @@ def run(
                     world_size=world_size,
                     train_batch_size=train_batch_size,
                     accumulate_grad_batches=accumulate_grad_batches,
+                    wandb_run_id=logger.run_id if logger else None,
                 )
 
     if rank == 0:
@@ -371,6 +373,7 @@ def run(
             world_size=world_size,
             train_batch_size=train_batch_size,
             accumulate_grad_batches=accumulate_grad_batches,
+            wandb_run_id=logger.run_id if logger else None,
         )
 
     if is_distributed:
@@ -466,6 +469,7 @@ def save_checkpoint(
     world_size: int,
     train_batch_size: int,
     accumulate_grad_batches: int,
+    wandb_run_id: str | None = None,
 ) -> None:
     experiment_seed = get_experiment_seed(
         cfg, fallback=int(train_stream_initial_base_seed)
@@ -487,6 +491,8 @@ def save_checkpoint(
     }
     if scheduler is not None:
         state["scheduler_state_dict"] = scheduler.state_dict()
+    if wandb_run_id is not None:
+        state["wandb_run_id"] = str(wandb_run_id)
     torch.save(
         state,
         filepath,

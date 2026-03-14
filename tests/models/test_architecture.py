@@ -10,7 +10,7 @@ import causal_meta.models
 # Mock Model for testing
 @register_model("mock_model")
 class MockModel(BaseModel):
-    def __init__(self, hidden_dim: int = 10):
+    def __init__(self, hidden_dim: int = 10, **kwargs):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.layer = torch.nn.Linear(1, 1)  # Dummy layer
@@ -29,7 +29,7 @@ class MockModel(BaseModel):
         return torch.zeros(B, num_samples, V, V)
 
     def calculate_loss(
-        self, output: torch.Tensor, target: torch.Tensor
+        self, output: torch.Tensor, target: torch.Tensor, **kwargs
     ) -> torch.Tensor:
         # Dummy loss
         return torch.tensor([0.0], device=output.device).repeat(output.shape[0])
@@ -68,7 +68,7 @@ def test_avici_instantiation():
         "type": "avici",
         "num_nodes": 10,
         "d_model": 16,
-        "n_head": 2,
+        "nhead": 2,
         "num_layers": 2,
     }
     model = ModelFactory.create(config)
@@ -82,7 +82,7 @@ def test_bcnp_instantiation():
         "type": "bcnp",
         "num_nodes": 10,
         "d_model": 32,
-        "n_head": 4,
+        "nhead": 4,
         "num_layers": 2,
     }
     model = ModelFactory.create(config)

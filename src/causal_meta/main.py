@@ -34,6 +34,20 @@ from causal_meta.runners.utils.seeding import get_experiment_seed, seed_everythi
 log = logging.getLogger(__name__)
 
 
+def _load_wandb_run_id_from_checkpoint(checkpoint_dir: Path) -> str | None:
+    """Load wandb_run_id from last.pt checkpoint if it exists."""
+    checkpoint_path = checkpoint_dir / "checkpoints" / "last.pt"
+    if not checkpoint_path.exists():
+        return None
+    try:
+        # Load only the necessary keys to avoid loading full model state
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        return checkpoint.get("wandb_run_id")
+    except Exception as exc:
+        log.warning(f"Failed to load wandb_run_id from checkpoint: {exc}")
+        return None
+
+
 def _attach_file_logger(output_dir: Path, *, filename: str) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     log_path = output_dir / filename
@@ -313,12 +327,23 @@ def run_pipeline(cfg: DictConfig) -> None:
 
         dist_ctx.barrier()
 
+        # Check for existing W&B run ID from checkpoint for resumption
+        resume_run_id: str | None = None
+        if use_wandb:
+            resume_run_id = _load_wandb_run_id_from_checkpoint(base_output_dir)
+            if resume_run_id and ((not is_distributed) or dist_ctx.is_main_process):
+                log.info(f"Found W&B run ID in checkpoint: {resume_run_id}")
+
         # Initialize Logger once per run (Hydra multirun launches separate jobs per model).
         if (not is_distributed) or dist_ctx.is_main_process:
             if use_wandb:
                 log.info("Initializing WandB Logger...")
                 try:
-                    logger = WandbLogger(cfg, output_dir=str(base_output_dir))
+                    logger = WandbLogger(
+                        cfg,
+                        output_dir=str(base_output_dir),
+                        resume_run_id=resume_run_id,
+                    )
                 except Exception as exc:
                     log.warning(
                         "W&B initialization failed (%s). Falling back to LocalLogger. "

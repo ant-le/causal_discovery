@@ -427,7 +427,7 @@ class CausalTNPEncoder(nn.Module):
         embedding = torch.cat([embedding, query_emb], dim=1)
         return embedding
 
-    def compute_summary(self, query, key, value, avici_summary=False):
+    def compute_summary(self, query, key, value, avici_summary=False, mask=None):
         """
         Compute the summary representation for the query.
 
@@ -444,6 +444,13 @@ class CausalTNPEncoder(nn.Module):
             summary_rep: torch.Tensor, shape [batch_size, num_nodes, 1, d_model]
         """
         if avici_summary:
+            if mask is not None:
+                if mask.dtype == torch.bool:
+                    bool_pad = mask
+                else:
+                    bool_pad = mask == -float("inf")
+                bool_pad = bool_pad.unsqueeze(1).unsqueeze(-1)
+                value = value.masked_fill(bool_pad, -float("inf"))
             # Max pool over the value
             # shape [batch_size, 1, num_nodes, d_model]
             summary_rep = value.max(dim=1, keepdim=True)[0]
@@ -487,5 +494,6 @@ class CausalTNPEncoder(nn.Module):
             key=representation[:, :-1, :, :],
             value=representation[:, :-1, :, :],
             avici_summary=self.avici_summary,
+            mask=mask,
         )
         return summary_rep

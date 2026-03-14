@@ -235,3 +235,8 @@ class DataModuleConfig:
     batch_size_val: int = 1
     batch_size_test: int = 1
     batch_size_test_interventional: int = 1
+
+    # If True, include mechanism parameters in graph hashes for disjointness checks.
+    # This enables functional generalization testing where the same DAG structure
+    # appears with different mechanism parameters in train vs. test.
+    hash_mechanisms: bool = False

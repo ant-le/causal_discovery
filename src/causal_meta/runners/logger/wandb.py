@@ -45,9 +45,25 @@ def import_wandb_if_enabled(enabled: bool) -> ModuleType | None:
 class WandbLogger(BaseLogger):
     """
     WandB implementation of the BaseLogger.
+
+    Supports run resumption: if `resume_run_id` is provided and the run exists,
+    the logger will resume that run instead of creating a new one.
     """
 
-    def __init__(self, cfg: Any, output_dir: Optional[str] = None):
+    def __init__(
+        self,
+        cfg: Any,
+        output_dir: Optional[str] = None,
+        resume_run_id: Optional[str] = None,
+    ):
+        """
+        Initialize the WandB logger.
+
+        Args:
+            cfg: Experiment configuration (DictConfig or dict-like).
+            output_dir: Directory for W&B local files.
+            resume_run_id: If provided, attempt to resume this W&B run ID.
+        """
         # Keep as Any so type checkers accept wandb's dynamic API.
         wandb_module = import_wandb_if_enabled(True)
         if wandb_module is None:
@@ -83,19 +99,37 @@ class WandbLogger(BaseLogger):
             else:
                 run_name = f"{run_name}_pid{os.getpid()}"
 
+        # Handle run resumption
+        resume_mode: Optional[str] = None
+        run_id: Optional[str] = None
+        if resume_run_id:
+            resume_mode = "allow"  # Resume if exists, otherwise create new
+            run_id = resume_run_id
+            log.info(f"Attempting to resume W&B run: {resume_run_id}")
+
         self.run = self.wandb_module.init(
             project=_get(wandb_cfg, "project", "causal_meta"),
             entity=_get(wandb_cfg, "entity", None),
             name=run_name,
+            id=run_id,
+            resume=resume_mode,
             config=(
                 OmegaConf.to_container(cfg, resolve=True)
-                if hasattr(cfg, "logger")
+                if OmegaConf.is_config(cfg)
                 else cfg
             ),  # handle raw dict or DictConfig
             tags=_get(wandb_cfg, "tags", []),
             mode=_get(wandb_cfg, "mode", "offline"),
             dir=output_dir,
         )
+
+        # Store run ID for checkpoint persistence
+        self._run_id: Optional[str] = self.run.id if self.run else None
+
+    @property
+    def run_id(self) -> Optional[str]:
+        """Return the current W&B run ID for checkpoint persistence."""
+        return self._run_id
 
     def log_metrics(
         self, metrics: Dict[str, float], step: Optional[int] = None

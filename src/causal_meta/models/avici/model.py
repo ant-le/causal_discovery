@@ -169,13 +169,12 @@ class AviciModel(CausalTNPEncoder, BaseModel):
         """
         Args:
         -----
-            logits: torch.Tensor, shape [batch_size, num_samples, num_nodes, num_nodes]
+            logits: torch.Tensor, shape [batch_size, num_nodes, num_nodes]
             target: torch.Tensor, shape [batch_size, num_nodes, num_nodes]
 
         Returns:
         --------
             loss: torch.Tensor, shape [batch_size]
-            logits: torch.Tensor, shape [batch_size, num_nodes ** 2]
         """
         probs = torch.sigmoid(logits)
         # set diagonal to 0

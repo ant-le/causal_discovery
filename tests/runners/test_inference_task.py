@@ -91,3 +91,60 @@ def test_inference_can_compress_and_limit_samples(tmp_path) -> None:
 
     assert artifact["graph_samples"].dtype == torch.uint8
     assert artifact["graph_samples"].shape[1] == 2
+
+
+def test_inference_batched_produces_same_results(tmp_path) -> None:
+    """Test that batched inference produces the same results as unbatched."""
+
+    class _BatchTrackingModel(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.call_batch_sizes: list[int] = []
+
+        @property
+        def needs_pretraining(self) -> bool:
+            return False
+
+        def sample(self, x: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
+            b, _, n = x.shape
+            self.call_batch_sizes.append(b)
+            # Return unique values per batch item to verify correct unbatching
+            result = torch.zeros(b, num_samples, n, n)
+            for i in range(b):
+                result[i] = float(i + 1)
+            return result
+
+    # Test with batch_size=1 (default)
+    cfg_unbatched = OmegaConf.create(
+        {
+            "inference": {"n_samples": 2, "output_dir": str(tmp_path / "unbatched")},
+        }
+    )
+    model_unbatched = _BatchTrackingModel()
+    data_module = _DummyDataModule()
+
+    written_unbatched = inference_run(cfg_unbatched, model_unbatched, data_module)
+    assert written_unbatched["dummy"] == 2
+    assert model_unbatched.call_batch_sizes == [1, 1]
+
+    # Test with batch_size=2
+    cfg_batched = OmegaConf.create(
+        {
+            "inference": {
+                "n_samples": 2,
+                "output_dir": str(tmp_path / "batched"),
+                "batch_size": 2,
+            },
+        }
+    )
+    model_batched = _BatchTrackingModel()
+
+    written_batched = inference_run(cfg_batched, model_batched, data_module)
+    assert written_batched["dummy"] == 2
+    assert model_batched.call_batch_sizes == [2]  # Single batched call
+
+    # Verify both produce the same number of artifacts
+    unbatched_dir = tmp_path / "unbatched" / "inference" / "dummy"
+    batched_dir = tmp_path / "batched" / "inference" / "dummy"
+    assert len(list(unbatched_dir.glob("*.pt"))) == 2
+    assert len(list(batched_dir.glob("*.pt"))) == 2

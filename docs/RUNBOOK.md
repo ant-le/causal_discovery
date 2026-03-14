@@ -2,175 +2,110 @@
 
 This guide describes how to execute causal discovery experiments using the `causal_meta` pipeline, exclusively relying on **Hydra** for configuration and job submission (including **Slurm** via Submitit).
 
-## 1. Local Execution
+## 1. Environment & Setup
 
-To run a single experiment locally using the default configuration:
+### Core Project Environment (uv)
 
-```bash
-causal-meta
-```
-
-To run a specific packaged config:
+We use `uv` for dependency management.
 
 ```bash
-causal-meta --config-name smoke_multimodel
+uv lock
+uv sync --extra cluster --extra wandb --frozen --no-editable
+# If DiBS should use NVIDIA GPUs on CUDA 12 clusters:
+uv pip install --python .venv/bin/python --upgrade "jax[cuda12-local]"
+source .venv/bin/activate
 ```
 
-Both `default` and `smoke_multimodel` use online W&B logging by default.
+After pulling new commits, rerun `uv sync --extra cluster --extra wandb --frozen --no-editable` to refresh the `causal_meta` installation.
 
-## 2. Distributed & Cluster Execution (Slurm)
+### BayesDAG External Environment (required for multimodel)
 
-We use the `hydra-submitit-launcher` to submit jobs to a Slurm cluster. This handles both single jobs and parallel sweeps.
-
-### Single Job on Slurm
-
-To submit a single job to the cluster:
+BayesDAG depends on an older Python/Torch stack.
 
 ```bash
-causal-meta --multirun \
-  --config-name default \
-  hydra/launcher=vsc_a100 \
-  name=my_slurm_run
+./bootstrap_uv.sh
+export CAUSAL_META_BAYESDAG_PYTHON="$PWD/.venv-bayesdag/bin/python"
 ```
 
-### Parallel Sweeps (Recommended)
+_Troubleshooting:_ If BayesDAG fails with `ModuleNotFoundError: No module named 'pkg_resources'`, pin setuptools:
+`uv pip install --python .venv-bayesdag/bin/python "setuptools<81"`
 
-To run multiple seeds or hyperparameter variations in parallel on the cluster:
+### W&B Logging
+
+If using W&B (`logger.wandb.enabled=true`), set `WANDB_MODE=offline` on clusters without internet access.
+
+## 2. Configuration & Running Experiments
+
+Pre-training is executed only for models with `needs_pretraining == True` (e.g., Avici, BCNP).
+
+### Canonical Configs
+
+- `default.yaml`: Minimal single-run smoke config.
+- `smoke_multimodel.yaml`: Multirun sweep over smoke model variants.
+- `full_multimodel.yaml`: Multirun sweep over RQ1 all-data models (`avici,bcnp,dibs,bayesdag`).
+
+### Local Execution
+
+_Smoke pre-training (single run):_
 
 ```bash
-causal-meta --multirun \
-    --config-name smoke_multimodel \
-    hydra/launcher=vsc_a100 \
-    data.base_seed=0,1,2,3
+causal-meta --config-name default
 ```
 
-### TU Wien VSC A100 preset
-
-Use the A100 launcher preset (recommended for the RQ1 all-data sweep):
+_Smoke multirun (all smoke models):_
 
 ```bash
-# Prevent eager CUDA initialization on login node (fixes pickling errors)
-export CUDA_VISIBLE_DEVICES=""
-
-causal-meta --multirun \
-  --config-name full_multimodel \
-  hydra/launcher=vsc_a100
+causal-meta --multirun --config-name smoke_multimodel
 ```
 
-This preset requests 1 A100 GPU per job and submits to the `GPU-a100` partition.
-`full_multimodel` currently resolves to run name `rq1_all_data_multimodel`.
+## 3. Distributed & Cluster Execution (Slurm)
 
-### TU Wien VSC A100s preset
+We use `hydra-submitit-launcher` to submit jobs to Slurm.
 
-Use the multi-GPU A100 launcher preset:
+### Cluster Submission
 
 ```bash
-# Prevent eager CUDA initialization on login node (fixes pickling errors)
-export CUDA_VISIBLE_DEVICES=""
+export CUDA_VISIBLE_DEVICES="" # Prevent eager CUDA init
+source .bootstrap_env.sh        # Sets CAUSAL_META_BAYESDAG_PYTHON
 
-causal-meta --multirun \
-  --config-name full_multimodel \
-  hydra/launcher=vsc_a100s
+# Full RQ1 sweep, single A100 (vsc_a100)
+causal-meta --multirun --config-name full_multimodel hydra/launcher=vsc_a100
+
+# 4× A100 DDP (vsc_a100s)
+causal-meta --multirun --config-name full_multimodel hydra/launcher=vsc_a100s
 ```
 
-This preset requests 4 A100 GPUs per job (DDP).
+### Resource & Naming Overrides
 
-### Per-job naming
-
-You can override naming patterns directly when launching:
+You can override Slurm resources and naming directly:
 
 ```bash
 causal-meta --multirun \
   --config-name full_multimodel \
   hydra/launcher=vsc_a100 \
   hydra.launcher.name='cm_${model.id}' \
-  hydra.sweep.subdir='${model.id}_${hydra.job.num}'
-```
-
-Example alternatives:
-
-```bash
-hydra.launcher.name='cm_${model.id}'
-hydra.sweep.subdir='${model.id}'
-```
-
-### Resource Overrides
-
-You can override Slurm resources directly from the command line:
-
-```bash
-causal-meta --multirun \
-  hydra/launcher=vsc_a100 \
-  hydra.launcher.partition=gpu_high \
-  hydra.launcher.tasks_per_node=4 \
-  'hydra.launcher.additional_parameters={gres: "gpu:a100:4"}' \
+  hydra.sweep.subdir='${model.id}_${hydra.job.num}' \
   hydra.launcher.mem_gb=128
 ```
 
-> **Note:** On VSC, GPU allocation uses `--gres=gpu:a100:N` (not `--gpus-per-node`).
-> The `vsc_a100s` preset already configures this correctly for 4 GPUs with DDP.
+## 4. Monitoring & Profiling
 
-### Cluster Submission
+### Validation Monitoring
 
-After running `./bootstrap_uv.sh` (which installs JAX CUDA and both venvs), submit jobs directly:
+The training loop logs per-family metrics and aggregate group metrics (`mean_id_e-edgef1`, `mean_id_auc`, and `mean_ood_e-edgef1`). Checkpoint selection uses `mean_id_e-edgef1`.
 
-```bash
-source .bootstrap_env.sh  # sets CAUSAL_META_BAYESDAG_PYTHON
+### Performance Profiling Checklist
 
-# Full RQ1 sweep, single A100
-.venv/bin/python -m causal_meta.main --multirun --config-name full_multimodel hydra/launcher=vsc_a100
+1. **Data Throughput:** Monitor GPU usage (`nvidia-smi`). Set `num_workers > 0` and `pin_memory=True` in `config.data`.
+2. **Distributed Overheads:** Use `val_check_interval >= 1000` steps for validation.
+3. **Memory Usage:** Enable `tf32` (`trainer.tf32=true`) and Mixed Precision (`trainer.amp=true`).
+4. **Artifact I/O:** Ensure `output_dir` is on a fast filesystem (e.g., scratch/SSD), not NFS. Use `cache_compress=true`.
 
-# Smoke test
-.venv/bin/python -m causal_meta.main --multirun --config-name smoke_multimodel hydra/launcher=vsc_a100
+## 5. Output Structure
 
-# 4× A100 DDP
-.venv/bin/python -m causal_meta.main --multirun --config-name full_multimodel hydra/launcher=vsc_a100s
+Hydra manages output directories (`experiments/runs/${name}/`):
 
-# Extra Hydra overrides
-.venv/bin/python -m causal_meta.main --multirun --config-name full_multimodel hydra/launcher=vsc_a100 trainer.max_steps=1000
-```
-
-## 3. Environment & Setup
-
-- **W&B Logging:** If using W&B (`logger.wandb.enabled=true`), set `WANDB_MODE=offline` on clusters without internet access.
-- **Errors:** Use `HYDRA_FULL_ERROR=1` for detailed tracebacks.
-- **Environment (uv, recommended):**
-  ```bash
-  uv lock
-  uv sync --extra cluster --extra wandb --frozen --no-editable
-  # If DiBS should use NVIDIA GPUs on CUDA 12 clusters:
-  uv pip install --python .venv/bin/python --upgrade "jax[cuda12-local]"
-  source .venv/bin/activate
-  ```
-- After pulling new commits, rerun `uv sync --extra cluster --extra wandb --frozen --no-editable`
-  so the installed `causal_meta` package is refreshed before launching jobs.
-- **BayesDAG External Env (required for multimodel):**
-  ```bash
-  ./bootstrap_uv.sh
-  export CAUSAL_META_BAYESDAG_PYTHON="$PWD/.venv-bayesdag/bin/python"
-  ```
-  See `docs/BAYESDAG_SETUP.md` for details.
-
-## 4. Output Structure
-
-Hydra manages output directories:
-
-- `experiments/runs/${name}/`: Single run directory and multirun aggregate.
-- Each directory contains:
-  - `checkpoints/`: Model weights (`best_<model_name>.pt`, `last_<model_name>.pt`).
-  - `results/`: `<model_name>.json` and `aggregated.json`.
-  - `inference/<model_name>/`: Sampled graphs (`seed_<seed>.pt` or `seed_<seed>.pt.gz`).
-  - `pipe_<model_name>.log`: Job logs.
-
-**Note:** If you sweep different hyperparameters for the same model, use different `name` values
-to avoid overwriting artifacts in a shared run folder.
-
-## 5. Validation And Baseline Profiles
-
-- Validation uses multiple ID families (`id_*`) and one OOD family (`ood_*`) to
-  track robustness during pre-training.
-- DiBS and BayesDAG use YAML-driven profile overrides (Linear/NeuralNet/GPCDE)
-  selected automatically per evaluation family.
-- For reporting, separate your summary into:
-  - ID slice (`id_*`) for paper-comparable metrics.
-  - OOD slice (`ood_*`) for robustness checks.
+- `checkpoints/`: Model weights.
+- `results/`: Model-specific and aggregated JSON results.
+- `inference/<model_name>/`: Sampled graphs (compressed if configured).
+- `pipe_<model_name>.log`: Job logs.

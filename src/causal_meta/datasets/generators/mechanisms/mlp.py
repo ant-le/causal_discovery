@@ -36,7 +36,11 @@ class MLPMechanismFactory:
         # based on torch_generator. PyTorch init uses global RNG.
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(
-                torch.randint(0, 1000000, (1,), generator=torch_generator).item()
+                int(
+                    torch.randint(
+                        0, torch.iinfo(torch.int64).max, (1,), generator=torch_generator
+                    ).item()
+                )
             )
             mech = MLPMechanism(input_dim=input_dim, hidden_dim=self.hidden_dim)
         return mech

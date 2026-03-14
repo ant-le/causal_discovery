@@ -237,48 +237,16 @@ class ExactGPMechanism(nn.Module):
         inputs = _concat_parents_and_noise(parents, noise)
         rq_lengthscales = cast(torch.Tensor, _get_tensor_attr(self, "rq_lengthscales"))
         jitter_buffer = cast(torch.Tensor, _get_tensor_attr(self, "jitter"))
-        noise_concentration = cast(
-            torch.Tensor, _get_tensor_attr(self, "noise_concentration")
-        )
-        noise_rate = cast(torch.Tensor, _get_tensor_attr(self, "noise_rate"))
 
         inputs = inputs.to(dtype=rq_lengthscales.dtype)
-        num_samples = int(inputs.shape[0])
         mean = inputs[:, -1]
 
         covariance = self._build_covariance(inputs)
-        eye = torch.eye(num_samples, device=inputs.device, dtype=inputs.dtype)
         jitter = float(jitter_buffer.item())
+        variance = covariance.diagonal().clamp_min(jitter)
 
-        posterior: torch.distributions.MultivariateNormal | None = None
-        for _ in range(6):
-            try:
-                cov_jittered = covariance + jitter * eye
-                if gpytorch is not None:
-                    posterior = gpytorch.distributions.MultivariateNormal(
-                        mean,
-                        covariance_matrix=cov_jittered,
-                    )
-                else:
-                    posterior = torch.distributions.MultivariateNormal(
-                        loc=mean,
-                        covariance_matrix=cov_jittered,
-                    )
-                break
-            except RuntimeError:
-                jitter *= 10.0
-
-        if posterior is None:
-            raise RuntimeError("Failed to build a numerically stable GP posterior.")
-
-        gp_sample = posterior.rsample()
-        gamma_dist = torch.distributions.Gamma(
-            concentration=noise_concentration.to(dtype=inputs.dtype),
-            rate=noise_rate.to(dtype=inputs.dtype),
-        )
-        hetero_scales = gamma_dist.sample((num_samples,)).to(device=inputs.device)
-        hetero_noise = hetero_scales * torch.randn_like(gp_sample)
-        return (gp_sample + hetero_noise).to(dtype=inputs.dtype)
+        gp_sample = mean + noise.view(-1) * variance.sqrt()
+        return gp_sample.to(dtype=inputs.dtype)
 
 
 class ApproximateGPMechanismFactory:
