@@ -29,12 +29,14 @@ case "${MODEL}" in
     GPUS="${DDP_GPUS:-4}"
     MEM_GB="${DDP_MEM_GB:-200}"
     CPUS_PER_TASK=$((GPUS * CPUS_PER_GPU))
+    GPU_TASK_ARGS=(--gpus-per-task="${GPUS}")
     ;;
   *)
     JOB_SCRIPT="${ROOT_DIR}/scripts/cluster/train_single.sbatch"
     GPUS="${SINGLE_GPUS:-1}"
     MEM_GB="${SINGLE_MEM_GB:-50}"
     CPUS_PER_TASK="${CPUS_PER_GPU}"
+    GPU_TASK_ARGS=()
     ;;
 esac
 
@@ -57,5 +59,7 @@ SBATCH_ARGS=(
   --error="${LOG_ERR}"
   --export="ALL,NPROC_PER_NODE=${GPUS}"
 )
+
+SBATCH_ARGS+=("${GPU_TASK_ARGS[@]}")
 
 sbatch "${SBATCH_ARGS[@]}" "${JOB_SCRIPT}" "${MODEL}" "${CONFIG_NAME}" "${RUN_NAME}" "$@"

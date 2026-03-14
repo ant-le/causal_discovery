@@ -48,6 +48,9 @@ Submit one model:
 scripts/cluster/submit_model.sh bcnp full_multimodel rq1_bcnp_only
 ```
 
+Note: the DDP submit path requests both typed GRES and `--gpus-per-task` to
+avoid single-visible-GPU allocations on clusters with strict task GPU cgroups.
+
 Submit full RQ1 model set (`avici,bcnp,dibs,bayesdag`):
 
 ```bash
