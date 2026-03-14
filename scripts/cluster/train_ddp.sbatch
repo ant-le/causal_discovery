@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
+MAIN_PYTHON="${ROOT_DIR}/.venv/bin/python"
+TORCHRUN_BIN="${ROOT_DIR}/.venv/bin/torchrun"
 
 MODEL="${1:?Usage: train_ddp.sbatch <model> [config_name] [run_name] [hydra_overrides...] }"
 CONFIG_NAME="${2:-full_multimodel}"
@@ -16,6 +18,18 @@ fi
 
 NPROC_PER_NODE="${NPROC_PER_NODE:-4}"
 
+if [[ ! -x "${MAIN_PYTHON}" ]] || [[ ! -x "${TORCHRUN_BIN}" ]]; then
+  echo "[train_ddp] ERROR: main environment is missing. Expected .venv binaries." >&2
+  echo "[train_ddp] Run: uv sync --extra cluster --extra wandb --frozen --no-editable" >&2
+  exit 1
+fi
+
+if ! "${MAIN_PYTHON}" -c "import torch" >/dev/null 2>&1; then
+  echo "[train_ddp] ERROR: torch is not installed in .venv." >&2
+  echo "[train_ddp] Run: uv sync --extra cluster --extra wandb --frozen --no-editable" >&2
+  exit 1
+fi
+
 if [[ -z "${OMP_NUM_THREADS:-}" ]]; then
   cpus_per_task="${SLURM_CPUS_PER_TASK:-1}"
   omp_threads=$((cpus_per_task / NPROC_PER_NODE))
@@ -27,7 +41,7 @@ fi
 export HYDRA_FULL_ERROR=1
 export PYTHONFAULTHANDLER=1
 
-VISIBLE_GPU_COUNT="$(uv run python -c 'import torch; print(torch.cuda.device_count() if torch.cuda.is_available() else 0)')"
+VISIBLE_GPU_COUNT="$("${MAIN_PYTHON}" -c 'import torch; print(torch.cuda.device_count() if torch.cuda.is_available() else 0)')"
 echo "[train_ddp] requested_nproc=${NPROC_PER_NODE} visible_gpus=${VISIBLE_GPU_COUNT}" >&2
 if [[ "${VISIBLE_GPU_COUNT}" -lt "${NPROC_PER_NODE}" ]]; then
   echo "[train_ddp] ERROR: fewer visible GPUs than requested processes." >&2
@@ -36,7 +50,7 @@ if [[ "${VISIBLE_GPU_COUNT}" -lt "${NPROC_PER_NODE}" ]]; then
   exit 2
 fi
 
-uv run torchrun --standalone --nproc_per_node "${NPROC_PER_NODE}" -m causal_meta.main \
+"${TORCHRUN_BIN}" --standalone --nproc_per_node "${NPROC_PER_NODE}" -m causal_meta.main \
   --config-name "${CONFIG_NAME}" \
   "model=${MODEL}" \
   "name=${RUN_NAME}" \
