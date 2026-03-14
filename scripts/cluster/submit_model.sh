@@ -63,7 +63,7 @@ SBATCH_ARGS=(
   --job-name="cm_${MODEL}"
   --output="${LOG_OUT}"
   --error="${LOG_ERR}"
-  --export="ALL,NPROC_PER_NODE=${GPUS}"
+  --export="ALL,NPROC_PER_NODE=${GPUS},CAUSAL_META_ROOT_DIR=${ROOT_DIR}"
 )
 
 SBATCH_ARGS+=("${GPU_TASK_ARGS[@]}")
