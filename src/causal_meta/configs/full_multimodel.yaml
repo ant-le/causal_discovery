@@ -7,7 +7,6 @@ defaults:
   - trainer: default
   - inference: default
   - _self_
-  - override hydra/job_logging: console
 
 # RQ1 all-data sweep (AVICI, BCNP, DiBS, BayesDAG).
 name: "rq1_all_data_multimodel"

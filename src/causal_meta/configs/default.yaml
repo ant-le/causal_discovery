@@ -7,7 +7,6 @@ defaults:
   - trainer: default
   - inference: default
   - _self_
-  - override hydra/job_logging: console
 
 # Minimal default config for installed usage (
 # `causal-meta` or `python -m causal_meta.main`).

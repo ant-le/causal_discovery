@@ -6,7 +6,7 @@ A scalable, Hydra-configured framework for benchmarking Bayesian Causal Discover
 
 - **Meta-Learning Focus:** Infinite streaming datasets (`MetaIterableDataset`) with rank-aware seeding for massive parallel training.
 - **Evaluation:** Strict O.O.D. generalization tests with disjoint graph hashing and cached inference artifacts.
-- **Scalability:** Distributed Data Parallel (DDP) support, preemption-safe checkpointing, and cluster-ready Submitit integration.
+- **Scalability:** Distributed Data Parallel (DDP) support, preemption-safe checkpointing, and cluster-ready Slurm scripts (`torchrun`).
 - **Metrics:** Comprehensive graph metrics (SHD, SID, F1, AUROC) and likelihood proxies.
 
 ## Quick Start
@@ -14,9 +14,7 @@ A scalable, Hydra-configured framework for benchmarking Bayesian Causal Discover
 ### Installation (uv)
 
 ```bash
-uv lock
 uv sync --extra cluster --extra wandb --frozen --no-editable
-source .venv/bin/activate
 
 # If DiBS should use NVIDIA GPUs on CUDA 12 clusters:
 uv pip install --python .venv/bin/python --upgrade "jax[cuda12-local]"
@@ -35,7 +33,7 @@ export CAUSAL_META_BAYESDAG_PYTHON="$PWD/.venv-bayesdag/bin/python"
 
 ```bash
 # Run a minimal local test
-causal-meta name=smoke_test
+uv run causal-meta name=smoke_test
 ```
 
 Smoke configs use online Weights & Biases logging. Ensure `wandb login` has been
@@ -44,15 +42,12 @@ run in your environment.
 ### Running on a Cluster (Slurm)
 
 ```bash
-# Submit to Slurm via Submitit
-causal-meta --multirun --config-name smoke_multimodel hydra/launcher=vsc_a100
+scripts/cluster/submit_model.sh bcnp full_multimodel rq1_bcnp_only
 ```
 
-Available launcher presets live under
-`src/causal_meta/configs/hydra/launcher/` (`vsc_a100`, `vsc_a100s`).
+For full multimodel orchestration, see `scripts/cluster/submit_rq1.sh`.
 
 ## Documentation
 
 - [Runbook](docs/RUNBOOK.md): Detailed guide on running experiments and sweeps.
 - [Design](docs/DESIGN.md): Architectural overview.
-- [Class Structure](docs/CLASS_STRUCTURE.md): Key classes and data flow.

@@ -7,7 +7,6 @@ defaults:
   - trainer: default
   - inference: default
   - _self_
-  - override hydra/job_logging: console
 
 name: "smoke_actual_multimodel"
 

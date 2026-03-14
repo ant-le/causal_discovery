@@ -16,7 +16,7 @@ def select_device(*, local_rank: int, is_distributed: bool) -> torch.device:
     otherwise CPU is used.
 
     Args:
-        local_rank: Local rank provided by torchrun/submitit.
+        local_rank: Local rank provided by torchrun/Slurm environment.
         is_distributed: Whether the process is in a distributed context.
 
     Returns:
@@ -34,7 +34,7 @@ class DistributedContext:
     """
     Lightweight helper for torch.distributed / DDP execution.
 
-    `setup()` initializes the default process group when running under torchrun/submitit.
+    `setup()` initializes the default process group when running under torchrun.
     `current()` is side-effect free and just reads the current distributed state.
     """
 
@@ -80,7 +80,7 @@ class DistributedContext:
         """
         Initialize torch.distributed if requested by environment variables.
 
-        This uses the default `env://` initialization which requires torchrun/submitit
+        This uses the default `env://` initialization which requires torchrun
         to provide RANK/WORLD_SIZE/MASTER_ADDR/MASTER_PORT.
         """
         if dist.is_available() and dist.is_initialized():

@@ -23,7 +23,6 @@ dev = [
     "pytest>=7.0.0",
 ]
 cluster = [
-    "hydra-submitit-launcher>=1.2.0",
     "dibs-lib",
 ]
 wandb = [
