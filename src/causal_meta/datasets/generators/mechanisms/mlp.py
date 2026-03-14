@@ -8,12 +8,14 @@ from .base import build_mechanisms_from_adjacency
 
 
 class MLPMechanism(nn.Module):
-    """Two-layer MLP mechanism with noise concatenated to inputs."""
+    """Three-layer MLP mechanism with noise concatenated to inputs."""
 
     def __init__(self, input_dim: int, hidden_dim: int = 32) -> None:
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(input_dim + 1, hidden_dim),
+            nn.LeakyReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.LeakyReLU(),
             nn.Linear(hidden_dim, 1),
         )

@@ -1,12 +1,16 @@
 import networkx as nx
 import torch
 
-from causal_meta.datasets.generators.graphs import (ErdosRenyiGenerator,
-                                                    SBMGenerator,
-                                                    ScaleFreeGenerator)
-from causal_meta.datasets.generators.mechanisms import (GPMechanismFactory,
-                                                        LinearMechanismFactory,
-                                                        MLPMechanismFactory)
+from causal_meta.datasets.generators.graphs import (
+    ErdosRenyiGenerator,
+    SBMGenerator,
+    ScaleFreeGenerator,
+)
+from causal_meta.datasets.generators.mechanisms import (
+    GPMechanismFactory,
+    LinearMechanismFactory,
+    MLPMechanismFactory,
+)
 from causal_meta.datasets.scm import SCMFamily
 
 
@@ -112,6 +116,19 @@ def test_erdos_renyi_density() -> None:
     density = adjacency.sum().item() / possible_edges
 
     assert abs(density - edge_prob) < 0.03
+
+
+def test_erdos_renyi_randomizes_node_order() -> None:
+    generator = ErdosRenyiGenerator(edge_prob=1.0)
+    n_nodes = 8
+
+    non_upper_count = 0
+    for seed in range(10):
+        adjacency = generator(n_nodes=n_nodes, seed=seed)
+        if not torch.equal(adjacency, torch.triu(adjacency, diagonal=1)):
+            non_upper_count += 1
+
+    assert non_upper_count > 0
 
 
 def test_scale_free_connected() -> None:
