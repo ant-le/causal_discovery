@@ -2,12 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-
-# Auto-load BayesDAG external python from bootstrap snippet if available.
-if [[ -z "${CAUSAL_META_BAYESDAG_PYTHON:-}" ]] && [[ -f "${ROOT_DIR}/.bootstrap_env.sh" ]]; then
-  # shellcheck disable=SC1090
-  source "${ROOT_DIR}/.bootstrap_env.sh"
-fi
+source "${ROOT_DIR}/scripts/cluster/lib.sh"
+load_bootstrap_env_if_available "${ROOT_DIR}"
 
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 <model> [config_name] [run_name] [hydra_overrides...]" >&2

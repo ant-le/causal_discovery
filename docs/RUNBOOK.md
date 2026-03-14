@@ -22,11 +22,12 @@ uv sync --extra cluster --extra wandb --frozen --no-editable
 uv pip sync --python .venv-bayesdag/bin/python requirements-bayesdag.txt
 ```
 
-Optional (DiBS on CUDA 12):
+GPU-only default notes:
 
-```bash
-uv pip install --python .venv/bin/python --upgrade "jax[cuda12-local]"
-```
+- `bootstrap_uv.sh` installs CUDA JAX (`jax[cuda12-local]`) by default.
+- Cluster scripts fail fast when CUDA is unavailable in main torch, DiBS JAX, or BayesDAG torch.
+- Setup-time strict GPU checks are off by default (`CAUSAL_META_STRICT_GPU=0`) so login-node setup works.
+- Optional strict setup-time checks: `CAUSAL_META_STRICT_GPU=1 ./bootstrap_uv.sh`.
 
 ## 4. Local Runs
 

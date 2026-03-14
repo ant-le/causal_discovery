@@ -3,8 +3,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
-MAIN_PYTHON="${ROOT_DIR}/.venv/bin/python"
-TORCHRUN_BIN="${ROOT_DIR}/.venv/bin/torchrun"
+source "${ROOT_DIR}/scripts/cluster/lib.sh"
+VENV_DIR="$(resolve_main_venv_dir "${ROOT_DIR}")"
+MAIN_PYTHON="${VENV_DIR}/bin/python"
+TORCHRUN_BIN="${VENV_DIR}/bin/torchrun"
 
 MODEL="${1:?Usage: train_ddp.sbatch <model> [config_name] [run_name] [hydra_overrides...] }"
 CONFIG_NAME="${2:-full_multimodel}"
@@ -18,17 +20,8 @@ fi
 
 NPROC_PER_NODE="${NPROC_PER_NODE:-4}"
 
-if [[ ! -x "${MAIN_PYTHON}" ]] || [[ ! -x "${TORCHRUN_BIN}" ]]; then
-  echo "[train_ddp] ERROR: main environment is missing. Expected .venv binaries." >&2
-  echo "[train_ddp] Run: uv sync --extra cluster --extra wandb --frozen --no-editable" >&2
-  exit 1
-fi
-
-if ! "${MAIN_PYTHON}" -c "import torch" >/dev/null 2>&1; then
-  echo "[train_ddp] ERROR: torch is not installed in .venv." >&2
-  echo "[train_ddp] Run: uv sync --extra cluster --extra wandb --frozen --no-editable" >&2
-  exit 1
-fi
+require_main_env_bins "train_ddp" "${MAIN_PYTHON}" "${TORCHRUN_BIN}"
+require_main_torch_cuda "train_ddp" "${MAIN_PYTHON}"
 
 if [[ -z "${OMP_NUM_THREADS:-}" ]]; then
   cpus_per_task="${SLURM_CPUS_PER_TASK:-1}"

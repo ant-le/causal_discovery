@@ -3,8 +3,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
-MAIN_PYTHON="${ROOT_DIR}/.venv/bin/python"
-CAUSAL_META_BIN="${ROOT_DIR}/.venv/bin/causal-meta"
+source "${ROOT_DIR}/scripts/cluster/lib.sh"
+VENV_DIR="$(resolve_main_venv_dir "${ROOT_DIR}")"
+MAIN_PYTHON="${VENV_DIR}/bin/python"
+CAUSAL_META_BIN="${VENV_DIR}/bin/causal-meta"
 
 MODEL="${1:?Usage: train_single.sbatch <model> [config_name] [run_name] [hydra_overrides...] }"
 CONFIG_NAME="${2:-full_multimodel}"
@@ -16,33 +18,16 @@ else
   shift "$#"
 fi
 
-if [[ ! -x "${MAIN_PYTHON}" ]] || [[ ! -x "${CAUSAL_META_BIN}" ]]; then
-  echo "[train_single] ERROR: main environment is missing. Expected .venv binaries." >&2
-  echo "[train_single] Run: uv sync --extra cluster --extra wandb --frozen --no-editable" >&2
-  exit 1
+require_main_env_bins "train_single" "${MAIN_PYTHON}" "${CAUSAL_META_BIN}"
+require_main_torch_cuda "train_single" "${MAIN_PYTHON}"
+
+if [[ "${MODEL}" == "bayesdag" ]]; then
+  ensure_bayesdag_python "${ROOT_DIR}"
+  require_bayesdag_torch_cuda "train_single" "${CAUSAL_META_BAYESDAG_PYTHON}"
 fi
 
-if ! "${MAIN_PYTHON}" -c "import torch" >/dev/null 2>&1; then
-  echo "[train_single] ERROR: torch is not installed in .venv." >&2
-  echo "[train_single] Run: uv sync --extra cluster --extra wandb --frozen --no-editable" >&2
-  exit 1
-fi
-
-if [[ "${MODEL}" == "bayesdag" ]] && [[ -z "${CAUSAL_META_BAYESDAG_PYTHON:-}" ]]; then
-  default_bayesdag_python="${ROOT_DIR}/.venv-bayesdag/bin/python"
-  if [[ -x "${default_bayesdag_python}" ]]; then
-    export CAUSAL_META_BAYESDAG_PYTHON="${default_bayesdag_python}"
-  else
-    echo "CAUSAL_META_BAYESDAG_PYTHON is required for model=bayesdag." >&2
-    echo "Run ./bootstrap_uv.sh or export CAUSAL_META_BAYESDAG_PYTHON manually." >&2
-    exit 1
-  fi
-fi
-
-if [[ "${MODEL}" == "bayesdag" ]] && ! "${CAUSAL_META_BAYESDAG_PYTHON}" -c "import torch" >/dev/null 2>&1; then
-  echo "[train_single] ERROR: torch is not available in BayesDAG environment." >&2
-  echo "[train_single] Run: uv pip sync --python .venv-bayesdag/bin/python requirements-bayesdag.txt" >&2
-  exit 1
+if [[ "${MODEL}" == "dibs" ]]; then
+  require_dibs_jax_gpu "train_single" "${MAIN_PYTHON}"
 fi
 
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-${SLURM_CPUS_PER_TASK:-1}}"
