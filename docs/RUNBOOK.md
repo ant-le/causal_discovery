@@ -1,6 +1,6 @@
 # Runbook: Running Experiments
 
-This guide uses `uv` + Hydra for configuration and `sbatch` + `torchrun` for cluster execution.
+This guide uses `uv` + Hydra for configuration and `sbatch` + `srun` for cluster execution.
 
 ## 1. Environment Model
 
@@ -41,7 +41,7 @@ uv run causal-meta --multirun --config-name smoke_multimodel
 
 Cluster submission is script-based.
 
-- DDP models (`avici`, `bcnp`) run with `torchrun` on multi-GPU.
+- DDP models (`avici`, `bcnp`) run as one Slurm task per GPU via `srun`.
 - Explicit models (`dibs`, `bayesdag`) run single-process/single-GPU.
 
 Submit one model:

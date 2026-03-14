@@ -10,7 +10,7 @@ fi
 
 MODEL="$1"
 CONFIG_NAME="${2:-full_multimodel}"
-RUN_NAME="${3:-rq1_${MODEL}_only}"
+RUN_NAME="${3:-rq1_${MODEL}}"
 
 if [[ "$#" -ge 3 ]]; then
   shift 3
@@ -30,9 +30,11 @@ case "${MODEL}" in
     JOB_SCRIPT="${ROOT_DIR}/scripts/cluster/train_ddp.sbatch"
     GPUS="${DDP_GPUS:-4}"
     MEM_GB="${DDP_MEM_GB:-200}"
-    CPUS_PER_TASK=$((GPUS * CPUS_PER_GPU))
+    NTASKS="${GPUS}"
+    TASKS_PER_NODE="${GPUS}"
+    CPUS_PER_TASK="${CPUS_PER_GPU}"
     if [[ "${SET_GPUS_PER_TASK}" == "1" ]]; then
-      GPU_TASK_ARGS=(--gpus-per-task="${GPUS}")
+      GPU_TASK_ARGS=(--gpus-per-task=1)
     else
       GPU_TASK_ARGS=()
     fi
@@ -41,6 +43,8 @@ case "${MODEL}" in
     JOB_SCRIPT="${ROOT_DIR}/scripts/cluster/train_single.sbatch"
     GPUS="${SINGLE_GPUS:-1}"
     MEM_GB="${SINGLE_MEM_GB:-50}"
+    NTASKS=1
+    TASKS_PER_NODE=1
     CPUS_PER_TASK="${CPUS_PER_GPU}"
     GPU_TASK_ARGS=()
     ;;
@@ -56,7 +60,8 @@ SBATCH_ARGS=(
   --partition="${PARTITION}"
   --chdir="${ROOT_DIR}"
   --nodes=1
-  --ntasks=1
+  --ntasks="${NTASKS}"
+  --ntasks-per-node="${TASKS_PER_NODE}"
   --cpus-per-task="${CPUS_PER_TASK}"
   --mem="${MEM_GB}G"
   --time="${TIME_HOURS}:00:00"

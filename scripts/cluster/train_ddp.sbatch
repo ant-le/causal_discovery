@@ -8,7 +8,7 @@ if [[ "${VENV_DIR}" != /* ]]; then
   VENV_DIR="${ROOT_DIR}/${VENV_DIR}"
 fi
 MAIN_PYTHON="${VENV_DIR}/bin/python"
-TORCHRUN_BIN="${VENV_DIR}/bin/torchrun"
+DDP_WORKER="${ROOT_DIR}/scripts/cluster/ddp_worker.sh"
 
 MODEL="${1:?Usage: train_ddp.sbatch <model> [config_name] [run_name] [hydra_overrides...] }"
 CONFIG_NAME="${2:-full_multimodel}"
@@ -33,16 +33,17 @@ fi
 export HYDRA_FULL_ERROR=1
 export PYTHONFAULTHANDLER=1
 
-VISIBLE_GPU_COUNT="$("${MAIN_PYTHON}" -c 'import torch; print(torch.cuda.device_count() if torch.cuda.is_available() else 0)')"
-echo "[train_ddp] requested_nproc=${NPROC_PER_NODE} visible_gpus=${VISIBLE_GPU_COUNT}" >&2
-if [[ "${VISIBLE_GPU_COUNT}" -lt "${NPROC_PER_NODE}" ]]; then
-  echo "[train_ddp] ERROR: fewer visible GPUs than requested processes." >&2
-  echo "[train_ddp] Hint: ensure the Slurm request exposes ${NPROC_PER_NODE} GPUs to this task." >&2
-  echo "[train_ddp] Try SET_GPUS_PER_TASK=1 or adjust GPU_REQUEST_MODE in submit_model.sh." >&2
-  exit 2
-fi
+readarray -t hosts < <(scontrol show hostnames "${SLURM_JOB_NODELIST}")
+MASTER_ADDR="${MASTER_ADDR:-${hosts[0]}}"
+MASTER_PORT="${MASTER_PORT:-$((10000 + SLURM_JOB_ID % 50000))}"
 
-"${TORCHRUN_BIN}" --standalone --nproc_per_node "${NPROC_PER_NODE}" -m causal_meta.main \
+srun \
+  --ntasks="${NPROC_PER_NODE}" \
+  --ntasks-per-node="${NPROC_PER_NODE}" \
+  --cpus-per-task="${SLURM_CPUS_PER_TASK:-1}" \
+  --export=ALL,MASTER_ADDR="${MASTER_ADDR}",MASTER_PORT="${MASTER_PORT}" \
+  "${DDP_WORKER}" \
+  "${MAIN_PYTHON}" \
   --config-name "${CONFIG_NAME}" \
   "model=${MODEL}" \
   "name=${RUN_NAME}" \
