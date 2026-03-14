@@ -3,8 +3,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
-source "${ROOT_DIR}/scripts/cluster/lib.sh"
-VENV_DIR="$(resolve_main_venv_dir "${ROOT_DIR}")"
+VENV_DIR="${VENV_DIR:-${UV_PROJECT_ENVIRONMENT:-.venv}}"
+if [[ "${VENV_DIR}" != /* ]]; then
+  VENV_DIR="${ROOT_DIR}/${VENV_DIR}"
+fi
 MAIN_PYTHON="${VENV_DIR}/bin/python"
 TORCHRUN_BIN="${VENV_DIR}/bin/torchrun"
 
@@ -19,9 +21,6 @@ else
 fi
 
 NPROC_PER_NODE="${NPROC_PER_NODE:-4}"
-
-require_main_env_bins "train_ddp" "${MAIN_PYTHON}" "${TORCHRUN_BIN}"
-require_main_torch_cuda "train_ddp" "${MAIN_PYTHON}"
 
 if [[ -z "${OMP_NUM_THREADS:-}" ]]; then
   cpus_per_task="${SLURM_CPUS_PER_TASK:-1}"

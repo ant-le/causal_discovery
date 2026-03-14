@@ -3,8 +3,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
-source "${ROOT_DIR}/scripts/cluster/lib.sh"
-VENV_DIR="$(resolve_main_venv_dir "${ROOT_DIR}")"
+VENV_DIR="${VENV_DIR:-${UV_PROJECT_ENVIRONMENT:-.venv}}"
+if [[ "${VENV_DIR}" != /* ]]; then
+  VENV_DIR="${ROOT_DIR}/${VENV_DIR}"
+fi
 MAIN_PYTHON="${VENV_DIR}/bin/python"
 CAUSAL_META_BIN="${VENV_DIR}/bin/causal-meta"
 
@@ -18,16 +20,10 @@ else
   shift "$#"
 fi
 
-require_main_env_bins "train_single" "${MAIN_PYTHON}" "${CAUSAL_META_BIN}"
-require_main_torch_cuda "train_single" "${MAIN_PYTHON}"
-
 if [[ "${MODEL}" == "bayesdag" ]]; then
-  ensure_bayesdag_python "${ROOT_DIR}"
-  require_bayesdag_torch_cuda "train_single" "${CAUSAL_META_BAYESDAG_PYTHON}"
-fi
-
-if [[ "${MODEL}" == "dibs" ]]; then
-  require_dibs_jax_gpu "train_single" "${MAIN_PYTHON}"
+  if [[ -z "${CAUSAL_META_BAYESDAG_PYTHON:-}" ]]; then
+    export CAUSAL_META_BAYESDAG_PYTHON="${ROOT_DIR}/.venv-bayesdag/bin/python"
+  fi
 fi
 
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-${SLURM_CPUS_PER_TASK:-1}}"

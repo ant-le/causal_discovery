@@ -2,8 +2,6 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-source "${ROOT_DIR}/scripts/cluster/lib.sh"
-load_bootstrap_env_if_available "${ROOT_DIR}"
 
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 <model> [config_name] [run_name] [hydra_overrides...]" >&2

@@ -29,7 +29,6 @@ Project-BayesDAG source by `bootstrap_uv.sh`).
 GPU-only default notes:
 
 - `bootstrap_uv.sh` installs CUDA JAX (`jax[cuda12-local]`) by default.
-- Cluster scripts fail fast when CUDA is unavailable in main torch, DiBS JAX, or BayesDAG torch.
 
 ## 4. Local Runs
 
@@ -70,8 +69,8 @@ Submit full RQ1 model set (`avici,bcnp,dibs,bayesdag`):
 scripts/cluster/submit_rq1.sh
 ```
 
-The script auto-loads `.bootstrap_env.sh` and falls back to
-`.venv-bayesdag/bin/python` for BayesDAG when available.
+For BayesDAG, the single-model runner defaults to `.venv-bayesdag/bin/python`
+when `CAUSAL_META_BAYESDAG_PYTHON` is not set.
 
 Common cluster overrides are environment variables:
 
