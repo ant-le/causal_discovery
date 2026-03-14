@@ -48,16 +48,18 @@ Submit one model:
 scripts/cluster/submit_model.sh bcnp full_multimodel rq1_bcnp_only
 ```
 
-Defaults are tuned for VSC A100s (`PARTITION=GPU-a100s`,
-`GPU_REQUEST_MODE=gres`, `GPU_TYPE=a100s`).
+Defaults are tuned for VSC A100s (`PARTITION=GPU-a100s`) with
+`GPU_REQUEST_MODE=auto`.
 
 GPU request style is configurable via `GPU_REQUEST_MODE`:
 
 - `gpus-per-node`
 - `gpus`
-- `gres` (default)
+- `gres`
 
-For clusters that reject `--gres`, keep `GPU_REQUEST_MODE=gpus-per-node`.
+In `auto` mode, the script tries `gpus-per-node` -> `gpus` -> `gres`.
+
+For clusters that reject `--gres`, auto mode will fall back automatically.
 
 Submit full RQ1 model set (`avici,bcnp,dibs,bayesdag`):
 

@@ -25,11 +25,11 @@ else
 fi
 
 PARTITION="${PARTITION:-GPU-a100s}"
-GPU_TYPE="${GPU_TYPE:-a100s}"
+GPU_TYPE="${GPU_TYPE:-}"
 TIME_HOURS="${TIME_HOURS:-72}"
 CPUS_PER_GPU="${CPUS_PER_GPU:-5}"
-GPU_REQUEST_MODE="${GPU_REQUEST_MODE:-gres}"
-SET_GPUS_PER_TASK="${SET_GPUS_PER_TASK:-1}"
+GPU_REQUEST_MODE="${GPU_REQUEST_MODE:-auto}"
+SET_GPUS_PER_TASK="${SET_GPUS_PER_TASK:-0}"
 
 case "${MODEL}" in
   avici|bcnp)
@@ -72,26 +72,70 @@ SBATCH_ARGS=(
   --export="ALL,NPROC_PER_NODE=${GPUS}"
 )
 
-case "${GPU_REQUEST_MODE}" in
-  gpus-per-node)
-    SBATCH_ARGS+=(--gpus-per-node="${GPUS}")
-    ;;
-  gpus)
-    SBATCH_ARGS+=(--gpus="${GPUS}")
-    ;;
-  gres)
-    if [[ -n "${GPU_TYPE}" ]]; then
-      SBATCH_ARGS+=(--gres="gpu:${GPU_TYPE}:${GPUS}")
-    else
-      SBATCH_ARGS+=(--gres="gpu:${GPUS}")
-    fi
-    ;;
-  *)
-    echo "Unsupported GPU_REQUEST_MODE='${GPU_REQUEST_MODE}'. Use one of: gpus-per-node, gpus, gres." >&2
-    exit 1
-    ;;
-esac
-
 SBATCH_ARGS+=("${GPU_TASK_ARGS[@]}")
 
-sbatch "${SBATCH_ARGS[@]}" "${JOB_SCRIPT}" "${MODEL}" "${CONFIG_NAME}" "${RUN_NAME}" "$@"
+gpu_count_spec="${GPUS}"
+if [[ -n "${GPU_TYPE}" ]]; then
+  gpu_count_spec="${GPU_TYPE}:${GPUS}"
+fi
+
+build_mode_args() {
+  local mode="$1"
+  case "${mode}" in
+    gpus-per-node)
+      printf -- '--gpus-per-node=%s\n' "${gpu_count_spec}"
+      ;;
+    gpus)
+      printf -- '--gpus=%s\n' "${gpu_count_spec}"
+      ;;
+    gres)
+      if [[ -n "${GPU_TYPE}" ]]; then
+        printf -- '--gres=gpu:%s:%s\n' "${GPU_TYPE}" "${GPUS}"
+      else
+        printf -- '--gres=gpu:%s\n' "${GPUS}"
+      fi
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+if [[ "${GPU_REQUEST_MODE}" == "auto" ]]; then
+  modes=(gpus-per-node gpus gres)
+else
+  modes=("${GPU_REQUEST_MODE}")
+fi
+
+for mode in "${modes[@]}"; do
+  mapfile -t mode_args < <(build_mode_args "${mode}") || {
+    echo "Unsupported GPU_REQUEST_MODE='${mode}'. Use one of: auto, gpus-per-node, gpus, gres." >&2
+    exit 1
+  }
+
+  echo "[submit_model] trying GPU request mode='${mode}'" >&2
+  if output=$(sbatch "${SBATCH_ARGS[@]}" "${mode_args[@]}" "${JOB_SCRIPT}" "${MODEL}" "${CONFIG_NAME}" "${RUN_NAME}" "$@" 2>&1); then
+    printf '%s\n' "${output}"
+    exit 0
+  fi
+  rc=$?
+
+  if [[ "${GPU_REQUEST_MODE}" != "auto" ]]; then
+    printf '%s\n' "${output}" >&2
+    exit "${rc}"
+  fi
+
+  case "${output}" in
+    *"Invalid GRES specification"*|*"Invalid generic resource (gres) specification"*|*"Invalid generic resource specification"*|*"unrecognized option '--gpus-per-node'"*|*"unrecognized option '--gpus'"*|*"Requested GRES option unsupported"*)
+      echo "[submit_model] mode='${mode}' rejected by Slurm; trying next mode." >&2
+      ;;
+    *)
+      printf '%s\n' "${output}" >&2
+      exit "${rc}"
+      ;;
+  esac
+done
+
+echo "[submit_model] all GPU request modes failed."
+echo "[submit_model] Try: sinfo -o '%P %G' and scontrol show config | grep -E 'SelectType|GresTypes'" >&2
+exit 2
