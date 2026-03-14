@@ -6,7 +6,7 @@ A scalable, Hydra-configured framework for benchmarking Bayesian Causal Discover
 
 - **Meta-Learning Focus:** Infinite streaming datasets (`MetaIterableDataset`) with rank-aware seeding for massive parallel training.
 - **Evaluation:** Strict O.O.D. generalization tests with disjoint graph hashing and cached inference artifacts.
-- **Scalability:** Distributed Data Parallel (DDP) support, preemption-safe checkpointing, and cluster-ready Slurm scripts (`torchrun`).
+- **Scalability:** Distributed Data Parallel (DDP) support, preemption-safe checkpointing, and cluster-ready per-model Slurm scripts.
 - **Metrics:** Comprehensive graph metrics (SHD, SID, F1, AUROC) and likelihood proxies.
 
 ## Quick Start
@@ -44,10 +44,17 @@ run in your environment.
 ### Running on a Cluster (Slurm)
 
 ```bash
-scripts/cluster/submit_model.sh bcnp full_multimodel rq1_bcnp_only
+scripts/run_bcnp.sh
 ```
 
-For full multimodel orchestration, see `scripts/cluster/submit_rq1.sh`.
+Run all models with:
+
+```bash
+scripts/run_avici.sh
+scripts/run_bcnp.sh
+scripts/run_dibs.sh
+scripts/run_bayesdag.sh
+```
 
 ## Documentation
 

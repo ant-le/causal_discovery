@@ -1,6 +1,6 @@
 # Runbook: Running Experiments
 
-This guide uses `uv` + Hydra for configuration and `sbatch` + `srun` for cluster execution.
+This guide uses `uv` + Hydra for configuration and per-model Slurm scripts in `scripts/`.
 
 ## 1. Environment Model
 
@@ -39,44 +39,36 @@ uv run causal-meta --multirun --config-name smoke_multimodel
 
 ## 5. Cluster Runs (No Submitit)
 
-Cluster submission is script-based.
+Each model has a dedicated launcher script with hardcoded GPU specs:
 
-- DDP models (`avici`, `bcnp`) run as one Slurm task per GPU via `srun`.
-- Explicit models (`dibs`, `bayesdag`) run single-process/single-GPU.
+- `scripts/run_avici.sh`: 5x A100
+- `scripts/run_bcnp.sh`: 5x A100
+- `scripts/run_dibs.sh`: 1x A100
+- `scripts/run_bayesdag.sh`: 1x A100
 
 Submit one model:
 
 ```bash
-scripts/cluster/submit_model.sh bcnp full_multimodel rq1_bcnp_only
+scripts/run_bcnp.sh
 ```
 
-Defaults are tuned for VSC A100s (`PARTITION=GPU-a100s`) with
-`GPU_REQUEST_MODE=auto`.
-
-GPU request style is configurable via `GPU_REQUEST_MODE`:
-
-- `gpus-per-node`
-- `gpus`
-- `gres`
-
-In `auto` mode, the script tries `gpus-per-node` -> `gpus` -> `gres`.
-
-For clusters that reject `--gres`, auto mode will fall back automatically.
-
-Submit full RQ1 model set (`avici,bcnp,dibs,bayesdag`):
+Submit all four models:
 
 ```bash
-scripts/cluster/submit_rq1.sh
+scripts/run_avici.sh
+scripts/run_bcnp.sh
+scripts/run_dibs.sh
+scripts/run_bayesdag.sh
 ```
 
-For BayesDAG, the single-model runner defaults to `.venv-bayesdag/bin/python`
-when `CAUSAL_META_BAYESDAG_PYTHON` is not set.
-
-Common cluster overrides are environment variables:
+Optional arguments for each script:
 
 ```bash
-PARTITION=GPU-a100 GPU_REQUEST_MODE=gpus-per-node TIME_HOURS=72 DDP_GPUS=4 scripts/cluster/submit_model.sh avici
+scripts/run_avici.sh <config_name> <run_name> [hydra_overrides...]
 ```
+
+For BayesDAG, `CAUSAL_META_BAYESDAG_PYTHON` defaults to
+`.venv-bayesdag/bin/python` when unset.
 
 ## 6. Comparability Checklist
 
