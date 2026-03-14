@@ -48,20 +48,30 @@ Submit one model:
 scripts/cluster/submit_model.sh bcnp full_multimodel rq1_bcnp_only
 ```
 
-Note: the DDP submit path requests both typed GRES and `--gpus-per-task` to
-avoid single-visible-GPU allocations on clusters with strict task GPU cgroups.
+Defaults are tuned for VSC A100s (`PARTITION=GPU-a100s`,
+`GPU_REQUEST_MODE=gres`, `GPU_TYPE=a100s`).
+
+GPU request style is configurable via `GPU_REQUEST_MODE`:
+
+- `gpus-per-node`
+- `gpus`
+- `gres` (default)
+
+For clusters that reject `--gres`, keep `GPU_REQUEST_MODE=gpus-per-node`.
 
 Submit full RQ1 model set (`avici,bcnp,dibs,bayesdag`):
 
 ```bash
-CAUSAL_META_BAYESDAG_PYTHON="$PWD/.venv-bayesdag/bin/python" \
 scripts/cluster/submit_rq1.sh
 ```
+
+The script auto-loads `.bootstrap_env.sh` and falls back to
+`.venv-bayesdag/bin/python` for BayesDAG when available.
 
 Common cluster overrides are environment variables:
 
 ```bash
-PARTITION=GPU-a100 GPU_TYPE=a100 TIME_HOURS=72 DDP_GPUS=4 scripts/cluster/submit_model.sh avici
+PARTITION=GPU-a100 GPU_REQUEST_MODE=gpus-per-node TIME_HOURS=72 DDP_GPUS=4 scripts/cluster/submit_model.sh avici
 ```
 
 ## 6. Comparability Checklist

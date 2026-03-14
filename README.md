@@ -26,8 +26,10 @@ For full multimodel runs including BayesDAG, use:
 
 ```bash
 ./bootstrap_uv.sh
-export CAUSAL_META_BAYESDAG_PYTHON="$PWD/.venv-bayesdag/bin/python"
 ```
+
+Cluster scripts auto-detect BayesDAG Python from `.bootstrap_env.sh` or
+`.venv-bayesdag/bin/python`.
 
 ### Running a Smoke Test
 

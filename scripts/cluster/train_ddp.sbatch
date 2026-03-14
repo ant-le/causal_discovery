@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "${ROOT_DIR}"
+
 MODEL="${1:?Usage: train_ddp.sbatch <model> [config_name] [run_name] [hydra_overrides...] }"
 CONFIG_NAME="${2:-full_multimodel}"
 RUN_NAME="${3:-rq1_${MODEL}_ddp}"
@@ -28,8 +31,8 @@ VISIBLE_GPU_COUNT="$(uv run python -c 'import torch; print(torch.cuda.device_cou
 echo "[train_ddp] requested_nproc=${NPROC_PER_NODE} visible_gpus=${VISIBLE_GPU_COUNT}" >&2
 if [[ "${VISIBLE_GPU_COUNT}" -lt "${NPROC_PER_NODE}" ]]; then
   echo "[train_ddp] ERROR: fewer visible GPUs than requested processes." >&2
-  echo "[train_ddp] Hint: this cluster likely enforces per-task GPU limits;" >&2
-  echo "[train_ddp] ensure submission sets --gpus-per-task=${NPROC_PER_NODE}." >&2
+  echo "[train_ddp] Hint: ensure the Slurm request exposes ${NPROC_PER_NODE} GPUs to this task." >&2
+  echo "[train_ddp] Try SET_GPUS_PER_TASK=1 or adjust GPU_REQUEST_MODE in submit_model.sh." >&2
   exit 2
 fi
 
