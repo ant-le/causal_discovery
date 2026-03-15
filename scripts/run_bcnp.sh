@@ -3,7 +3,7 @@ set -euo pipefail
 
 MODEL="bcnp"
 GPU_TYPE="a100"
-GPU_COUNT=4
+GPU_COUNT=2
 CPUS_PER_TASK=5
 MEM_GB=250
 PARTITION="GPU-a100"
