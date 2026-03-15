@@ -13,9 +13,6 @@ def _infer_local_rank() -> int:
         return int(os.environ["LOCAL_RANK"])
 
     if "SLURM_LOCALID" in os.environ:
-        cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "")
-        if cuda_visible_devices and "," not in cuda_visible_devices:
-            return 0
         return int(os.environ["SLURM_LOCALID"])
 
     return 0
@@ -29,14 +26,10 @@ def _safe_cuda_local_rank(local_rank: int) -> int:
     if 0 <= local_rank < device_count:
         return local_rank
 
-    cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "")
-    if cuda_visible_devices and "," not in cuda_visible_devices:
-        return 0
-
     raise RuntimeError(
         "Invalid LOCAL_RANK for visible CUDA devices: "
         f"LOCAL_RANK={local_rank}, cuda_device_count={device_count}, "
-        f"CUDA_VISIBLE_DEVICES='{cuda_visible_devices or 'unset'}'."
+        f"CUDA_VISIBLE_DEVICES='{os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')}'."
     )
 
 

@@ -3,7 +3,6 @@
 #SBATCH --partition=GPU-a100
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=4
-#SBATCH --gpus-per-task=1
 #SBATCH --gpus-per-node=4
 #SBATCH --time=72:00:00
 #SBATCH --output=slurm_%j.out
@@ -72,9 +71,9 @@ echo "GPU_DEVICE_ORDINAL=${GPU_DEVICE_ORDINAL:-unset}"
 echo "Launching ${SLURM_NTASKS:-4} tasks via srun"
 
 echo "Per-task GPU mapping (preflight):"
-srun --gpu-bind=single:1 bash -lc 'echo "task=${SLURM_PROCID:-unset} local=${SLURM_LOCALID:-unset} CVD=${CUDA_VISIBLE_DEVICES:-unset} GDO=${GPU_DEVICE_ORDINAL:-unset}"'
+srun bash -lc 'uuid=$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -n 1); echo "task=${SLURM_PROCID:-unset} local=${SLURM_LOCALID:-unset} CVD=${CUDA_VISIBLE_DEVICES:-unset} GDO=${GPU_DEVICE_ORDINAL:-unset} UUID=${uuid:-unset}"'
 
-srun --gpu-bind=single:1 "${MAIN_PYTHON}" -m causal_meta.main \
+srun "${MAIN_PYTHON}" -m causal_meta.main \
   --config-name "${CONFIG_NAME}" \
   "model=bcnp" \
   "name=${RUN_NAME}" \
