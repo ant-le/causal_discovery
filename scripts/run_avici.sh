@@ -8,6 +8,7 @@ CPUS_PER_TASK=5
 MEM_GB=250
 PARTITION="GPU-a100"
 TIME_LIMIT="72:00:00"
+LAUNCH_MODE="${LAUNCH_MODE:-torchrun}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR_DEFAULT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -18,13 +19,23 @@ submit_job() {
   local run_name="$2"
   shift 2
 
+  if [[ "${LAUNCH_MODE}" != "torchrun" && "${LAUNCH_MODE}" != "srun" ]]; then
+    echo "[run_${MODEL}] ERROR: unsupported LAUNCH_MODE='${LAUNCH_MODE}'. Use torchrun or srun." >&2
+    exit 1
+  fi
+
   local run_dir="${ROOT_DIR}/experiments/runs/${run_name}"
   mkdir -p "${run_dir}"
+
+  local tasks_per_node="1"
+  if [[ "${LAUNCH_MODE}" == "srun" ]]; then
+    tasks_per_node="${GPU_COUNT}"
+  fi
 
   local -a common_args=(
     --partition="${PARTITION}"
     --nodes=1
-    --tasks-per-node=1
+    --tasks-per-node="${tasks_per_node}"
     --cpus-per-task="${CPUS_PER_TASK}"
     --mem="${MEM_GB}G"
     --time="${TIME_LIMIT}"
@@ -32,16 +43,25 @@ submit_job() {
     --output="${run_dir}/slurm_%j.out"
     --error="${run_dir}/slurm_%j.err"
     --chdir="${ROOT_DIR}"
-    --export="ALL,CAUSAL_META_ROOT_DIR=${ROOT_DIR},NPROC_PER_NODE=${GPU_COUNT}"
+    --export="ALL,CAUSAL_META_ROOT_DIR=${ROOT_DIR},NPROC_PER_NODE=${GPU_COUNT},LAUNCH_MODE=${LAUNCH_MODE}"
   )
 
   local output
-  local -a gpu_modes=(
-    "--gpus-per-task=${GPU_COUNT}"
-    "--gpus-per-node=${GPU_COUNT}"
-    "--gres=gpu:${GPU_TYPE}:${GPU_COUNT}"
-    "--gres=gpu:${GPU_COUNT}"
-  )
+  local -a gpu_modes=()
+  if [[ "${LAUNCH_MODE}" == "srun" ]]; then
+    gpu_modes=(
+      "--gres=gpu:${GPU_TYPE}:${GPU_COUNT}"
+      "--gpus-per-node=${GPU_COUNT}"
+      "--gres=gpu:${GPU_COUNT}"
+    )
+  else
+    gpu_modes=(
+      "--gpus-per-task=${GPU_COUNT}"
+      "--gpus-per-node=${GPU_COUNT}"
+      "--gres=gpu:${GPU_TYPE}:${GPU_COUNT}"
+      "--gres=gpu:${GPU_COUNT}"
+    )
+  fi
 
   local mode
   for mode in "${gpu_modes[@]}"; do
@@ -75,6 +95,12 @@ run_job() {
   fi
   local main_python="${venv_dir}/bin/python"
   local torchrun_bin="${venv_dir}/bin/torchrun"
+  local launch_mode="${LAUNCH_MODE:-torchrun}"
+
+  if [[ "${launch_mode}" != "torchrun" && "${launch_mode}" != "srun" ]]; then
+    echo "[run_${MODEL}] ERROR: unsupported launch mode '${launch_mode}'." >&2
+    exit 1
+  fi
 
   export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
   export HYDRA_FULL_ERROR=1
@@ -111,6 +137,19 @@ run_job() {
   fi
   echo "[run_${MODEL}] nvidia-smi reports ${visible_gpu_count} GPU(s) visible." >&2
 
+  if [[ "${launch_mode}" == "srun" ]]; then
+    export MASTER_ADDR="${MASTER_ADDR:-$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -n 1)}"
+    export MASTER_PORT="${MASTER_PORT:-$((10000 + (SLURM_JOB_ID % 50000)))}"
+    echo "[run_${MODEL}] launch mode=srun MASTER_ADDR=${MASTER_ADDR} MASTER_PORT=${MASTER_PORT}" >&2
+
+    srun --gpu-bind=none "${main_python}" -m causal_meta.main \
+      --config-name "${config_name}" \
+      "model=${MODEL}" \
+      "name=${run_name}" \
+      "$@"
+    return
+  fi
+
   local nproc_per_node="${NPROC_PER_NODE:-${GPU_COUNT}}"
   if [[ "${visible_gpu_count}" -lt "${nproc_per_node}" ]]; then
     echo "[run_${MODEL}] WARNING: requested ${nproc_per_node} GPUs, but ${visible_gpu_count} are visible. Adjusting nproc_per_node." >&2
@@ -118,10 +157,10 @@ run_job() {
   fi
 
   "${torchrun_bin}" --standalone --nproc_per_node "${nproc_per_node}" -m causal_meta.main \
-      --config-name "${config_name}" \
-      "model=${MODEL}" \
-      "name=${run_name}" \
-      "$@"
+    --config-name "${config_name}" \
+    "model=${MODEL}" \
+    "name=${run_name}" \
+    "$@"
 }
 
 if [[ -z "${SLURM_JOB_ID:-}" ]]; then

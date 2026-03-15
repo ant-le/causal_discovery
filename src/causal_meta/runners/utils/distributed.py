@@ -7,6 +7,20 @@ import torch
 import torch.distributed as dist
 
 
+def _infer_local_rank() -> int:
+    """Infer local rank from torchrun/SLURM environment."""
+    if "LOCAL_RANK" in os.environ:
+        return int(os.environ["LOCAL_RANK"])
+
+    if "SLURM_LOCALID" in os.environ:
+        cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+        if cuda_visible_devices and "," not in cuda_visible_devices:
+            return 0
+        return int(os.environ["SLURM_LOCALID"])
+
+    return 0
+
+
 def select_device(*, local_rank: int, is_distributed: bool) -> torch.device:
     """
     Select the preferred device for this process.
@@ -34,7 +48,8 @@ class DistributedContext:
     """
     Lightweight helper for torch.distributed / DDP execution.
 
-    `setup()` initializes the default process group when running under torchrun.
+    `setup()` initializes the default process group when running under
+    torchrun or SLURM+srun.
     `current()` is side-effect free and just reads the current distributed state.
     """
 
@@ -56,7 +71,7 @@ class DistributedContext:
 
     @classmethod
     def current(cls) -> DistributedContext:
-        local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+        local_rank = _infer_local_rank()
         is_distributed = dist.is_available() and dist.is_initialized()
         device = select_device(local_rank=local_rank, is_distributed=is_distributed)
 
@@ -82,15 +97,27 @@ class DistributedContext:
         """
         Initialize torch.distributed if requested by environment variables.
 
-        This uses the default `env://` initialization which requires torchrun
-        to provide RANK/WORLD_SIZE/MASTER_ADDR/MASTER_PORT.
+        This uses the default `env://` initialization and supports both torchrun
+        (RANK/WORLD_SIZE/LOCAL_RANK) and SLURM+srun (SLURM_PROCID/
+        SLURM_NTASKS/SLURM_LOCALID).
         """
         if dist.is_available() and dist.is_initialized():
             return cls.current()
 
-        wants_distributed = "LOCAL_RANK" in os.environ or "RANK" in os.environ
+        wants_distributed = (
+            "LOCAL_RANK" in os.environ
+            or "RANK" in os.environ
+            or "SLURM_PROCID" in os.environ
+        )
         if not wants_distributed:
             return cls.current()
+
+        if "RANK" not in os.environ and "SLURM_PROCID" in os.environ:
+            os.environ["RANK"] = os.environ["SLURM_PROCID"]
+        if "WORLD_SIZE" not in os.environ and "SLURM_NTASKS" in os.environ:
+            os.environ["WORLD_SIZE"] = os.environ["SLURM_NTASKS"]
+        if "LOCAL_RANK" not in os.environ and "SLURM_LOCALID" in os.environ:
+            os.environ["LOCAL_RANK"] = str(_infer_local_rank())
 
         missing = [
             k
@@ -104,7 +131,7 @@ class DistributedContext:
             )
 
         backend = "nccl" if torch.cuda.is_available() else "gloo"
-        local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+        local_rank = _infer_local_rank()
         if torch.cuda.is_available():
             torch.cuda.set_device(local_rank)
             dist.init_process_group(
