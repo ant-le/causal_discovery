@@ -3,7 +3,7 @@ set -euo pipefail
 
 MODEL="bcnp"
 GPU_TYPE="a100"
-GPU_COUNT=2
+GPU_COUNT=4
 CPUS_PER_TASK=5
 MEM_GB=250
 PARTITION="GPU-a100"
@@ -95,12 +95,17 @@ run_job() {
   echo "[run_${MODEL}] NPROC_PER_NODE=${NPROC_PER_NODE:-unset}" >&2
   nvidia-smi -L 2>/dev/null || echo "[run_${MODEL}] nvidia-smi not available" >&2
 
+  # Detect visible GPUs via nvidia-smi instead of Python/torch.
+  # Spawning Python here would call cudaInit(), which on some SLURM
+  # cgroup configurations can lock or partition the GPU assignment
+  # before torchrun gets a chance to spawn its workers.
   local visible_gpu_count
-  visible_gpu_count="$("${main_python}" -c 'import torch; print(torch.cuda.device_count() if torch.cuda.is_available() else 0)')"
+  visible_gpu_count="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | wc -l | tr -d ' ')"
   if [[ "${visible_gpu_count}" -lt 1 ]]; then
-    echo "[run_${MODEL}] ERROR: no CUDA GPUs visible in job allocation." >&2
+    echo "[run_${MODEL}] ERROR: no CUDA GPUs visible in job allocation (nvidia-smi returned 0)." >&2
     exit 2
   fi
+  echo "[run_${MODEL}] nvidia-smi reports ${visible_gpu_count} GPU(s) visible." >&2
 
   local nproc_per_node="${NPROC_PER_NODE:-${GPU_COUNT}}"
   if [[ "${visible_gpu_count}" -lt "${nproc_per_node}" ]]; then
