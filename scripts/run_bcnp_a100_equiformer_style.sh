@@ -12,6 +12,11 @@
 
 set -euo pipefail
 
+if [[ -z "${SLURM_JOB_ID:-}" ]]; then
+  echo "[run_bcnp_a100_equiformer_style] No SLURM allocation detected; submitting with sbatch." >&2
+  exec sbatch "$0" "$@"
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT_DIR}"
@@ -36,10 +41,16 @@ if [[ ! -x "${MAIN_PYTHON}" ]]; then
   MAIN_PYTHON="python3"
 fi
 
+if [[ -n "${SLURM_JOB_NODELIST:-}" ]]; then
+  MASTER_ADDR="${MASTER_ADDR:-$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -n 1)}"
+else
+  MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"
+fi
 export MASTER_ADDR
-MASTER_ADDR="$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -n 1)"
+
+job_id_for_port="${SLURM_JOB_ID:-0}"
 export MASTER_PORT
-MASTER_PORT="${MASTER_PORT:-$((10000 + (SLURM_JOB_ID % 50000)))}"
+MASTER_PORT="${MASTER_PORT:-$((10000 + (job_id_for_port % 50000)))}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export HYDRA_FULL_ERROR=1
 export PYTHONFAULTHANDLER=1
