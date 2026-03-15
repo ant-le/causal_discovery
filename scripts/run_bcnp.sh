@@ -37,6 +37,7 @@ submit_job() {
 
   local output
   local -a gpu_modes=(
+    "--gpus-per-task=${GPU_COUNT}"
     "--gpus-per-node=${GPU_COUNT}"
     "--gres=gpu:${GPU_TYPE}:${GPU_COUNT}"
     "--gres=gpu:${GPU_COUNT}"
