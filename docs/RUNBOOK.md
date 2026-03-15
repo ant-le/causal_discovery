@@ -12,7 +12,7 @@ Use two environments:
 ## 2. One-Time Setup
 
 ```bash
-./bootstrap_uv.sh
+scripts/setup_cluster.sh
 ```
 
 ## 3. Daily Update After Pull
@@ -41,8 +41,8 @@ uv run causal-meta --multirun --config-name smoke_multimodel
 
 Each model has a dedicated launcher script with hardcoded GPU specs:
 
-- `scripts/run_avici.sh`: 5x A100
-- `scripts/run_bcnp.sh`: 5x A100
+- `scripts/run_avici.sh`: 4x A100
+- `scripts/run_bcnp.sh`: 4x A100
 - `scripts/run_dibs.sh`: 1x A100
 - `scripts/run_bayesdag.sh`: 1x A100
 
@@ -55,10 +55,13 @@ scripts/run_bcnp.sh
 Submit all four models:
 
 ```bash
-scripts/run_avici.sh
-scripts/run_bcnp.sh
-scripts/run_dibs.sh
-scripts/run_bayesdag.sh
+scripts/run_all_models.sh
+```
+
+Submit a fast BCNP multi-GPU smoke test:
+
+```bash
+scripts/run_bcnp_smoke_multigpu.sh
 ```
 
 Optional arguments for each script:

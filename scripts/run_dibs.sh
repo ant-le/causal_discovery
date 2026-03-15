@@ -21,21 +21,39 @@ submit_job() {
   local run_dir="${ROOT_DIR}/experiments/runs/${run_name}"
   mkdir -p "${run_dir}"
 
-  env -u CUDA_VISIBLE_DEVICES sbatch \
-    --partition="${PARTITION}" \
-    --nodes=1 \
-    --ntasks=1 \
-    --ntasks-per-node=1 \
-    --cpus-per-task="${CPUS_PER_TASK}" \
-    --gres="gpu:${GPU_TYPE}:${GPU_COUNT}" \
-    --mem="${MEM_GB}G" \
-    --time="${TIME_LIMIT}" \
-    --job-name="cm_${MODEL}" \
-    --output="${run_dir}/slurm_%j.out" \
-    --error="${run_dir}/slurm_%j.err" \
-    --chdir="${ROOT_DIR}" \
-    --export="ALL,CAUSAL_META_ROOT_DIR=${ROOT_DIR}" \
-    "$0" "${config_name}" "${run_name}" "$@"
+  local -a common_args=(
+    --partition="${PARTITION}"
+    --nodes=1
+    --ntasks=1
+    --ntasks-per-node=1
+    --cpus-per-task="${CPUS_PER_TASK}"
+    --mem="${MEM_GB}G"
+    --time="${TIME_LIMIT}"
+    --job-name="cm_${MODEL}"
+    --output="${run_dir}/slurm_%j.out"
+    --error="${run_dir}/slurm_%j.err"
+    --chdir="${ROOT_DIR}"
+    --export="ALL,CAUSAL_META_ROOT_DIR=${ROOT_DIR}"
+  )
+
+  local output
+  if output=$(env -u CUDA_VISIBLE_DEVICES sbatch "${common_args[@]}" --gres="gpu:${GPU_TYPE}:${GPU_COUNT}" "$0" "${config_name}" "${run_name}" "$@" 2>&1); then
+    printf '%s\n' "${output}"
+    return 0
+  fi
+
+  if [[ "${output}" == *"Invalid generic resource"* || "${output}" == *"Invalid GRES"* ]]; then
+    echo "[run_${MODEL}] typed GRES rejected, retrying untyped GPU request" >&2
+    output=$(env -u CUDA_VISIBLE_DEVICES sbatch "${common_args[@]}" --gres="gpu:${GPU_COUNT}" "$0" "${config_name}" "${run_name}" "$@" 2>&1) || {
+      printf '%s\n' "${output}" >&2
+      exit 1
+    }
+    printf '%s\n' "${output}"
+    return 0
+  fi
+
+  printf '%s\n' "${output}" >&2
+  exit 1
 }
 
 run_job() {

@@ -21,20 +21,45 @@ submit_job() {
   local run_dir="${ROOT_DIR}/experiments/runs/${run_name}"
   mkdir -p "${run_dir}"
 
-  env -u CUDA_VISIBLE_DEVICES sbatch \
-    --partition="${PARTITION}" \
-    --nodes=1 \
-    --tasks-per-node=1 \
-    --cpus-per-task="${CPUS_PER_TASK}" \
-    --gres="gpu:${GPU_TYPE}:${GPU_COUNT}" \
-    --mem="${MEM_GB}G" \
-    --time="${TIME_LIMIT}" \
-    --job-name="cm_${MODEL}" \
-    --output="${run_dir}/slurm_%j.out" \
-    --error="${run_dir}/slurm_%j.err" \
-    --chdir="${ROOT_DIR}" \
-    --export="ALL,CAUSAL_META_ROOT_DIR=${ROOT_DIR},NPROC_PER_NODE=${GPU_COUNT}" \
-    "$0" "${config_name}" "${run_name}" "$@"
+  local -a common_args=(
+    --partition="${PARTITION}"
+    --nodes=1
+    --tasks-per-node=1
+    --cpus-per-task="${CPUS_PER_TASK}"
+    --mem="${MEM_GB}G"
+    --time="${TIME_LIMIT}"
+    --job-name="cm_${MODEL}"
+    --output="${run_dir}/slurm_%j.out"
+    --error="${run_dir}/slurm_%j.err"
+    --chdir="${ROOT_DIR}"
+    --export="ALL,CAUSAL_META_ROOT_DIR=${ROOT_DIR},NPROC_PER_NODE=${GPU_COUNT}"
+  )
+
+  local output
+  local -a gpu_modes=(
+    "--gres=gpu:${GPU_TYPE}:${GPU_COUNT}"
+    "--gpus-per-node=${GPU_COUNT}"
+    "--gres=gpu:${GPU_COUNT}"
+  )
+
+  local mode
+  for mode in "${gpu_modes[@]}"; do
+    if output=$(env -u CUDA_VISIBLE_DEVICES sbatch "${common_args[@]}" "${mode}" "$0" "${config_name}" "${run_name}" "$@" 2>&1); then
+      printf '%s\n' "${output}"
+      return 0
+    fi
+
+    if [[ "${output}" == *"Invalid generic resource"* || "${output}" == *"Invalid GRES"* || "${output}" == *"unrecognized option '--gpus-per-node'"* ]]; then
+      echo "[run_${MODEL}] GPU request mode rejected (${mode}), trying fallback..." >&2
+      continue
+    fi
+
+    printf '%s\n' "${output}" >&2
+    exit 1
+  done
+
+  printf '%s\n' "${output}" >&2
+  exit 1
 }
 
 run_job() {
@@ -47,13 +72,27 @@ run_job() {
   if [[ "${venv_dir}" != /* ]]; then
     venv_dir="${ROOT_DIR}/${venv_dir}"
   fi
+  local main_python="${venv_dir}/bin/python"
   local torchrun_bin="${venv_dir}/bin/torchrun"
 
   export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
   export HYDRA_FULL_ERROR=1
   export PYTHONFAULTHANDLER=1
 
-  srun "${torchrun_bin}" --standalone --nproc_per_node "${GPU_COUNT}" -m causal_meta.main \
+  local visible_gpu_count
+  visible_gpu_count="$("${main_python}" -c 'import torch; print(torch.cuda.device_count() if torch.cuda.is_available() else 0)')"
+  if [[ "${visible_gpu_count}" -lt 1 ]]; then
+    echo "[run_${MODEL}] ERROR: no CUDA GPUs visible in job allocation." >&2
+    exit 2
+  fi
+
+  local nproc_per_node="${GPU_COUNT}"
+  if [[ "${visible_gpu_count}" -lt "${nproc_per_node}" ]]; then
+    echo "[run_${MODEL}] WARNING: requested ${nproc_per_node} GPUs, but ${visible_gpu_count} are visible. Adjusting nproc_per_node." >&2
+    nproc_per_node="${visible_gpu_count}"
+  fi
+
+  "${torchrun_bin}" --standalone --nproc_per_node "${nproc_per_node}" -m causal_meta.main \
       --config-name "${config_name}" \
       "model=${MODEL}" \
       "name=${run_name}" \

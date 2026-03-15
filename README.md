@@ -50,10 +50,7 @@ scripts/run_bcnp.sh
 Run all models with:
 
 ```bash
-scripts/run_avici.sh
-scripts/run_bcnp.sh
-scripts/run_dibs.sh
-scripts/run_bayesdag.sh
+scripts/run_all_models.sh
 ```
 
 ## Documentation
