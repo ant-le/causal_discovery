@@ -94,6 +94,10 @@ run_job() {
   echo "[run_${MODEL}] CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}" >&2
   echo "[run_${MODEL}] NPROC_PER_NODE=${NPROC_PER_NODE:-unset}" >&2
   nvidia-smi -L 2>/dev/null || echo "[run_${MODEL}] nvidia-smi not available" >&2
+  echo "[run_${MODEL}] MIG mode:" >&2
+  nvidia-smi --query-gpu=mig.mode.current --format=csv 2>/dev/null || echo "  query failed" >&2
+  echo "[run_${MODEL}] Per-GPU memory (full A100-80GB = ~81920 MiB):" >&2
+  nvidia-smi --query-gpu=memory.total --format=csv,noheader 2>/dev/null || echo "  query failed" >&2
 
   # Detect visible GPUs via nvidia-smi instead of Python/torch.
   # Spawning Python here would call cudaInit(), which on some SLURM
