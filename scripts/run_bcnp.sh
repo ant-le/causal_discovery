@@ -3,7 +3,7 @@ set -euo pipefail
 
 MODEL="bcnp"
 GPU_TYPE="a100"
-GPU_COUNT=5
+GPU_COUNT=4
 CPUS_PER_TASK=5
 MEM_GB=250
 PARTITION="GPU-a100"
@@ -24,8 +24,7 @@ submit_job() {
   env -u CUDA_VISIBLE_DEVICES sbatch \
     --partition="${PARTITION}" \
     --nodes=1 \
-    --ntasks="${GPU_COUNT}" \
-    --ntasks-per-node="${GPU_COUNT}" \
+    --tasks-per-node=1 \
     --cpus-per-task="${CPUS_PER_TASK}" \
     --gres="gpu:${GPU_TYPE}:${GPU_COUNT}" \
     --mem="${MEM_GB}G" \
@@ -48,37 +47,13 @@ run_job() {
   if [[ "${venv_dir}" != /* ]]; then
     venv_dir="${ROOT_DIR}/${venv_dir}"
   fi
-  local main_python="${venv_dir}/bin/python"
+  local torchrun_bin="${venv_dir}/bin/torchrun"
 
-  export OMP_NUM_THREADS="${OMP_NUM_THREADS:-${SLURM_CPUS_PER_TASK:-${CPUS_PER_TASK}}}"
+  export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
   export HYDRA_FULL_ERROR=1
   export PYTHONFAULTHANDLER=1
 
-  readarray -t hosts < <(scontrol show hostnames "${SLURM_JOB_NODELIST}")
-  local master_addr="${MASTER_ADDR:-${hosts[0]}}"
-  local master_port="${MASTER_PORT:-$((10000 + SLURM_JOB_ID % 50000))}"
-
-  local worker
-  worker="$(mktemp "${TMPDIR:-/tmp}/cm_ddp_worker.XXXXXX")"
-  cat > "${worker}" <<'EOF'
-#!/bin/bash
-set -euo pipefail
-export RANK="${SLURM_PROCID}"
-export LOCAL_RANK="${SLURM_LOCALID}"
-export WORLD_SIZE="${SLURM_NTASKS}"
-exec "$@"
-EOF
-  chmod +x "${worker}"
-  trap 'rm -f "${worker}"' EXIT
-
-  srun \
-    --ntasks="${GPU_COUNT}" \
-    --ntasks-per-node="${GPU_COUNT}" \
-    --cpus-per-task="${SLURM_CPUS_PER_TASK:-${CPUS_PER_TASK}}" \
-    --export=ALL,MASTER_ADDR="${master_addr}",MASTER_PORT="${master_port}" \
-    "${worker}" \
-    "${main_python}" \
-    -m causal_meta.main \
+  "${torchrun_bin}" --standalone --nproc_per_node "${GPU_COUNT}" -m causal_meta.main \
     --config-name "${config_name}" \
     "model=${MODEL}" \
     "name=${run_name}" \
