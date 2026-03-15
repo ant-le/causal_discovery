@@ -50,7 +50,9 @@ class DistributedContext:
 
     def barrier(self) -> None:
         if self.is_distributed and dist.is_available() and dist.is_initialized():
-            dist.barrier()
+            dist.barrier(
+                device_ids=[self.local_rank] if self.device.type == "cuda" else None
+            )
 
     @classmethod
     def current(cls) -> DistributedContext:
@@ -105,7 +107,12 @@ class DistributedContext:
         local_rank = int(os.environ.get("LOCAL_RANK", "0"))
         if torch.cuda.is_available():
             torch.cuda.set_device(local_rank)
-        dist.init_process_group(backend=backend)
+            dist.init_process_group(
+                backend=backend,
+                device_id=torch.device(f"cuda:{local_rank}"),
+            )
+        else:
+            dist.init_process_group(backend=backend)
         dist_ctx = cls.current()
         device = select_device(local_rank=local_rank, is_distributed=True)
         return cls(

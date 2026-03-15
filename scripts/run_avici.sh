@@ -86,7 +86,7 @@ run_job() {
     exit 2
   fi
 
-  local nproc_per_node="${GPU_COUNT}"
+  local nproc_per_node="${NPROC_PER_NODE:-${GPU_COUNT}}"
   if [[ "${visible_gpu_count}" -lt "${nproc_per_node}" ]]; then
     echo "[run_${MODEL}] WARNING: requested ${nproc_per_node} GPUs, but ${visible_gpu_count} are visible. Adjusting nproc_per_node." >&2
     nproc_per_node="${visible_gpu_count}"

@@ -79,6 +79,16 @@ run_job() {
   export HYDRA_FULL_ERROR=1
   export PYTHONFAULTHANDLER=1
 
+  # Diagnostic: log SLURM GPU allocation details
+  echo "[run_${MODEL}] SLURM_JOB_ID=${SLURM_JOB_ID:-unset}" >&2
+  echo "[run_${MODEL}] SLURM_JOB_NODELIST=${SLURM_JOB_NODELIST:-unset}" >&2
+  echo "[run_${MODEL}] SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-unset}" >&2
+  echo "[run_${MODEL}] SLURM_GPUS_ON_NODE=${SLURM_GPUS_ON_NODE:-unset}" >&2
+  echo "[run_${MODEL}] GPU_DEVICE_ORDINAL=${GPU_DEVICE_ORDINAL:-unset}" >&2
+  echo "[run_${MODEL}] CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}" >&2
+  echo "[run_${MODEL}] NPROC_PER_NODE=${NPROC_PER_NODE:-unset}" >&2
+  nvidia-smi -L 2>/dev/null || echo "[run_${MODEL}] nvidia-smi not available" >&2
+
   local visible_gpu_count
   visible_gpu_count="$("${main_python}" -c 'import torch; print(torch.cuda.device_count() if torch.cuda.is_available() else 0)')"
   if [[ "${visible_gpu_count}" -lt 1 ]]; then
@@ -86,7 +96,7 @@ run_job() {
     exit 2
   fi
 
-  local nproc_per_node="${GPU_COUNT}"
+  local nproc_per_node="${NPROC_PER_NODE:-${GPU_COUNT}}"
   if [[ "${visible_gpu_count}" -lt "${nproc_per_node}" ]]; then
     echo "[run_${MODEL}] WARNING: requested ${nproc_per_node} GPUs, but ${visible_gpu_count} are visible. Adjusting nproc_per_node." >&2
     nproc_per_node="${visible_gpu_count}"
