@@ -21,6 +21,16 @@ def _infer_local_rank() -> int:
     return 0
 
 
+def _safe_cuda_local_rank(local_rank: int) -> int:
+    """Clamp local rank to available CUDA devices for this process."""
+    device_count = torch.cuda.device_count()
+    if device_count < 1:
+        raise RuntimeError("CUDA is available but no visible devices were found.")
+    if 0 <= local_rank < device_count:
+        return local_rank
+    return 0
+
+
 def select_device(*, local_rank: int, is_distributed: bool) -> torch.device:
     """
     Select the preferred device for this process.
@@ -133,6 +143,8 @@ class DistributedContext:
         backend = "nccl" if torch.cuda.is_available() else "gloo"
         local_rank = _infer_local_rank()
         if torch.cuda.is_available():
+            local_rank = _safe_cuda_local_rank(local_rank)
+            os.environ["LOCAL_RANK"] = str(local_rank)
             torch.cuda.set_device(local_rank)
             dist.init_process_group(
                 backend=backend,

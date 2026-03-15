@@ -57,11 +57,17 @@ export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export HYDRA_FULL_ERROR=1
 export PYTHONFAULTHANDLER=1
 
+# Prevent login-node GPU visibility leakage (e.g. CUDA_VISIBLE_DEVICES=0,1)
+# from constraining per-task device ordinals in distributed runs.
+unset CUDA_VISIBLE_DEVICES GPU_DEVICE_ORDINAL 2>/dev/null || true
+
 echo "MASTER_ADDR=${MASTER_ADDR}"
 echo "MASTER_PORT=${MASTER_PORT}"
 echo "SLURM_NTASKS=${SLURM_NTASKS:-unset}"
 echo "SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-unset}"
 echo "SLURM_GPUS_ON_NODE=${SLURM_GPUS_ON_NODE:-unset}"
+echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
+echo "GPU_DEVICE_ORDINAL=${GPU_DEVICE_ORDINAL:-unset}"
 echo "Launching ${SLURM_NTASKS:-4} tasks via srun"
 
 srun --gpu-bind=none "${MAIN_PYTHON}" -m causal_meta.main \
