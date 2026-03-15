@@ -9,7 +9,7 @@ lambda_sparse: 10.0
 
 # Long-run settings for explicit comparisons.
 num_chains: 10
-sinkhorn_n_iter: 3000
+sinkhorn_n_iter: 300
 
 scale_noise: 0.001
 scale_noise_p: 0.01
