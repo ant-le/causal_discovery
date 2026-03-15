@@ -166,11 +166,15 @@ class BayesDAGModel(BaseModel):
                 "Input data node count does not match configured num_nodes."
             )
 
+        resolved_device = self._device_to_string(x.device)
+
         log.info(
-            "BayesDAG in-process sample: device=%s, batch_size=%d, "
+            "BayesDAG in-process sample: mode=in_process, device=%s, "
+            "resolved_device=%s, batch_size=%d, "
             "num_nodes=%d, num_samples=%d, variant=%s, "
             "cuda_available=%s, cuda_device_count=%d",
             x.device,
+            resolved_device,
             batch_size,
             num_nodes,
             num_samples,
@@ -252,6 +256,14 @@ class BayesDAGModel(BaseModel):
             kwargs["res_connection"] = self.res_connection
         return model_cls(**kwargs)
 
+    def _device_to_string(self, device: torch.device) -> str:
+        if device.type == "cuda":
+            index = device.index
+            if index is None:
+                index = torch.cuda.current_device() if torch.cuda.is_available() else 0
+            return f"cuda:{index}"
+        return device.type
+
     def _sample_external(self, x: torch.Tensor, num_samples: int) -> torch.Tensor:
         if x.ndim != 3:
             raise ValueError("Input data must have shape (Batch, Samples, Variables).")
@@ -264,17 +276,24 @@ class BayesDAGModel(BaseModel):
 
         python_path = self._resolve_external_python()
         script_path = Path(__file__).resolve().with_name("external_infer.py")
+        requested_device = self._device_to_string(x.device)
 
         log.info(
-            "BayesDAG external sample: python=%s, batch_size=%d, "
-            "num_nodes=%d, num_samples=%d, variant=%s, "
-            "timeout=%ds",
+            "BayesDAG external sample: mode=external, python=%s, batch_size=%d, "
+            "num_nodes=%d, num_samples=%d, variant=%s, parent_device=%s, "
+            "requested_device=%s, timeout=%ds, cuda_available=%s, "
+            "cuda_device_count=%d, cuda_visible_devices=%s",
             python_path,
             batch_size,
             num_nodes,
             num_samples,
             self.variant,
+            x.device,
+            requested_device,
             self.external_timeout_s,
+            torch.cuda.is_available(),
+            torch.cuda.device_count(),
+            os.environ.get("CUDA_VISIBLE_DEVICES", "unset"),
         )
 
         train_config = {
@@ -318,6 +337,7 @@ class BayesDAGModel(BaseModel):
                     "train": train_config,
                     "num_samples": int(num_samples),
                     "seed": int(batch_idx),
+                    "device": requested_device,
                     "output": str(output_path),
                 }
                 config_path.write_text(json.dumps(config_payload))
@@ -331,7 +351,7 @@ class BayesDAGModel(BaseModel):
                     str(input_path),
                 ]
                 env = os.environ.copy()
-                if self.device in {"auto", "mps"}:
+                if requested_device == "mps" or self.device in {"auto", "mps"}:
                     env.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
                 subprocess.run(
                     cmd,

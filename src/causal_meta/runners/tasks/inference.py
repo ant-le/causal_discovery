@@ -49,6 +49,11 @@ def _batch_indices(indices: range, batch_size: int) -> List[List[int]]:
     return [idx_list[i : i + batch_size] for i in range(0, len(idx_list), batch_size)]
 
 
+def _sampling_mode(model: BaseModel) -> str:
+    external_python = getattr(model, "external_python", None)
+    return "external" if external_python else "in_process"
+
+
 def run(
     cfg: DictConfig,
     model: BaseModel,
@@ -145,6 +150,8 @@ def run(
         # Get sharded indices and split into batches
         sharded_indices = _shard_indices(len(dataset), rank=rank, world_size=world_size)
         batches = _batch_indices(sharded_indices, inference_batch_size)
+        sampling_mode = _sampling_mode(model)
+        sampling_context_logged = False
 
         for batch_indices in batches:
             # Collect batch items, filtering out already-cached entries
@@ -164,6 +171,18 @@ def run(
 
             # Stack inputs for batched inference
             inputs = torch.stack([item[2] for item in batch_items], dim=0).to(device)
+
+            if rank == 0 and not sampling_context_logged:
+                log.info(
+                    "Inference sampling context: dataset=%s, device=%s, "
+                    "batch_size=%d, n_samples=%d, mode=%s",
+                    name,
+                    device,
+                    int(inputs.shape[0]),
+                    n_samples,
+                    sampling_mode,
+                )
+                sampling_context_logged = True
 
             with torch.no_grad():
                 # samples: (batch_size, n_samples, num_nodes, num_nodes)

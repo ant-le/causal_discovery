@@ -3,8 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import time
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import torch
@@ -110,7 +111,47 @@ def _log_data_stats(data: np.ndarray, mask: np.ndarray) -> None:
         log.warning("BayesDAG data mask has no observed entries.")
 
 
-def _resolve_device() -> torch.device:
+def _resolve_device(requested_device: Optional[str] = None) -> torch.device:
+    if requested_device is not None:
+        normalized = str(requested_device).strip().lower()
+        if normalized == "cuda":
+            normalized = "cuda:0"
+
+        try:
+            device = torch.device(normalized)
+        except (TypeError, RuntimeError, ValueError) as exc:
+            raise ValueError(
+                f"Invalid BayesDAG device request: {requested_device!r}"
+            ) from exc
+
+        if device.type == "cuda":
+            if not torch.cuda.is_available():
+                raise RuntimeError(
+                    "BayesDAG requested CUDA device but CUDA is not available."
+                )
+            device_count = torch.cuda.device_count()
+            index = 0 if device.index is None else int(device.index)
+            if index < 0 or index >= device_count:
+                raise RuntimeError(
+                    "BayesDAG requested CUDA device index out of range: "
+                    f"{index} (device_count={device_count})."
+                )
+            return torch.device(f"cuda:{index}")
+
+        if device.type == "mps":
+            if not torch.backends.mps.is_available():
+                raise RuntimeError(
+                    "BayesDAG requested MPS device but MPS is not available."
+                )
+            return torch.device("mps")
+
+        if device.type == "cpu":
+            return torch.device("cpu")
+
+        raise ValueError(
+            "BayesDAG device must be one of 'cpu', 'mps', 'cuda', or 'cuda:<idx>'."
+        )
+
     if torch.cuda.is_available():
         preferred_device = torch.device("cuda")
     elif torch.backends.mps.is_available():
@@ -118,14 +159,14 @@ def _resolve_device() -> torch.device:
     else:
         preferred_device = torch.device("cpu")
 
-    device = preferred_device
-    log.info("BayesDAG resolved device: %s", device)
-    if device.type == "cuda":
-        log.info("BayesDAG CUDA device: %s", torch.cuda.get_device_name(0))
-    return device
+    return preferred_device
 
 
-def _build_model(config: Dict[str, Any], variables: Variables) -> Any:
+def _build_model(
+    config: Dict[str, Any],
+    variables: Variables,
+    device: torch.device,
+) -> Any:
     variant = config["variant"]
     model_cls = BayesDAGLinear if variant == "linear" else BayesDAGNonLinear
 
@@ -133,7 +174,7 @@ def _build_model(config: Dict[str, Any], variables: Variables) -> Any:
         "model_id": f"bayesdag_{variant}",
         "variables": variables,
         "save_dir": config["save_dir"],
-        "device": _resolve_device(),
+        "device": device,
         "lambda_sparse": config["lambda_sparse"],
         "num_chains": config["num_chains"],
         "sinkhorn_n_iter": config["sinkhorn_n_iter"],
@@ -171,7 +212,32 @@ def main() -> None:
     )
     dataset = _build_dataset(data, mask, variables, seed=int(config["seed"]))
 
-    model = _build_model(config["model"], variables)
+    requested_device_raw = config.get("device")
+    requested_device = (
+        str(requested_device_raw) if requested_device_raw is not None else None
+    )
+    resolved_device = _resolve_device(requested_device)
+    cuda_index = (
+        (0 if resolved_device.index is None else int(resolved_device.index))
+        if resolved_device.type == "cuda"
+        else None
+    )
+    cuda_name = (
+        torch.cuda.get_device_name(cuda_index) if cuda_index is not None else None
+    )
+    log.info(
+        "BayesDAG external bootstrap: requested_device=%s, resolved_device=%s, "
+        "cuda_available=%s, cuda_device_count=%d, cuda_device_name=%s, "
+        "cuda_visible_devices=%s",
+        requested_device,
+        resolved_device,
+        torch.cuda.is_available(),
+        torch.cuda.device_count(),
+        cuda_name,
+        os.environ.get("CUDA_VISIBLE_DEVICES", "unset"),
+    )
+
+    model = _build_model(config["model"], variables, device=resolved_device)
     if bool(config.get("train", {}).get("skip_evaluation", False)):
         model.evaluate_metrics = lambda *args, **kwargs: None
 

@@ -47,6 +47,11 @@ class NpEncoder(json.JSONEncoder):
         return super().default(o)
 
 
+def _sampling_mode(model: BaseModel) -> str:
+    external_python = getattr(model, "external_python", None)
+    return "external" if external_python else "in_process"
+
+
 def run(
     cfg: DictConfig,
     model: nn.Module,
@@ -133,6 +138,9 @@ def run(
         # Reset internal state for this dataset
         metrics_handler.reset()
         scm_metrics_handler.reset()
+        sampling_mode = _sampling_mode(model_unwrapped)
+        cached_context_logged = False
+        sampling_context_logged = False
 
         with torch.no_grad():
             # For explicit/non-amortized models, prefer cached inference artifacts and avoid DataLoader+DistributedSampler padding.
@@ -167,10 +175,29 @@ def run(
                     adjacency_matrix = adjacency_matrix_true.to(device).unsqueeze(0)
 
                     if artifact_path is not None:
+                        if rank == 0 and not cached_context_logged:
+                            log.info(
+                                "Evaluation context: using cached inference for "
+                                "dataset=%s, device=%s, mode=%s",
+                                name,
+                                device,
+                                sampling_mode,
+                            )
+                            cached_context_logged = True
                         artifact = torch_load(artifact_path)
                         graph_samples = artifact["graph_samples"].to(device)
                         samples_for_metrics = graph_samples.permute(1, 0, 2, 3)
                     else:
+                        if rank == 0 and not sampling_context_logged:
+                            log.info(
+                                "Evaluation sampling context: dataset=%s, device=%s, "
+                                "n_samples=%d, mode=%s",
+                                name,
+                                device,
+                                n_samples,
+                                sampling_mode,
+                            )
+                            sampling_context_logged = True
                         samples = model_unwrapped.sample(
                             input_data, num_samples=n_samples
                         )
