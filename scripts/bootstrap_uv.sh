@@ -129,7 +129,6 @@ fi
 info "Creating BayesDAG environment (.venv-bayesdag, Python ${BAYESDAG_PYTHON_VERSION})"
 uv venv "$BAYESDAG_VENV" --python "$BAYESDAG_PYTHON_VERSION" --clear
 uv pip install --python "$BAYESDAG_PYTHON" -r requirements-bayesdag.txt
-uv pip install --python "$BAYESDAG_PYTHON" "wandb>=0.15.0"
 
 info "Installing Project-BayesDAG (causica) into .venv-bayesdag"
 tmp_dir="$(mktemp -d)"
