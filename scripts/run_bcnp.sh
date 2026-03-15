@@ -3,7 +3,7 @@ set -euo pipefail
 
 MODEL="bcnp"
 GPU_TYPE="a100"
-GPU_COUNT=2
+GPU_COUNT=4
 CPUS_PER_TASK=5
 MEM_GB=250
 PARTITION="GPU-a100"
@@ -37,8 +37,8 @@ submit_job() {
 
   local output
   local -a gpu_modes=(
-    "--gres=gpu:${GPU_TYPE}:${GPU_COUNT}"
     "--gpus-per-node=${GPU_COUNT}"
+    "--gres=gpu:${GPU_TYPE}:${GPU_COUNT}"
     "--gres=gpu:${GPU_COUNT}"
   )
 
