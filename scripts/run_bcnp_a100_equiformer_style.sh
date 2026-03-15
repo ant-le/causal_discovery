@@ -12,13 +12,15 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR_FROM_SCRIPT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 if [[ -z "${SLURM_JOB_ID:-}" ]]; then
   echo "[run_bcnp_a100_equiformer_style] No SLURM allocation detected; submitting with sbatch." >&2
-  exec sbatch "$0" "$@"
+  exec sbatch --export="ALL,CAUSAL_META_ROOT_DIR=${ROOT_DIR_FROM_SCRIPT}" "$0" "$@"
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT_DIR="${CAUSAL_META_ROOT_DIR:-${SLURM_SUBMIT_DIR:-${ROOT_DIR_FROM_SCRIPT}}}"
 cd "${ROOT_DIR}"
 
 CONFIG_NAME="${1:-full_multimodel}"
