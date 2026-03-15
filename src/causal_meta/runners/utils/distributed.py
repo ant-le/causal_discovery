@@ -131,6 +131,9 @@ class DistributedContext:
         if "LOCAL_RANK" not in os.environ and "SLURM_LOCALID" in os.environ:
             os.environ["LOCAL_RANK"] = str(_infer_local_rank())
 
+        if int(os.environ.get("WORLD_SIZE", "1")) <= 1:
+            return cls.current()
+
         missing = [
             k
             for k in ("RANK", "WORLD_SIZE", "MASTER_ADDR", "MASTER_PORT")

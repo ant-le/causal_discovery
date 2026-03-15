@@ -1,103 +1,83 @@
 #!/usr/bin/env bash
+#SBATCH --job-name=cm_bayesdag
+#SBATCH --partition=GPU-a100
+#SBATCH --nodes=1
+#SBATCH --tasks-per-node=1
+#SBATCH --gpus-per-node=1
+#SBATCH --time=72:00:00
+#SBATCH --output=slurm_%j.out
+#SBATCH --error=slurm_%j.err
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=80G
+
 set -euo pipefail
 
-MODEL="bayesdag"
-GPU_TYPE="a100"
-GPU_COUNT=1
-CPUS_PER_TASK=5
-MEM_GB=80
-PARTITION="GPU-a100"
-TIME_LIMIT="72:00:00"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR_DEFAULT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-ROOT_DIR="${CAUSAL_META_ROOT_DIR:-${ROOT_DIR_DEFAULT}}"
-
-submit_job() {
-  local config_name="$1"
-  local run_name="$2"
-  shift 2
-
-  local run_dir="${ROOT_DIR}/experiments/runs/${run_name}"
-  mkdir -p "${run_dir}"
-
-  local -a common_args=(
-    --partition="${PARTITION}"
-    --nodes=1
-    --ntasks=1
-    --ntasks-per-node=1
-    --cpus-per-task="${CPUS_PER_TASK}"
-    --mem="${MEM_GB}G"
-    --time="${TIME_LIMIT}"
-    --job-name="cm_${MODEL}"
-    --output="${run_dir}/slurm_%j.out"
-    --error="${run_dir}/slurm_%j.err"
-    --chdir="${ROOT_DIR}"
-    --export="ALL,CAUSAL_META_ROOT_DIR=${ROOT_DIR}"
-  )
-
-  local output
-  if output=$(env -u CUDA_VISIBLE_DEVICES sbatch "${common_args[@]}" --gres="gpu:${GPU_TYPE}:${GPU_COUNT}" "$0" "${config_name}" "${run_name}" "$@" 2>&1); then
-    printf '%s\n' "${output}"
-    return 0
-  fi
-
-  if [[ "${output}" == *"Invalid generic resource"* || "${output}" == *"Invalid GRES"* ]]; then
-    echo "[run_${MODEL}] typed GRES rejected, retrying untyped GPU request" >&2
-    output=$(env -u CUDA_VISIBLE_DEVICES sbatch "${common_args[@]}" --gres="gpu:${GPU_COUNT}" "$0" "${config_name}" "${run_name}" "$@" 2>&1) || {
-      printf '%s\n' "${output}" >&2
-      exit 1
-    }
-    printf '%s\n' "${output}"
-    return 0
-  fi
-
-  printf '%s\n' "${output}" >&2
-  exit 1
-}
-
-run_job() {
-  local config_name="$1"
-  local run_name="$2"
-  shift 2
-
-  cd "${ROOT_DIR}"
-  local venv_dir="${VENV_DIR:-${UV_PROJECT_ENVIRONMENT:-.venv}}"
-  if [[ "${venv_dir}" != /* ]]; then
-    venv_dir="${ROOT_DIR}/${venv_dir}"
-  fi
-  local main_python="${venv_dir}/bin/python"
-
-  export OMP_NUM_THREADS="${OMP_NUM_THREADS:-${SLURM_CPUS_PER_TASK:-${CPUS_PER_TASK}}}"
-  export HYDRA_FULL_ERROR=1
-  export PYTHONFAULTHANDLER=1
-  if [[ -z "${CAUSAL_META_BAYESDAG_PYTHON:-}" ]]; then
-    export CAUSAL_META_BAYESDAG_PYTHON="${ROOT_DIR}/.venv-bayesdag/bin/python"
-  fi
-
-  "${main_python}" -m causal_meta.main \
-    --config-name "${config_name}" \
-    "model=${MODEL}" \
-    "name=${run_name}" \
-    "$@"
-}
+ROOT_DIR_FROM_SCRIPT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 if [[ -z "${SLURM_JOB_ID:-}" ]]; then
-  config_name="${1:-full_multimodel}"
-  run_name="${2:-rq1_${MODEL}_only}"
-  if [[ "$#" -ge 2 ]]; then
-    shift 2
-  else
-    shift "$#"
-  fi
-  submit_job "${config_name}" "${run_name}" "$@"
-else
-  config_name="${1:-full_multimodel}"
-  run_name="${2:-rq1_${MODEL}_only}"
-  if [[ "$#" -ge 2 ]]; then
-    shift 2
-  else
-    shift "$#"
-  fi
-  run_job "${config_name}" "${run_name}" "$@"
+  echo "[run_bayesdag] No SLURM allocation detected; submitting with sbatch." >&2
+  exec sbatch --export="ALL,CAUSAL_META_ROOT_DIR=${ROOT_DIR_FROM_SCRIPT}" "$0" "$@"
 fi
+
+ROOT_DIR="${CAUSAL_META_ROOT_DIR:-${SLURM_SUBMIT_DIR:-${ROOT_DIR_FROM_SCRIPT}}}"
+cd "${ROOT_DIR}"
+
+CONFIG_NAME="${1:-full_multimodel}"
+RUN_NAME="${2:-bayesdag_${SLURM_JOB_ID:-manual}}"
+if [[ "$#" -ge 2 ]]; then
+  shift 2
+else
+  shift "$#"
+fi
+
+mkdir -p "${ROOT_DIR}/experiments/runs/${RUN_NAME}"
+
+VENV_DIR="${VENV_DIR:-${UV_PROJECT_ENVIRONMENT:-.venv}}"
+if [[ "${VENV_DIR}" != /* ]]; then
+  VENV_DIR="${ROOT_DIR}/${VENV_DIR}"
+fi
+
+MAIN_PYTHON="${VENV_DIR}/bin/python"
+if [[ ! -x "${MAIN_PYTHON}" ]]; then
+  MAIN_PYTHON="python3"
+fi
+
+if [[ -z "${CAUSAL_META_BAYESDAG_PYTHON:-}" ]]; then
+  export CAUSAL_META_BAYESDAG_PYTHON="${ROOT_DIR}/.venv-bayesdag/bin/python"
+fi
+
+if [[ -n "${SLURM_JOB_NODELIST:-}" ]]; then
+  MASTER_ADDR="${MASTER_ADDR:-$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -n 1)}"
+else
+  MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"
+fi
+export MASTER_ADDR
+
+job_id_for_port="${SLURM_JOB_ID:-0}"
+export MASTER_PORT
+MASTER_PORT="${MASTER_PORT:-$((10000 + (job_id_for_port % 50000)))}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+export HYDRA_FULL_ERROR=1
+export PYTHONFAULTHANDLER=1
+
+# Prevent login-node GPU visibility leakage
+unset CUDA_VISIBLE_DEVICES GPU_DEVICE_ORDINAL 2>/dev/null || true
+
+echo "MASTER_ADDR=${MASTER_ADDR}"
+echo "MASTER_PORT=${MASTER_PORT}"
+echo "SLURM_NTASKS=${SLURM_NTASKS:-unset}"
+echo "SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-unset}"
+echo "SLURM_GPUS_ON_NODE=${SLURM_GPUS_ON_NODE:-unset}"
+echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
+echo "GPU_DEVICE_ORDINAL=${GPU_DEVICE_ORDINAL:-unset}"
+echo "Launching ${SLURM_NTASKS:-1} tasks via srun"
+
+echo "Per-task GPU mapping (preflight):"
+srun bash -lc 'uuid=$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -n 1); echo "task=${SLURM_PROCID:-unset} local=${SLURM_LOCALID:-unset} CVD=${CUDA_VISIBLE_DEVICES:-unset} GDO=${GPU_DEVICE_ORDINAL:-unset} UUID=${uuid:-unset}"'
+
+srun "${MAIN_PYTHON}" -m causal_meta.main \
+  --config-name "${CONFIG_NAME}" \
+  "model=bayesdag" \
+  "name=${RUN_NAME}" \
+  "$@"

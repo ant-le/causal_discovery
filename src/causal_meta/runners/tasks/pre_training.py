@@ -424,6 +424,14 @@ def validate(
     elif "e-edgef1" in avg_metrics:
         avg_metrics["mean_e-edgef1"] = avg_metrics["e-edgef1"]
 
+    if dist.is_available() and dist.is_initialized():
+        world_size = dist.get_world_size()
+        if world_size > 1:
+            for k, v in avg_metrics.items():
+                tensor_v = torch.tensor(v, device=device, dtype=torch.float32)
+                dist.all_reduce(tensor_v, op=dist.ReduceOp.SUM)
+                avg_metrics[k] = float(tensor_v.item() / world_size)
+
     return avg_metrics
 
 

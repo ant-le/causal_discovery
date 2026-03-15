@@ -8,14 +8,14 @@ defaults:
   - inference: default
   - _self_
 
-name: "smoke_actual_multimodel"
+name: "canary_multimodel"
 
-# Smoke overrides: fast iteration with fewer steps.
+# Canary overrides: fast iteration with fewer steps to validate stability.
 trainer:
-  max_steps: 30
-  log_every_n_steps: 1
-  val_check_interval: 10
-  checkpoint_every_n_steps: 0
+  max_steps: 2000
+  log_every_n_steps: 100
+  val_check_interval: 500
+  checkpoint_every_n_steps: 1000
 
 inference:
   n_samples: 8
