@@ -4,10 +4,10 @@
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=4
 #SBATCH --gpus-per-task=1
+#SBATCH --gpus-per-node=4
 #SBATCH --time=72:00:00
 #SBATCH --output=slurm_%j.out
 #SBATCH --error=slurm_%j.err
-#SBATCH --gres=gpu:a100:4
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=250G
 
