@@ -53,11 +53,15 @@ run_job() {
   export HYDRA_FULL_ERROR=1
   export PYTHONFAULTHANDLER=1
 
-  "${torchrun_bin}" --standalone --nproc_per_node "${GPU_COUNT}" -m causal_meta.main \
-    --config-name "${config_name}" \
-    "model=${MODEL}" \
-    "name=${run_name}" \
-    "$@"
+  srun \
+    --ntasks=1 \
+    --cpus-per-task="${SLURM_CPUS_PER_TASK:-${CPUS_PER_TASK}}" \
+    --export=ALL \
+    "${torchrun_bin}" --standalone --nproc_per_node "${GPU_COUNT}" -m causal_meta.main \
+      --config-name "${config_name}" \
+      "model=${MODEL}" \
+      "name=${run_name}" \
+      "$@"
 }
 
 if [[ -z "${SLURM_JOB_ID:-}" ]]; then
