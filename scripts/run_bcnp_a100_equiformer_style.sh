@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+#SBATCH --job-name=cm_bcnp
+#SBATCH --partition=GPU-a100
+#SBATCH --nodes=1
+#SBATCH --tasks-per-node=4
+#SBATCH --time=72:00:00
+#SBATCH --output=slurm_%j.out
+#SBATCH --error=slurm_%j.err
+#SBATCH --gres=gpu:a100:4
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=250G
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${ROOT_DIR}"
+
+CONFIG_NAME="${1:-full_multimodel}"
+RUN_NAME="${2:-bcnp_a100_equiformer_style_${SLURM_JOB_ID:-manual}}"
+if [[ "$#" -ge 2 ]]; then
+  shift 2
+else
+  shift "$#"
+fi
+
+mkdir -p "${ROOT_DIR}/experiments/runs/${RUN_NAME}"
+
+VENV_DIR="${VENV_DIR:-${UV_PROJECT_ENVIRONMENT:-.venv}}"
+if [[ "${VENV_DIR}" != /* ]]; then
+  VENV_DIR="${ROOT_DIR}/${VENV_DIR}"
+fi
+
+MAIN_PYTHON="${VENV_DIR}/bin/python"
+if [[ ! -x "${MAIN_PYTHON}" ]]; then
+  MAIN_PYTHON="python3"
+fi
+
+export MASTER_ADDR
+MASTER_ADDR="$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -n 1)"
+export MASTER_PORT
+MASTER_PORT="${MASTER_PORT:-$((10000 + (SLURM_JOB_ID % 50000)))}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+export HYDRA_FULL_ERROR=1
+export PYTHONFAULTHANDLER=1
+
+echo "MASTER_ADDR=${MASTER_ADDR}"
+echo "MASTER_PORT=${MASTER_PORT}"
+echo "SLURM_NTASKS=${SLURM_NTASKS:-unset}"
+echo "SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-unset}"
+echo "SLURM_GPUS_ON_NODE=${SLURM_GPUS_ON_NODE:-unset}"
+echo "Launching ${SLURM_NTASKS:-4} tasks via srun"
+
+srun --gpu-bind=none "${MAIN_PYTHON}" -m causal_meta.main \
+  --config-name "${CONFIG_NAME}" \
+  "model=bcnp" \
+  "name=${RUN_NAME}" \
+  "$@"
