@@ -22,13 +22,22 @@ def _infer_local_rank() -> int:
 
 
 def _safe_cuda_local_rank(local_rank: int) -> int:
-    """Clamp local rank to available CUDA devices for this process."""
+    """Validate local rank against visible CUDA devices for this process."""
     device_count = torch.cuda.device_count()
     if device_count < 1:
         raise RuntimeError("CUDA is available but no visible devices were found.")
     if 0 <= local_rank < device_count:
         return local_rank
-    return 0
+
+    cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    if cuda_visible_devices and "," not in cuda_visible_devices:
+        return 0
+
+    raise RuntimeError(
+        "Invalid LOCAL_RANK for visible CUDA devices: "
+        f"LOCAL_RANK={local_rank}, cuda_device_count={device_count}, "
+        f"CUDA_VISIBLE_DEVICES='{cuda_visible_devices or 'unset'}'."
+    )
 
 
 def select_device(*, local_rank: int, is_distributed: bool) -> torch.device:
