@@ -79,6 +79,11 @@ run_job() {
   export HYDRA_FULL_ERROR=1
   export PYTHONFAULTHANDLER=1
 
+  # Clear GPU visibility vars that may have leaked from the login node via
+  # --export=ALL.  Unsetting lets SLURM's cgroup/prolog GPU binding take
+  # effect based on the actual gres allocation.
+  unset CUDA_VISIBLE_DEVICES GPU_DEVICE_ORDINAL 2>/dev/null || true
+
   # Diagnostic: log SLURM GPU allocation details
   echo "[run_${MODEL}] SLURM_JOB_ID=${SLURM_JOB_ID:-unset}" >&2
   echo "[run_${MODEL}] SLURM_JOB_NODELIST=${SLURM_JOB_NODELIST:-unset}" >&2

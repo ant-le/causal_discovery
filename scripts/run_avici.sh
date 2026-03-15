@@ -79,6 +79,11 @@ run_job() {
   export HYDRA_FULL_ERROR=1
   export PYTHONFAULTHANDLER=1
 
+  # Clear GPU visibility vars that may have leaked from the login node via
+  # --export=ALL.  Unsetting lets SLURM's cgroup/prolog GPU binding take
+  # effect based on the actual gres allocation.
+  unset CUDA_VISIBLE_DEVICES GPU_DEVICE_ORDINAL 2>/dev/null || true
+
   local visible_gpu_count
   visible_gpu_count="$("${main_python}" -c 'import torch; print(torch.cuda.device_count() if torch.cuda.is_available() else 0)')"
   if [[ "${visible_gpu_count}" -lt 1 ]]; then
