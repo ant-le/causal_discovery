@@ -75,12 +75,10 @@ fi
 
 info "Validating active causal_meta package in .venv"
 CAUSAL_META_BOOTSTRAP_ROOT="$ROOT_DIR" "$MAIN_PYTHON" - <<'PY'
-import inspect
 import os
 from pathlib import Path
 
 import causal_meta
-from causal_meta.models.utils.nn import CausalAdjacencyMatrix
 
 root = Path(os.environ["CAUSAL_META_BOOTSTRAP_ROOT"]).resolve()
 module_path = Path(causal_meta.__file__).resolve()
@@ -90,16 +88,19 @@ if root not in module_path.parents:
         f"{module_path}"
     )
 
-smoke_cfg = (module_path.parent / "configs" / "smoke_multimodel.yaml").read_text()
-if "logger: wandb" not in smoke_cfg:
-    raise SystemExit(
-        "smoke_multimodel.yaml in active package is stale; expected logger: wandb"
-    )
+config_dir = module_path.parent / "configs"
+default_cfg = config_dir / "default.yaml"
+wandb_cfg = config_dir / "logger" / "wandb.yaml"
 
-forward_src = inspect.getsource(CausalAdjacencyMatrix.forward)
-if ".view(tgt_len, bsz * self.num_heads, head_dim)" in forward_src:
+if not default_cfg.exists():
+    raise SystemExit(f"default config not found in active package: {default_cfg}")
+if not wandb_cfg.exists():
+    raise SystemExit(f"wandb config not found in active package: {wandb_cfg}")
+
+default_text = default_cfg.read_text()
+if "logger: wandb" not in default_text:
     raise SystemExit(
-        "active causal_meta package still contains stale BCNP .view() projection code"
+        "default.yaml in active package is stale; expected logger: wandb"
     )
 
 print(f"causal_meta import path: {module_path}")
