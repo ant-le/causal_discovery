@@ -3,7 +3,7 @@
 #SBATCH --partition=GPU-a100
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=4
-#SBATCH --gpus-per-node=4
+#SBATCH --gres=gpu:a100:4
 #SBATCH --time=72:00:00
 #SBATCH --output=slurm_%j.out
 #SBATCH --error=slurm_%j.err
