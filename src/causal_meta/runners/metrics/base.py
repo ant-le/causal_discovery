@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from typing import Any, Dict, List, Mapping
+from typing import Any, Dict, List
 
 import numpy as np
 import torch
@@ -19,7 +19,6 @@ class BaseMetrics:
     Shared base for metric trackers that:
     - accumulate per-batch scalars into `history: Dict[str, List[float]]`
     - support distributed gather (all_gather_object) for history
-    - support distributed sync (all_reduce) for scalar dicts
     - support memory-efficient distributed aggregation via all_reduce (sum/count)
     - provide helper for on-the-fly interventional data generation
     """
@@ -102,29 +101,6 @@ class BaseMetrics:
             for k, v in item.items():
                 merged[k].extend(v)
         return dict(merged)
-
-    def sync(self, metrics: Mapping[str, float]) -> Dict[str, float]:
-        """
-        Synchronize scalar metrics across ranks via all_reduce(AVG).
-        """
-        if not (dist.is_available() and dist.is_initialized()):
-            return dict(metrics)
-
-        try:
-            backend = dist.get_backend()
-        except Exception:
-            backend = "gloo"
-        if backend == "nccl" and torch.cuda.is_available():
-            device = torch.device(f"cuda:{torch.cuda.current_device()}")
-        else:
-            device = torch.device("cpu")
-
-        synced: Dict[str, float] = {}
-        for k, v in metrics.items():
-            t = torch.tensor(float(v), device=device)
-            dist.all_reduce(t, op=dist.ReduceOp.AVG)
-            synced[k] = float(t.detach().cpu().item())
-        return synced
 
     def _reduce_history_stats(self) -> Dict[str, Dict[str, float]]:
         """

@@ -21,23 +21,6 @@ def test_metrics_handler_compute() -> None:
 
 @patch("torch.distributed.is_available")
 @patch("torch.distributed.is_initialized")
-@patch("torch.distributed.all_reduce")
-def test_metrics_sync_distributed(mock_all_reduce, mock_init, mock_avail) -> None:
-    mock_avail.return_value = True
-    mock_init.return_value = True
-
-    metrics_handler = Metrics()
-    local_metrics = {"e-shd": 1.0, "graph_nll": 5.0}
-
-    synced = metrics_handler.sync(local_metrics)
-
-    assert mock_all_reduce.called
-    assert "e-shd" in synced
-    assert "graph_nll" in synced
-
-
-@patch("torch.distributed.is_available")
-@patch("torch.distributed.is_initialized")
 @patch("torch.distributed.get_world_size")
 @patch("torch.distributed.all_gather_object")
 def test_metrics_gather_distributed(

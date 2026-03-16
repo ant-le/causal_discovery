@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import logging
 import math
 from typing import Any, Optional
 
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -16,6 +18,8 @@ from causal_meta.models.utils.nn import (
     build_mlp,
 )
 from causal_meta.models.utils.permutations import sample_permutation
+
+log = logging.getLogger(__name__)
 
 
 @register_model("bcnp")
@@ -40,6 +44,8 @@ class BCNP(CausalTNPEncoder, BaseModel):
         n_perm_samples: int = 10,
         sinkhorn_iter: int = 20,
         q_before_l: bool = True,
+        debug_logging: bool = False,
+        debug_log_every_n_steps: int = 1000,
         **kwargs,
     ) -> None:
         CausalTNPEncoder.__init__(
@@ -62,6 +68,9 @@ class BCNP(CausalTNPEncoder, BaseModel):
         self.n_perm_samples = n_perm_samples
         self.sinkhorn_iter = sinkhorn_iter
         self.q_before_l = q_before_l
+        self.debug_logging = bool(debug_logging)
+        self.debug_log_every_n_steps = max(1, int(debug_log_every_n_steps))
+        self._debug_forward_count = 0
 
         # Decoders
         # The reference splits num_layers_decoder into two halves
@@ -99,6 +108,37 @@ class BCNP(CausalTNPEncoder, BaseModel):
 
         self.permutation_logit_network = build_mlp(
             dim_in=d_model, dim_hid=d_model, dim_out=1, depth=emb_depth
+        )
+
+    def _should_log_debug(self) -> bool:
+        if not self.debug_logging:
+            return False
+        if dist.is_available() and dist.is_initialized() and dist.get_rank() != 0:
+            return False
+        return (
+            self._debug_forward_count == 1
+            or self._debug_forward_count % self.debug_log_every_n_steps == 0
+        )
+
+    @staticmethod
+    def _tensor_debug_stats(name: str, tensor: torch.Tensor) -> str:
+        detached = tensor.detach()
+        finite_mask = torch.isfinite(detached)
+        finite_count = int(finite_mask.sum().item())
+        total_count = int(detached.numel())
+        nan_count = int(torch.isnan(detached).sum().item())
+        inf_count = int(torch.isinf(detached).sum().item())
+        if finite_count == 0:
+            return (
+                f"{name}[shape={tuple(detached.shape)}, finite=0/{total_count}, "
+                f"nan={nan_count}, inf={inf_count}]"
+            )
+
+        finite = detached[finite_mask]
+        return (
+            f"{name}[shape={tuple(detached.shape)}, min={float(finite.min().item()):.4f}, "
+            f"max={float(finite.max().item()):.4f}, mean={float(finite.mean().item()):.4f}, "
+            f"finite={finite_count}/{total_count}, nan={nan_count}, inf={inf_count}]"
         )
 
     @property
@@ -144,6 +184,7 @@ class BCNP(CausalTNPEncoder, BaseModel):
             all_probs: Tensor of shape
                 ``(n_perm_samples, Batch, Variables, Variables)``.
         """
+        self._debug_forward_count += 1
         input_data = x
         B, S, V = input_data.shape
 
@@ -222,6 +263,16 @@ class BCNP(CausalTNPEncoder, BaseModel):
 
         # Elementwise mul
         all_probs = probs.unsqueeze(0) * all_masks  # (K, B, N, N)
+
+        if self._should_log_debug():
+            log.info(
+                "BCNP debug: mode=%s, forward=%d, %s, %s, %s",
+                "train" if self.training else "eval",
+                self._debug_forward_count,
+                self._tensor_debug_stats("Q_param", Q_param),
+                self._tensor_debug_stats("L_param", L_param),
+                self._tensor_debug_stats("all_probs", all_probs),
+            )
 
         return all_probs
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import logging
+import math
 import os
 from pathlib import Path
 from typing import Any, Iterable, Sequence, cast
@@ -232,6 +234,7 @@ def run(
             regulariser_update_interval > 0
             and next_step % regulariser_update_interval == 0
         )
+        grad_norm_value: float | None = None
 
         for micro in range(accumulate_grad_batches):
             try:
@@ -243,39 +246,50 @@ def run(
             input_data = batch["data"].to(device)
             adjacency_matrix = batch["adjacency"].to(device)
 
-            if amp_enabled:
-                with torch.autocast(device_type="cuda", dtype=amp_dtype, enabled=True):
+            # Skip redundant DDP gradient sync on non-final micro-batches.
+            is_last_micro = micro == accumulate_grad_batches - 1
+            sync_ctx: contextlib.AbstractContextManager[None] = (
+                contextlib.nullcontext()
+                if (not is_distributed or is_last_micro)
+                else cast(DDP, model).no_sync()
+            )
+
+            with sync_ctx:
+                if amp_enabled:
+                    with torch.autocast(
+                        device_type="cuda", dtype=amp_dtype, enabled=True
+                    ):
+                        output = model(input_data)
+                        loss_vec = model_unwrapped.calculate_loss(
+                            output,
+                            adjacency_matrix,
+                            update_regulariser=update_regulariser and is_last_micro,
+                        )
+                        loss = loss_vec.mean() / float(accumulate_grad_batches)
+                    if scaler.is_enabled():
+                        scaler.scale(loss).backward()
+                    else:
+                        loss.backward()
+                else:
                     output = model(input_data)
                     loss_vec = model_unwrapped.calculate_loss(
                         output,
                         adjacency_matrix,
-                        update_regulariser=update_regulariser
-                        and (micro == accumulate_grad_batches - 1),
+                        update_regulariser=update_regulariser and is_last_micro,
                     )
                     loss = loss_vec.mean() / float(accumulate_grad_batches)
-                if scaler.is_enabled():
-                    scaler.scale(loss).backward()
-                else:
                     loss.backward()
-            else:
-                output = model(input_data)
-                loss_vec = model_unwrapped.calculate_loss(
-                    output,
-                    adjacency_matrix,
-                    update_regulariser=update_regulariser
-                    and (micro == accumulate_grad_batches - 1),
-                )
-                loss = loss_vec.mean() / float(accumulate_grad_batches)
-                loss.backward()
 
             loss_accum = loss_accum + loss.detach()
 
         if scaler.is_enabled():
             scaler.unscale_(optimizer)
+            grad_norm_value = _compute_grad_norm(model.parameters())
             _maybe_clip_grad_norm(model.parameters(), grad_clip_norm)
             scaler.step(optimizer)
             scaler.update()
         else:
+            grad_norm_value = _compute_grad_norm(model.parameters())
             _maybe_clip_grad_norm(model.parameters(), grad_clip_norm)
             optimizer.step()
 
@@ -287,11 +301,31 @@ def run(
         if log_every_n_steps > 0 and step % log_every_n_steps == 0:
             loss_value = _reduce_loss_for_logging(loss_accum, world_size)
             if rank == 0:
-                log_str = f"Step {step}/{max_steps} | Loss: {loss_value:.4f}"
+                current_lr = _current_learning_rate(optimizer)
+                grad_norm_str = (
+                    f"{grad_norm_value:.4f}"
+                    if grad_norm_value is not None and math.isfinite(grad_norm_value)
+                    else "nan"
+                )
+                log_str = (
+                    f"Step {step}/{max_steps} | Loss: {loss_value:.4f} | "
+                    f"LR: {current_lr:.6g} | GradNorm: {grad_norm_str}"
+                )
                 log.info(log_str)
 
                 if logger:
-                    logger.log_metrics({"train/loss": loss_value}, step=step)
+                    logger.log_metrics(
+                        {
+                            "train/loss": loss_value,
+                            "train/lr": current_lr,
+                            "train/grad_norm": (
+                                float(grad_norm_value)
+                                if grad_norm_value is not None
+                                else float("nan")
+                            ),
+                        },
+                        step=step,
+                    )
 
         # Validation
         if val_check_interval > 0 and step % val_check_interval == 0:
@@ -414,6 +448,8 @@ def validate(
                 metrics_handler.update(
                     adjacency_matrix, samples_for_metrics, prefix=name
                 )
+    # summarize_distributed (called by compute) already performs count-weighted
+    # all_reduce across ranks, so no additional reduction is needed here.
     avg_metrics = metrics_handler.compute(summary_stats=False)
 
     _augment_validation_group_metrics(avg_metrics)
@@ -423,14 +459,6 @@ def validate(
         avg_metrics["mean_e-edgef1"] = avg_metrics["mean_id_e-edgef1"]
     elif "e-edgef1" in avg_metrics:
         avg_metrics["mean_e-edgef1"] = avg_metrics["e-edgef1"]
-
-    if dist.is_available() and dist.is_initialized():
-        world_size = dist.get_world_size()
-        if world_size > 1:
-            for k, v in avg_metrics.items():
-                tensor_v = torch.tensor(v, device=device, dtype=torch.float32)
-                dist.all_reduce(tensor_v, op=dist.ReduceOp.SUM)
-                avg_metrics[k] = float(tensor_v.item() / world_size)
 
     return avg_metrics
 
@@ -565,6 +593,22 @@ def _maybe_clip_grad_norm(
     if max_norm <= 0:
         return
     torch.nn.utils.clip_grad_norm_(parameters, max_norm)
+
+
+def _compute_grad_norm(parameters: Iterable[torch.nn.Parameter]) -> float:
+    total = 0.0
+    for param in parameters:
+        if param.grad is None:
+            continue
+        grad = param.grad.detach()
+        total += float(torch.sum(grad * grad).item())
+    return float(total**0.5)
+
+
+def _current_learning_rate(optimizer: optim.Optimizer) -> float:
+    if not optimizer.param_groups:
+        return 0.0
+    return float(optimizer.param_groups[0]["lr"])
 
 
 def _reduce_loss_for_logging(loss: torch.Tensor, world_size: int) -> float:

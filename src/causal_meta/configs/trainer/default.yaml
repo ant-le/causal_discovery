@@ -17,7 +17,8 @@ grad_clip_norm: 1.0
 scheduler: cosine
 scheduler_t_max: ${trainer.max_steps}
 scheduler_eta_min: 0.0
-scheduler_warmup_ratio: 0.1
+# Shorter warmup improves stability for long BCNP runs.
+scheduler_warmup_ratio: 0.02
 scheduler_warmup_start_factor: 0.001
 
 # AVICI acyclicity dual update cadence (paper style).
