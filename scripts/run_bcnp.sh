@@ -14,12 +14,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR_FROM_SCRIPT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-
-if [[ -z "${SLURM_JOB_ID:-}" ]]; then
-  echo "[run_bcnp] No SLURM allocation detected; submitting with sbatch." >&2
-  exec sbatch --export="ALL,CAUSAL_META_ROOT_DIR=${ROOT_DIR_FROM_SCRIPT}" "$0" "$@"
-fi
-
 ROOT_DIR="${CAUSAL_META_ROOT_DIR:-${SLURM_SUBMIT_DIR:-${ROOT_DIR_FROM_SCRIPT}}}"
 cd "${ROOT_DIR}"
 
@@ -57,9 +51,6 @@ export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export HYDRA_FULL_ERROR=1
 export PYTHONFAULTHANDLER=1
 
-# Prevent login-node GPU visibility leakage
-unset CUDA_VISIBLE_DEVICES GPU_DEVICE_ORDINAL 2>/dev/null || true
-
 echo "MASTER_ADDR=${MASTER_ADDR}"
 echo "MASTER_PORT=${MASTER_PORT}"
 echo "SLURM_NTASKS=${SLURM_NTASKS:-unset}"
@@ -69,7 +60,7 @@ echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 echo "GPU_DEVICE_ORDINAL=${GPU_DEVICE_ORDINAL:-unset}"
 echo "Launching ${SLURM_NTASKS:-4} tasks via srun"
 
-srun "${MAIN_PYTHON}" -m causal_meta.main \
+srun --gpu-bind=none "${MAIN_PYTHON}" -m causal_meta.main \
   --config-name "${CONFIG_NAME}" \
   "model=bcnp" \
   "name=${RUN_NAME}" \
