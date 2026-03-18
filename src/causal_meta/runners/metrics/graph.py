@@ -848,9 +848,15 @@ def expected_calibration_error(
     # Mean edge probability from posterior samples: (B, N, N)
     prob = pred.float().mean(dim=0)
 
-    # Flatten to (B, N*N)
-    prob_flat = prob.reshape(prob.shape[0], -1)
-    target_flat = target.float().reshape(target.shape[0], -1)
+    # Mask out diagonal (self-loop) entries — these are always 0/0 in DAGs
+    # and would bias ECE downward by giving the model easy credit.
+    n_nodes = target.shape[-1]
+    diag_mask = ~torch.eye(n_nodes, dtype=torch.bool, device=target.device)
+    prob_masked = prob[:, diag_mask]  # (B, N*(N-1))
+    target_masked = target.float()[:, diag_mask]  # (B, N*(N-1))
+
+    prob_flat = prob_masked
+    target_flat = target_masked
 
     batch_size = prob_flat.shape[0]
     ece_per_graph = torch.zeros(batch_size, device=target.device)

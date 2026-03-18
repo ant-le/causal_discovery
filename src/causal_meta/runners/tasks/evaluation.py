@@ -145,13 +145,15 @@ def _compute_distances(
     test_families = getattr(data_module, "test_families", None) or {}
     for name, test_family in test_families.items():
         entry: dict[str, float] = {}
-        entry["spectral"] = spectral.get(name, 0.0)
+        spectral_val = spectral.get(name)
+        entry["spectral"] = spectral_val if spectral_val is not None else float("nan")
         try:
             entry["kl_degree"] = compute_family_distance(
                 train_family, test_family, metric="kl", n_samples=25
             )
         except Exception:
-            entry["kl_degree"] = 0.0
+            log.warning("KL degree distance failed for family %s", name, exc_info=True)
+            entry["kl_degree"] = float("nan")
         distances[name] = entry
 
     return distances

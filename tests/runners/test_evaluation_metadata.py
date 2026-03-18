@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -228,14 +229,14 @@ class TestComputeDistances:
         assert "ood_mech_periodic_er40" in result
         assert result["id_linear_er20"]["spectral"] == pytest.approx(0.05)
         assert result["ood_mech_periodic_er40"]["spectral"] == pytest.approx(1.2)
-        # kl_degree should be populated (either computed or fallback to 0.0)
+        # kl_degree should be populated (either computed or NaN fallback)
         assert "kl_degree" in result["id_linear_er20"]
 
-    def test_spectral_distances_none_uses_zero(self) -> None:
+    def test_spectral_distances_none_uses_nan(self) -> None:
         dm = MagicMock()
         dm.train_family = MagicMock()
         dm.spectral_distances = None
         dm.test_families = {"fam_a": MagicMock()}
 
         result = _compute_distances(dm)
-        assert result["fam_a"]["spectral"] == pytest.approx(0.0)
+        assert math.isnan(result["fam_a"]["spectral"])

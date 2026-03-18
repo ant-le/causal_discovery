@@ -59,9 +59,9 @@ def draw_point_plot(
         hue_data = subset[subset["Model"] == hue]
 
         # Determine marker style based on model type
-        # Meta-learners (avici, bcnp) get Filled Circle
-        # Explicit/Baselines (dibs, random) get Hollow Circle
-        is_meta = hue.startswith(("avici", "bcnp"))
+        # Meta-learners (AviCi, BCNP) get Filled Circle
+        # Explicit/Baselines (DiBS, Random) get Hollow Circle
+        is_meta = hue.lower().startswith(("avici", "bcnp"))
 
         # Base styling
         plot_kwargs = {
