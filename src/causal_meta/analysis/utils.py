@@ -229,6 +229,9 @@ def load_runs_dataframe(
         model_name = map_model_name(model_key) if translate_names else model_key
 
         summary = _as_mapping(payload.get("summary"))
+        fam_meta = _as_mapping(payload.get("family_metadata"))
+        distances = _as_mapping(payload.get("distances"))
+
         for dataset_key, dataset_metrics_any in summary.items():
             dataset_key_str = str(dataset_key)
             dataset_metrics = _as_mapping(dataset_metrics_any)
@@ -240,6 +243,18 @@ def load_runs_dataframe(
                 if translate_names
                 else dataset_key_str
             )
+
+            # Enrich with family metadata (Phase C)
+            ds_fam = _as_mapping(fam_meta.get(dataset_key_str))
+            graph_type = str(ds_fam.get("graph_type", "")) if ds_fam else ""
+            mech_type = str(ds_fam.get("mech_type", "")) if ds_fam else ""
+            n_nodes = ds_fam.get("n_nodes")
+            sparsity_param = ds_fam.get("sparsity_param")
+
+            # Enrich with distributional distances (Phase D)
+            ds_dist = _as_mapping(distances.get(dataset_key_str))
+            spectral_dist = _to_float(ds_dist.get("spectral"), float("nan"))
+            kl_degree_dist = _to_float(ds_dist.get("kl_degree"), float("nan"))
 
             for metric in sorted(_extract_base_metrics(dataset_metrics)):
                 mean_raw = dataset_metrics.get(f"{metric}_mean")
@@ -261,6 +276,16 @@ def load_runs_dataframe(
                         "Mean": _to_float(mean_raw, float("nan")),
                         "SEM": _to_float(sem_raw, 0.0),
                         "Std": _to_float(std_raw, 0.0),
+                        "GraphType": graph_type,
+                        "MechType": mech_type,
+                        "NNodes": int(n_nodes) if n_nodes is not None else None,
+                        "SparsityParam": (
+                            float(sparsity_param)
+                            if sparsity_param is not None
+                            else None
+                        ),
+                        "SpectralDist": spectral_dist,
+                        "KLDegreeDist": kl_degree_dist,
                     }
                 )
 

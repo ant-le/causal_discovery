@@ -137,3 +137,108 @@ def test_generate_all_artifacts_from_runs_writes_expected_files(tmp_path: Path) 
     assert (output_dir / "structural_metrics.png").exists()
     assert (output_dir / "performance_metrics.png").exists()
     assert (output_dir / "robustness_table.tex").exists()
+
+
+def _write_metrics_with_enrichment(
+    run_dir: Path,
+    *,
+    run_id: str,
+    model_name: str,
+    dataset_key: str,
+) -> None:
+    """Write a metrics.json that includes family_metadata and distances (Phase C+D)."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "metadata": {
+            "run_id": run_id,
+            "run_name": run_id,
+            "model_name": model_name,
+            "output_dir": str(run_dir),
+        },
+        "family_metadata": {
+            dataset_key: {
+                "n_nodes": 20,
+                "graph_type": "er",
+                "mech_type": "linear",
+                "sparsity_param": 0.0526,
+            }
+        },
+        "distances": {
+            dataset_key: {
+                "spectral": 0.42,
+                "kl_degree": 1.73,
+            }
+        },
+        "summary": {
+            dataset_key: {
+                "e-shd_mean": 15.0,
+                "e-shd_sem": 1.5,
+                "e-shd_std": 3.0,
+            }
+        },
+        "raw": {dataset_key: {"e-shd": [15.0]}},
+    }
+    (run_dir / "metrics.json").write_text(json.dumps(payload, indent=2))
+
+
+def test_load_runs_dataframe_includes_family_metadata_columns(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "run_enriched"
+    _write_metrics_with_enrichment(
+        run_dir,
+        run_id="run_enriched",
+        model_name="avici",
+        dataset_key="id_linear_er20",
+    )
+
+    df = load_runs_dataframe([run_dir])
+    assert not df.empty
+
+    row = df.iloc[0]
+    assert row["GraphType"] == "er"
+    assert row["MechType"] == "linear"
+    assert row["NNodes"] == 20
+    assert float(row["SparsityParam"]) == 0.0526
+
+
+def test_load_runs_dataframe_includes_distance_columns(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "run_dist"
+    _write_metrics_with_enrichment(
+        run_dir,
+        run_id="run_dist",
+        model_name="bcnp",
+        dataset_key="id_linear_er20",
+    )
+
+    df = load_runs_dataframe([run_dir])
+    assert not df.empty
+
+    row = df.iloc[0]
+    assert float(row["SpectralDist"]) == 0.42
+    assert float(row["KLDegreeDist"]) == 1.73
+
+
+def test_load_runs_dataframe_handles_missing_enrichment(tmp_path: Path) -> None:
+    """Older metrics.json without family_metadata/distances still loads cleanly."""
+    run_dir = tmp_path / "runs" / "run_legacy"
+    _write_metrics(
+        run_dir,
+        run_id="run_legacy",
+        run_name="legacy",
+        model_name="dibs",
+        dataset_key="ood_periodic",
+        mean_offset=0.0,
+    )
+
+    df = load_runs_dataframe([run_dir])
+    assert not df.empty
+
+    row = df.iloc[0]
+    # Columns should exist but have empty/NaN defaults
+    assert row["GraphType"] == ""
+    assert row["MechType"] == ""
+    assert row["NNodes"] is None
+    assert row["SparsityParam"] is None
+    import math
+
+    assert math.isnan(float(row["SpectralDist"]))
+    assert math.isnan(float(row["KLDegreeDist"]))

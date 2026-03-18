@@ -11,8 +11,10 @@ import torch.nn as nn
 from omegaconf import DictConfig
 
 from causal_meta.datasets.data_module import CausalMetaModule
+from causal_meta.datasets.generators.configs import FamilyConfig
 from causal_meta.datasets.torch_datasets import MetaFixedDataset
 from causal_meta.datasets.utils.normalization import normalize_scm_data
+from causal_meta.datasets.utils.stats import compute_family_distance
 from causal_meta.models.base import BaseModel
 from causal_meta.runners.logger.base import BaseLogger
 from causal_meta.runners.metrics.graph import Metrics
@@ -52,6 +54,109 @@ def _sampling_mode(model: BaseModel) -> str:
     return "external" if external_python else "in_process"
 
 
+def _extract_graph_type(family_cfg: FamilyConfig) -> str:
+    """Infer the graph type string from a FamilyConfig's graph_cfg."""
+    graph_cfg = family_cfg.graph_cfg
+    type_attr = getattr(graph_cfg, "type", None)
+    if type_attr is not None:
+        return str(type_attr)
+    # Fall back to class name heuristic
+    cls_name = type(graph_cfg).__name__.lower()
+    for tag in ("er", "scalefree", "sf", "sbm", "mixture"):
+        if tag in cls_name:
+            # Normalize "scalefree" to "sf"
+            return "sf" if tag == "scalefree" else tag
+    return "unknown"
+
+
+def _extract_mech_type(family_cfg: FamilyConfig) -> str:
+    """Infer the mechanism type string from a FamilyConfig's mech_cfg."""
+    mech_cfg = family_cfg.mech_cfg
+    type_attr = getattr(mech_cfg, "type", None)
+    if type_attr is not None:
+        return str(type_attr)
+    cls_name = type(mech_cfg).__name__.lower()
+    for tag in (
+        "linear",
+        "mlp",
+        "gp",
+        "periodic",
+        "square",
+        "logistic",
+        "pnl",
+        "mixture",
+    ):
+        if tag in cls_name:
+            return tag
+    return "unknown"
+
+
+def _extract_sparsity_param(family_cfg: FamilyConfig) -> float | None:
+    """Extract the sparsity-related parameter from a graph config, if available."""
+    graph_cfg = family_cfg.graph_cfg
+    # ER: sparsity or edge_prob
+    sparsity = getattr(graph_cfg, "sparsity", None)
+    if sparsity is not None:
+        return float(sparsity)
+    edge_prob = getattr(graph_cfg, "edge_prob", None)
+    if edge_prob is not None:
+        return float(edge_prob)
+    # SF: attachment parameter m
+    m = getattr(graph_cfg, "m", None)
+    if m is not None:
+        return float(m)
+    return None
+
+
+def _build_family_metadata(
+    test_family_cfgs: dict[str, FamilyConfig],
+) -> dict[str, dict[str, Any]]:
+    """Build a dataset_key -> {n_nodes, graph_type, mech_type, sparsity_param} map."""
+    result: dict[str, dict[str, Any]] = {}
+    for name, fcfg in test_family_cfgs.items():
+        entry: dict[str, Any] = {
+            "n_nodes": fcfg.n_nodes,
+            "graph_type": _extract_graph_type(fcfg),
+            "mech_type": _extract_mech_type(fcfg),
+        }
+        sp = _extract_sparsity_param(fcfg)
+        if sp is not None:
+            entry["sparsity_param"] = sp
+        result[name] = entry
+    return result
+
+
+def _compute_distances(
+    data_module: CausalMetaModule,
+) -> dict[str, dict[str, float]]:
+    """Compute spectral and KL degree-distribution distances for each test family.
+
+    Returns a mapping ``dataset_key -> {"spectral": float, "kl_degree": float}``.
+    Falls back gracefully if the train family is unavailable.
+    """
+    distances: dict[str, dict[str, float]] = {}
+    train_family = getattr(data_module, "train_family", None)
+    if train_family is None:
+        return distances
+
+    # Use pre-computed spectral distances from setup() if available
+    spectral = getattr(data_module, "spectral_distances", None) or {}
+
+    test_families = getattr(data_module, "test_families", None) or {}
+    for name, test_family in test_families.items():
+        entry: dict[str, float] = {}
+        entry["spectral"] = spectral.get(name, 0.0)
+        try:
+            entry["kl_degree"] = compute_family_distance(
+                train_family, test_family, metric="kl", n_samples=25
+            )
+        except Exception:
+            entry["kl_degree"] = 0.0
+        distances[name] = entry
+
+    return distances
+
+
 def run(
     cfg: DictConfig,
     model: nn.Module,
@@ -75,6 +180,12 @@ def run(
     # Data
     test_loaders = data_module.test_dataloader()
 
+    # Pre-compute family metadata and distributional distances (Phase C + D)
+    dm_config = getattr(data_module, "config", None)
+    test_family_cfgs = getattr(dm_config, "test_families", None) or {}
+    family_metadata = _build_family_metadata(test_family_cfgs)
+    family_distances = _compute_distances(data_module)
+
     model.eval()
 
     # Unwrap if DDP
@@ -89,17 +200,8 @@ def run(
     auc_balance_classes = bool(cfg.inference.get("auc_balance_classes", True))
     auc_seed = int(cfg.inference.get("auc_seed", 0))
 
-    # Initialize Metrics Handlers
+    # Initialize Metrics Handlers (default list includes all graph metrics)
     metrics_handler = Metrics(
-        metrics=[
-            "e-shd",
-            "e-edgef1",
-            "e-sid",
-            "graph_nll",
-            "edge_entropy",
-            "ancestor_f1",
-            "auc",
-        ],
         auc_num_shuffles=auc_num_shuffles,
         auc_balance_classes=auc_balance_classes,
         auc_seed=auc_seed,
@@ -322,6 +424,8 @@ def run(
             json.dump(
                 {
                     "metadata": metadata,
+                    "family_metadata": family_metadata,
+                    "distances": family_distances,
                     "summary": all_summary_metrics,
                     "raw": all_raw_metrics,
                 },
