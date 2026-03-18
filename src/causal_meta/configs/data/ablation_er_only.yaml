@@ -1,0 +1,378 @@
+# @package data
+
+defaults:
+  - _base
+  - _self_
+
+# ════════════════════════════════════════════════════════════════════════
+# Ablation: ER graphs only (no Scale-Free)
+#
+# Training distribution:
+#   Graphs : ER(20/40/60)                 → 3 generators
+#   Mechs  : Linear, MLP, GP             → 3 factories (same as full)
+#
+# Purpose: Measures how much graph-topology diversity contributes to OOD
+# robustness.  Without SF training data, we expect degradation on SF
+# test families and possibly on SBM (OOD graph) families, while ER
+# families should remain mostly unaffected.
+# ════════════════════════════════════════════════════════════════════════
+
+seeds_val: [1000, 1001, 1002, 1003, 1004]
+seeds_test:
+  [
+    2000,
+    2001,
+    2002,
+    2003,
+    2004,
+    2005,
+    2006,
+    2007,
+    2008,
+    2009,
+    2010,
+    2011,
+    2012,
+    2013,
+    2014,
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+  ]
+num_workers: 4
+pin_memory: true
+batch_size_train: 32
+
+train_family:
+  name: ablation_er_only_train
+
+  graph_cfg:
+    type: mixture
+    weights: [0.3334, 0.3333, 0.3333]
+    generators:
+      - type: er
+        sparsity: 0.0526
+      - type: er
+        sparsity: 0.1053
+      - type: er
+        sparsity: 0.1579
+
+  mech_cfg:
+    type: mixture
+    weights: [0.3333, 0.3333, 0.3334]
+    factories:
+      - type: linear
+        weight_scale: 10.0
+        noise_concentration: 2.0
+        noise_rate: 2.0
+      - type: mlp
+        hidden_dim: 32
+      - type: gp
+        mode: approximate
+        rff_dim: 512
+        num_kernels: 4
+        length_scale_range: [0.1, 10.0]
+        variance_range: [0.1, 10.0]
+
+# ════════════════════════════════════════════════════════════════════════
+# Test families — identical to full.yaml (27 families)
+# ════════════════════════════════════════════════════════════════════════
+test_families:
+  # ── ID: ER × {Linear, MLP, GP} (9 families) ─────────────────────────
+  id_linear_er20:
+    name: id_linear_er20
+    graph_cfg:
+      type: er
+      sparsity: 0.0526
+    mech_cfg:
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+
+  id_linear_er40:
+    name: id_linear_er40
+    graph_cfg:
+      type: er
+      sparsity: 0.1053
+    mech_cfg:
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+
+  id_linear_er60:
+    name: id_linear_er60
+    graph_cfg:
+      type: er
+      sparsity: 0.1579
+    mech_cfg:
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+
+  id_neuralnet_er20:
+    name: id_neuralnet_er20
+    graph_cfg:
+      type: er
+      sparsity: 0.0526
+    mech_cfg:
+      type: mlp
+      hidden_dim: 32
+
+  id_neuralnet_er40:
+    name: id_neuralnet_er40
+    graph_cfg:
+      type: er
+      sparsity: 0.1053
+    mech_cfg:
+      type: mlp
+      hidden_dim: 32
+
+  id_neuralnet_er60:
+    name: id_neuralnet_er60
+    graph_cfg:
+      type: er
+      sparsity: 0.1579
+    mech_cfg:
+      type: mlp
+      hidden_dim: 32
+
+  id_gpcde_er20:
+    name: id_gpcde_er20
+    graph_cfg:
+      type: er
+      sparsity: 0.0526
+    mech_cfg:
+      type: gp
+      mode: approximate
+      rff_dim: 512
+      num_kernels: 4
+      length_scale_range: [0.1, 10.0]
+      variance_range: [0.1, 10.0]
+
+  id_gpcde_er40:
+    name: id_gpcde_er40
+    graph_cfg:
+      type: er
+      sparsity: 0.1053
+    mech_cfg:
+      type: gp
+      mode: approximate
+      rff_dim: 512
+      num_kernels: 4
+      length_scale_range: [0.1, 10.0]
+      variance_range: [0.1, 10.0]
+
+  id_gpcde_er60:
+    name: id_gpcde_er60
+    graph_cfg:
+      type: er
+      sparsity: 0.1579
+    mech_cfg:
+      type: gp
+      mode: approximate
+      rff_dim: 512
+      num_kernels: 4
+      length_scale_range: [0.1, 10.0]
+      variance_range: [0.1, 10.0]
+
+  # ── ID: SF × {Linear, MLP, GP} (9 families) ─────────────────────────
+  id_linear_sf1:
+    name: id_linear_sf1
+    graph_cfg:
+      type: sf
+      m: 1
+    mech_cfg:
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+
+  id_linear_sf2:
+    name: id_linear_sf2
+    graph_cfg:
+      type: sf
+      m: 2
+    mech_cfg:
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+
+  id_linear_sf3:
+    name: id_linear_sf3
+    graph_cfg:
+      type: sf
+      m: 3
+    mech_cfg:
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+
+  id_neuralnet_sf1:
+    name: id_neuralnet_sf1
+    graph_cfg:
+      type: sf
+      m: 1
+    mech_cfg:
+      type: mlp
+      hidden_dim: 32
+
+  id_neuralnet_sf2:
+    name: id_neuralnet_sf2
+    graph_cfg:
+      type: sf
+      m: 2
+    mech_cfg:
+      type: mlp
+      hidden_dim: 32
+
+  id_neuralnet_sf3:
+    name: id_neuralnet_sf3
+    graph_cfg:
+      type: sf
+      m: 3
+    mech_cfg:
+      type: mlp
+      hidden_dim: 32
+
+  id_gpcde_sf1:
+    name: id_gpcde_sf1
+    graph_cfg:
+      type: sf
+      m: 1
+    mech_cfg:
+      type: gp
+      mode: approximate
+      rff_dim: 512
+      num_kernels: 4
+      length_scale_range: [0.1, 10.0]
+      variance_range: [0.1, 10.0]
+
+  id_gpcde_sf2:
+    name: id_gpcde_sf2
+    graph_cfg:
+      type: sf
+      m: 2
+    mech_cfg:
+      type: gp
+      mode: approximate
+      rff_dim: 512
+      num_kernels: 4
+      length_scale_range: [0.1, 10.0]
+      variance_range: [0.1, 10.0]
+
+  id_gpcde_sf3:
+    name: id_gpcde_sf3
+    graph_cfg:
+      type: sf
+      m: 3
+    mech_cfg:
+      type: gp
+      mode: approximate
+      rff_dim: 512
+      num_kernels: 4
+      length_scale_range: [0.1, 10.0]
+      variance_range: [0.1, 10.0]
+
+  # ── OOD Graph Only: SBM × {Linear, MLP, GP} (3 families) ────────────
+  ood_graph_sbm_linear:
+    name: ood_graph_sbm_linear
+    graph_cfg:
+      type: sbm
+      n_blocks: 4
+      p_intra: 0.6
+      p_inter: 0.01
+    mech_cfg:
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+
+  ood_graph_sbm_neuralnet:
+    name: ood_graph_sbm_neuralnet
+    graph_cfg:
+      type: sbm
+      n_blocks: 4
+      p_intra: 0.6
+      p_inter: 0.01
+    mech_cfg:
+      type: mlp
+      hidden_dim: 32
+
+  ood_graph_sbm_gpcde:
+    name: ood_graph_sbm_gpcde
+    graph_cfg:
+      type: sbm
+      n_blocks: 4
+      p_intra: 0.6
+      p_inter: 0.01
+    mech_cfg:
+      type: gp
+      mode: approximate
+      rff_dim: 512
+      num_kernels: 4
+      length_scale_range: [0.1, 10.0]
+      variance_range: [0.1, 10.0]
+
+  # ── OOD Mechanism Only: ER40 × {Periodic, Square, LogisticMap, PNL} ─
+  ood_mech_periodic_er40:
+    name: ood_mech_periodic_er40
+    graph_cfg:
+      type: er
+      sparsity: 0.1053
+    mech_cfg:
+      type: periodic
+      weight_scale: 1.0
+
+  ood_mech_square_er40:
+    name: ood_mech_square_er40
+    graph_cfg:
+      type: er
+      sparsity: 0.1053
+    mech_cfg:
+      type: square
+      weight_scale: 1.0
+      noise_scale: 0.1
+
+  ood_mech_logistic_map_er40:
+    name: ood_mech_logistic_map_er40
+    graph_cfg:
+      type: er
+      sparsity: 0.1053
+    mech_cfg:
+      type: logistic_map
+      weight_scale: 1.0
+
+  ood_mech_pnl_tanh_er40:
+    name: ood_mech_pnl_tanh_er40
+    graph_cfg:
+      type: er
+      sparsity: 0.1053
+    mech_cfg:
+      type: pnl
+      nonlinearity_type: tanh
+      inner_config:
+        type: linear
+
+  # ── OOD Both: SBM × Periodic (1 family) ─────────────────────────────
+  ood_both_sbm_periodic:
+    name: ood_both_sbm_periodic
+    graph_cfg:
+      type: sbm
+      n_blocks: 4
+      p_intra: 0.6
+      p_inter: 0.01
+    mech_cfg:
+      type: periodic
+      weight_scale: 1.0
