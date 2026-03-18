@@ -492,6 +492,14 @@ class Metrics(BaseMetrics):
                 "edge_entropy",
                 "ancestor_f1",
                 "auc",
+                "fp_count",
+                "fn_count",
+                "reversed_count",
+                "correct_count",
+                "sparsity_ratio",
+                "skeleton_f1",
+                "orientation_accuracy",
+                "ece",
             ]
         )
         self.auc_num_shuffles = max(1, int(auc_num_shuffles))
@@ -545,6 +553,42 @@ class Metrics(BaseMetrics):
                 )
                 .mean()
                 .item()
+            )
+
+        # ── Edge confusion decomposition ───────────────────────────────
+        confusion_keys = {"fp_count", "fn_count", "reversed_count", "correct_count"}
+        if confusion_keys & set(self.metrics_list):
+            decomp = edge_confusion_decomposition(targets, samples)
+            for short, full in [
+                ("fp", "fp_count"),
+                ("fn", "fn_count"),
+                ("reversed", "reversed_count"),
+                ("correct", "correct_count"),
+            ]:
+                if full in self.metrics_list:
+                    batch_metrics[full] = float(decomp[short].mean().item())
+
+        # ── Sparsity ratio ─────────────────────────────────────────────
+        if "sparsity_ratio" in self.metrics_list:
+            batch_metrics["sparsity_ratio"] = float(
+                sparsity_ratio(targets, samples).mean().item()
+            )
+
+        # ── Skeleton / orientation split ───────────────────────────────
+        skel_keys = {"skeleton_f1", "orientation_accuracy"}
+        if skel_keys & set(self.metrics_list):
+            skel = skeleton_orientation_scores(targets, samples)
+            if "skeleton_f1" in self.metrics_list:
+                batch_metrics["skeleton_f1"] = float(skel["skeleton_f1"].mean().item())
+            if "orientation_accuracy" in self.metrics_list:
+                batch_metrics["orientation_accuracy"] = float(
+                    skel["orientation_accuracy"].mean().item()
+                )
+
+        # ── Expected Calibration Error ─────────────────────────────────
+        if "ece" in self.metrics_list:
+            batch_metrics["ece"] = float(
+                expected_calibration_error(targets, samples).item()
             )
 
         return batch_metrics
@@ -608,6 +652,235 @@ class Metrics(BaseMetrics):
 
         # Stateful mode: use memory-efficient distributed aggregation.
         return self.summarize_distributed(summary_stats=summary_stats, use_reduce=True)
+
+
+def edge_confusion_decomposition(
+    target: torch.Tensor, pred: torch.Tensor
+) -> dict[str, torch.Tensor]:
+    """Decompose directed-edge prediction errors into FP, FN, reversed, and correct.
+
+    For each posterior sample, edges are classified as:
+    - **correct**: ``target[i,j]=1`` and ``pred[i,j]=1``
+    - **reversed**: ``target[i,j]=1`` and ``pred[j,i]=1`` (but ``pred[i,j]=0``)
+    - **fn** (false negative): ``target[i,j]=1`` but neither ``pred[i,j]`` nor ``pred[j,i]``
+    - **fp** (false positive): ``pred[i,j]=1`` but ``target[i,j]=0`` (and not counted as reversed)
+
+    Counts are averaged over posterior samples, yielding per-graph expected counts.
+
+    Args:
+        target: (B, N, N) ground truth binary adjacency.
+        pred: (S, B, N, N) sampled binary adjacency.
+
+    Returns:
+        Dict with keys ``"fp"``, ``"fn"``, ``"reversed"``, ``"correct"``, each
+        a tensor of shape ``(B,)`` with expected counts per graph.
+    """
+    if target.ndim != 3 or pred.ndim != 4:
+        raise ValueError("target must be 3D and pred must be 4D.")
+    if pred.shape[1:] != target.shape:
+        raise ValueError(
+            "pred shape must be (num_samples, batch, N, N) matching target."
+        )
+
+    # Expand target: (1, B, N, N) for broadcasting against (S, B, N, N)
+    t = target.unsqueeze(0).float()  # (1, B, N, N)
+    p = pred.float()  # (S, B, N, N)
+
+    # Correct: true edge present in prediction with correct direction
+    correct = (t * p).sum(dim=(-1, -2))  # (S, B)
+
+    # Reversed: target[i,j]=1 and pred[j,i]=1 and pred[i,j]=0
+    p_transposed = p.transpose(-1, -2)  # (S, B, N, N)
+    reversed_edges = (t * p_transposed * (1 - p)).sum(dim=(-1, -2))  # (S, B)
+
+    # False negatives: target[i,j]=1 but pred[i,j]=0 and pred[j,i]=0
+    fn = (t * (1 - p) * (1 - p_transposed)).sum(dim=(-1, -2))  # (S, B)
+
+    # False positives: pred[i,j]=1 but target[i,j]=0, excluding reversed
+    # (reversed edges have target[j,i]=1 so target_transposed removes them)
+    t_transposed = target.unsqueeze(0).float().transpose(-1, -2)
+    fp = (p * (1 - t) * (1 - t_transposed)).sum(dim=(-1, -2))  # (S, B)
+
+    # Average over posterior samples → expected counts per graph
+    return {
+        "fp": fp.mean(dim=0),
+        "fn": fn.mean(dim=0),
+        "reversed": reversed_edges.mean(dim=0),
+        "correct": correct.mean(dim=0),
+    }
+
+
+def sparsity_ratio(
+    target: torch.Tensor, pred: torch.Tensor, eps: float = 1e-8
+) -> torch.Tensor:
+    """Ratio of predicted density to true density, averaged over posterior samples.
+
+    Values < 1 indicate under-prediction (sparse outputs), > 1 indicate
+    over-prediction (dense outputs).
+
+    Args:
+        target: (B, N, N) ground truth binary adjacency.
+        pred: (S, B, N, N) sampled binary adjacency.
+        eps: Small constant to avoid division by zero for empty true graphs.
+
+    Returns:
+        Tensor of shape ``(B,)`` with per-graph sparsity ratios.
+    """
+    if target.ndim != 3 or pred.ndim != 4:
+        raise ValueError("target must be 3D and pred must be 4D.")
+
+    n_nodes = target.shape[-1]
+    n_potential = n_nodes * (n_nodes - 1)  # off-diagonal entries
+
+    true_density = target.float().sum(dim=(-1, -2)) / max(n_potential, 1)  # (B,)
+    pred_density = pred.float().sum(dim=(-1, -2)) / max(n_potential, 1)  # (S, B)
+    pred_density_mean = pred_density.mean(dim=0)  # (B,)
+
+    return pred_density_mean / (true_density + eps)
+
+
+def skeleton_orientation_scores(
+    target: torch.Tensor, pred: torch.Tensor
+) -> dict[str, torch.Tensor]:
+    """Skeleton F1 and orientation accuracy for directed graphs.
+
+    The *skeleton* ignores edge direction: an edge exists between ``(i, j)`` if
+    ``adj[i,j]=1 OR adj[j,i]=1``.  Skeleton F1 measures how well the model
+    recovers the undirected structure.
+
+    *Orientation accuracy* is computed **only** over edges present in both the
+    true and predicted skeletons.  It measures the fraction of those skeleton
+    edges whose direction is correct.
+
+    Both are averaged over posterior samples.
+
+    Args:
+        target: (B, N, N) ground truth binary adjacency.
+        pred: (S, B, N, N) sampled binary adjacency.
+
+    Returns:
+        Dict with ``"skeleton_f1"`` (B,) and ``"orientation_accuracy"`` (B,).
+        Orientation accuracy is 1.0 when there are no common skeleton edges.
+    """
+    if target.ndim != 3 or pred.ndim != 4:
+        raise ValueError("target must be 3D and pred must be 4D.")
+    if pred.shape[1:] != target.shape:
+        raise ValueError(
+            "pred shape must be (num_samples, batch, N, N) matching target."
+        )
+
+    t = target.float()
+    # True skeleton: (B, N, N) — upper triangle only to avoid double counting
+    t_skel = torch.clamp(t + t.transpose(-1, -2), max=1.0)
+
+    # Extract upper triangle mask
+    idx = torch.triu_indices(t.shape[-2], t.shape[-1], offset=1, device=t.device)
+
+    # True skeleton upper-tri: (B, E)
+    t_skel_ut = t_skel[:, idx[0], idx[1]]  # (B, E)
+
+    num_samples = pred.shape[0]
+    skeleton_f1_accum = torch.zeros(target.shape[0], device=target.device)
+    orient_acc_accum = torch.zeros(target.shape[0], device=target.device)
+
+    for s in range(num_samples):
+        p = pred[s].float()  # (B, N, N)
+        p_skel = torch.clamp(p + p.transpose(-1, -2), max=1.0)
+        p_skel_ut = p_skel[:, idx[0], idx[1]]  # (B, E)
+
+        # Skeleton F1
+        tp = (p_skel_ut * t_skel_ut).sum(dim=-1)  # (B,)
+        fp = (p_skel_ut * (1 - t_skel_ut)).sum(dim=-1)
+        fn = ((1 - p_skel_ut) * t_skel_ut).sum(dim=-1)
+        denom = 2 * tp + fp + fn
+        f1 = torch.where(denom > 0, (2 * tp) / denom, torch.ones_like(denom))
+        skeleton_f1_accum += f1
+
+        # Orientation accuracy: among common skeleton edges, how many have
+        # correct direction?  For each upper-tri pair (i,j) in both skeletons,
+        # check whether the actual directed edge matches.
+        common = p_skel_ut * t_skel_ut  # (B, E) — 1 where both skeletons agree
+
+        # Direction match: for pair (i,j), direction is correct if
+        # target[i,j]==pred[i,j] AND target[j,i]==pred[j,i]
+        dir_match = (t[:, idx[0], idx[1]] == p[:, idx[0], idx[1]]).float() * (
+            t[:, idx[1], idx[0]] == p[:, idx[1], idx[0]]
+        ).float()  # (B, E)
+
+        correct_dir = (common * dir_match).sum(dim=-1)  # (B,)
+        total_common = common.sum(dim=-1)  # (B,)
+        orient_acc = torch.where(
+            total_common > 0,
+            correct_dir / total_common,
+            torch.ones_like(total_common),
+        )
+        orient_acc_accum += orient_acc
+
+    return {
+        "skeleton_f1": skeleton_f1_accum / num_samples,
+        "orientation_accuracy": orient_acc_accum / num_samples,
+    }
+
+
+def expected_calibration_error(
+    target: torch.Tensor,
+    pred: torch.Tensor,
+    n_bins: int = 10,
+) -> torch.Tensor:
+    """Expected Calibration Error (ECE) for edge-existence probabilities.
+
+    Edge probabilities are obtained as ``pred.float().mean(dim=0)`` (the
+    posterior mean over samples).  Probabilities are binned into ``n_bins``
+    equal-width bins over [0, 1].  ECE is the weighted average of
+    ``|accuracy_bin - confidence_bin|`` across bins.
+
+    Args:
+        target: (B, N, N) ground truth binary adjacency.
+        pred: (S, B, N, N) sampled binary adjacency.
+        n_bins: Number of equal-width bins (default 10).
+
+    Returns:
+        Scalar tensor with the batch-averaged ECE.
+    """
+    if target.ndim != 3 or pred.ndim != 4:
+        raise ValueError("target must be 3D and pred must be 4D.")
+
+    # Mean edge probability from posterior samples: (B, N, N)
+    prob = pred.float().mean(dim=0)
+
+    # Flatten to (B, N*N)
+    prob_flat = prob.reshape(prob.shape[0], -1)
+    target_flat = target.float().reshape(target.shape[0], -1)
+
+    batch_size = prob_flat.shape[0]
+    ece_per_graph = torch.zeros(batch_size, device=target.device)
+
+    bin_boundaries = torch.linspace(0.0, 1.0, n_bins + 1, device=target.device)
+
+    for b in range(batch_size):
+        p = prob_flat[b]
+        y = target_flat[b]
+        total = p.numel()
+
+        ece = torch.tensor(0.0, device=target.device)
+        for i in range(n_bins):
+            lo, hi = bin_boundaries[i], bin_boundaries[i + 1]
+            if i == n_bins - 1:
+                in_bin = (p >= lo) & (p <= hi)
+            else:
+                in_bin = (p >= lo) & (p < hi)
+
+            n_in_bin = in_bin.sum().float()
+            if n_in_bin < 1:
+                continue
+
+            avg_confidence = p[in_bin].mean()
+            avg_accuracy = y[in_bin].mean()
+            ece += (n_in_bin / total) * torch.abs(avg_accuracy - avg_confidence)
+
+        ece_per_graph[b] = ece
+
+    return ece_per_graph.mean()
 
 
 def log_prob_graph_scores(
