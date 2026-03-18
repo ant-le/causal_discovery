@@ -309,10 +309,16 @@ def generate_all_artifacts_from_runs(
         EmptyAnalysisDataError: If selected runs contain no usable rows.
     """
     from causal_meta.analysis.plots.results import (
+        generate_calibration_scatter,
+        generate_density_stratified_figure,
+        generate_distance_degradation_scatter,
         generate_performance_figure,
         generate_structural_figure,
     )
-    from causal_meta.analysis.tables.results import generate_robustness_table
+    from causal_meta.analysis.tables.results import (
+        generate_distance_regression_table,
+        generate_robustness_table,
+    )
 
     df = load_runs_dataframe(run_dirs)
     if df.empty:
@@ -321,7 +327,15 @@ def generate_all_artifacts_from_runs(
     output_dir.mkdir(parents=True, exist_ok=True)
     log.info("Writing artifacts to %s", output_dir)
 
+    # Original figures
     generate_structural_figure(df, output_dir / "structural_metrics.png")
     generate_performance_figure(df, output_dir / "performance_metrics.png")
     generate_robustness_table(df, output_dir / "robustness_table.tex")
+
+    # Phase E additions
+    generate_calibration_scatter(df, output_dir / "calibration_scatter.png")
+    generate_distance_degradation_scatter(df, output_dir / "distance_degradation.png")
+    generate_density_stratified_figure(df, output_dir / "density_stratified.png")
+    generate_distance_regression_table(df, output_dir / "distance_regression.tex")
+
     return df
