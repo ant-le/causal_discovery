@@ -131,19 +131,20 @@ class DistributedContext:
         if "LOCAL_RANK" not in os.environ and "SLURM_LOCALID" in os.environ:
             os.environ["LOCAL_RANK"] = str(_infer_local_rank())
 
-        if int(os.environ.get("WORLD_SIZE", "1")) <= 1:
-            return cls.current()
-
+        rank_env_present = "LOCAL_RANK" in os.environ or "RANK" in os.environ
         missing = [
             k
             for k in ("RANK", "WORLD_SIZE", "MASTER_ADDR", "MASTER_PORT")
             if k not in os.environ
         ]
-        if missing:
+        if rank_env_present and missing:
             raise ValueError(
                 "Distributed run detected (LOCAL_RANK/RANK set) but missing required "
                 f"environment variables for env:// init: {missing}."
             )
+
+        if int(os.environ.get("WORLD_SIZE", "1")) <= 1:
+            return cls.current()
 
         backend = "nccl" if torch.cuda.is_available() else "gloo"
         local_rank = _infer_local_rank()

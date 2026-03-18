@@ -34,7 +34,7 @@ GPU-only default notes:
 
 ```bash
 uv run causal-meta --config-name default
-uv run causal-meta --multirun --config-name smoke_multimodel
+uv run causal-meta --config-name canary_multimodel model=avici
 ```
 
 ## 5. Cluster Runs (No Submitit)
@@ -94,7 +94,20 @@ export WANDB_MODE=offline
 Run outputs are under `experiments/runs/${name}/`:
 
 - `checkpoints/`
-- `results/`
-- `inference/<model_name>/`
+- `metrics.json`
+- `inference/`
 - `main.log`
 - `slurm_<jobid>.out`, `slurm_<jobid>.err`
+
+## 8. Analysis from Run IDs
+
+Generate tables/figures directly from selected run directories:
+
+```bash
+uv run python -m causal_meta.analysis.run_analysis experiments/runs \
+  --run-id canary_20260317_120000_avici \
+  --run-id canary_20260317_120000_bcnp
+```
+
+If no `--run-id`/`--run-dir` is provided, analysis discovers all `metrics.json`
+under the supplied runs root.

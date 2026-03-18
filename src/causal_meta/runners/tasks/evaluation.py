@@ -311,26 +311,23 @@ def run(
 
     # Save
     if rank == 0:
+        metadata = {
+            "run_id": output_dir.name,
+            "run_name": str(cfg.get("name", "")),
+            "model_name": str(model_name),
+            "output_dir": str(output_dir),
+        }
         model_results_path = output_dir / "metrics.json"
         with open(model_results_path, "w") as f:
             json.dump(
-                {"summary": all_summary_metrics, "raw": all_raw_metrics},
+                {
+                    "metadata": metadata,
+                    "summary": all_summary_metrics,
+                    "raw": all_raw_metrics,
+                },
                 f,
                 cls=NpEncoder,
                 indent=4,
             )
-
-        # Best-effort: keep an overview JSON at the run root.
-        try:
-            from causal_meta.runners.utils.artifacts import update_run_overview
-
-            run_root = output_dir.parent
-            update_run_overview(
-                run_root=run_root,
-                model_name=model_name,
-                summary=all_summary_metrics,
-            )
-        except Exception:
-            pass
 
         log.info(f"Metrics saved to {model_results_path}")

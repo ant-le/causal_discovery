@@ -5,30 +5,51 @@ from pathlib import Path
 
 from omegaconf import DictConfig
 
-from causal_meta.analysis.utils import EmptyOverviewError, generate_all_artifacts
+from causal_meta.analysis.utils import (
+    EmptyAnalysisDataError,
+    generate_all_artifacts_from_runs,
+    resolve_run_directories,
+    RunSelectionError,
+)
 
 log = logging.getLogger(__name__)
 
 
 def run(cfg: DictConfig, output_dir: Path) -> None:
-    target_str = cfg.get("analysis", {}).get("target_dir", None)
-    target_dir = Path(target_str) if target_str else output_dir
+    """Run post-hoc analysis for selected run IDs/directories.
 
-    overview_name = str(cfg.get("analysis", {}).get("overview_name", "overview.json"))
-    overview_path = target_dir / overview_name
-    graphics_dir = target_dir / "graphics"
+    Expected config keys under ``analysis``:
+      - ``runs_root``: root folder for run ID resolution/discovery.
+      - ``run_ids``: list of run IDs (directory names under ``runs_root``).
+      - ``run_dirs``: list of explicit run directories.
+      - ``output_dir``: where graphics/tables should be written.
+    """
+    analysis_cfg = cfg.get("analysis", {})
+    runs_root_raw = analysis_cfg.get("runs_root", None)
+    runs_root = Path(str(runs_root_raw)) if runs_root_raw else output_dir.parent
 
-    log.info(f"Running analysis on {target_dir}")
+    run_ids = [str(item) for item in analysis_cfg.get("run_ids", [])]
+    run_dirs = [Path(str(item)) for item in analysis_cfg.get("run_dirs", [])]
+
+    output_dir_raw = analysis_cfg.get("output_dir", None)
+    graphics_dir = (
+        Path(str(output_dir_raw)) if output_dir_raw else (runs_root / "graphics")
+    )
+
+    log.info("Running analysis from runs_root=%s", runs_root)
     try:
-        generate_all_artifacts(overview_path, graphics_dir)
-    except FileNotFoundError:
-        log.warning(
-            f"Missing {overview_name} at {overview_path}. "
-            "Generate overview.json for this multirun first, then rerun analysis."
+        selected_runs = resolve_run_directories(
+            runs_root=runs_root,
+            run_ids=run_ids,
+            run_dirs=run_dirs,
         )
+        log.info("Selected %d runs for analysis.", len(selected_runs))
+        generate_all_artifacts_from_runs(selected_runs, graphics_dir)
+    except (FileNotFoundError, RunSelectionError) as exc:
+        log.warning("Analysis input resolution failed: %s", exc)
         return
-    except EmptyOverviewError:
-        log.warning("DataFrame is empty after loading/aggregation.")
+    except EmptyAnalysisDataError:
+        log.warning("No rows available after loading selected run metrics.")
         return
 
-    log.info(f"Analysis artifacts saved to {graphics_dir}")
+    log.info("Analysis artifacts saved to %s", graphics_dir)

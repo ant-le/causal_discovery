@@ -2,17 +2,10 @@ from __future__ import annotations
 
 import gzip
 import io
-import json
 import logging
 import os
-import time
 from pathlib import Path
 from typing import Any, Mapping
-
-try:  # pragma: no cover - platform dependent
-    import fcntl
-except Exception:  # pragma: no cover
-    fcntl = None  # type: ignore[assignment]
 
 import torch
 from hydra.core.hydra_config import HydraConfig
@@ -186,100 +179,3 @@ def find_inference_artifact(
     if fallback.exists():
         return fallback
     return None
-
-
-def update_run_overview(
-    *,
-    run_root: Path,
-    model_name: str,
-    summary: Mapping[str, Any],
-    max_retries: int = 5,
-    base_delay: float = 0.1,
-) -> None:
-    """Update <run_root>/overview.json with this model's summary.
-
-    Uses a file lock on POSIX when available with exponential backoff retry
-    to handle NFS race conditions during concurrent distributed evaluations.
-
-    Args:
-        run_root: Root directory for the run artifacts.
-        model_name: Model identifier to use as the key in overview.json.
-        summary: Dictionary of summary metrics to store.
-        max_retries: Maximum number of retry attempts for lock acquisition.
-        base_delay: Initial delay in seconds for exponential backoff.
-    """
-
-    run_root.mkdir(parents=True, exist_ok=True)
-    lock_path = run_root / "overview.lock"
-    out_path = run_root / "overview.json"
-
-    def _load() -> dict[str, Any]:
-        if not out_path.exists():
-            return {}
-        try:
-            return json.loads(out_path.read_text())
-        except json.JSONDecodeError as e:
-            log.warning(
-                "Failed to parse overview.json (may be corrupted): %s. Starting fresh.",
-                e,
-            )
-            return {}
-        except Exception as e:
-            log.warning("Failed to read overview.json: %s. Starting fresh.", e)
-            return {}
-
-    def _write(payload: dict[str, Any]) -> None:
-        tmp = run_root / f".overview.json.tmp.{os.getpid()}"
-        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True))
-        os.replace(tmp, out_path)
-
-    def _try_with_lock() -> bool:
-        """Attempt to acquire lock and perform update. Returns True on success."""
-        with open(lock_path, "a+") as lock_f:
-            if fcntl is not None:
-                try:
-                    # Use non-blocking lock first to detect contention
-                    fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except BlockingIOError:
-                    # Lock held by another process - signal retry
-                    return False
-                except OSError as e:
-                    # NFS or other filesystem issue
-                    log.warning(
-                        "File lock failed (NFS issue?): %s. Proceeding without lock.", e
-                    )
-
-            payload = _load()
-            payload[str(model_name)] = dict(summary)
-            _write(payload)
-            return True
-
-    # Exponential backoff retry loop
-    for attempt in range(max_retries):
-        try:
-            if _try_with_lock():
-                return
-        except Exception as e:
-            log.warning(
-                "overview.json update attempt %d/%d failed: %s",
-                attempt + 1,
-                max_retries,
-                e,
-            )
-
-        # Exponential backoff with jitter
-        delay = base_delay * (2**attempt) + (os.getpid() % 100) / 1000
-        time.sleep(delay)
-
-    # Final attempt without retry
-    log.warning(
-        "Failed to acquire lock after %d attempts. "
-        "Proceeding with unprotected write (risk of corruption).",
-        max_retries,
-    )
-    try:
-        payload = _load()
-        payload[str(model_name)] = dict(summary)
-        _write(payload)
-    except Exception as e:
-        log.error("Final overview.json update failed: %s", e)
