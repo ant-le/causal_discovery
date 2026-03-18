@@ -292,6 +292,112 @@ def load_runs_dataframe(
     return pd.DataFrame(rows)
 
 
+def load_raw_task_dataframe(
+    run_dirs: Sequence[Path],
+    metrics: Sequence[str] | None = None,
+    *,
+    translate_names: bool = True,
+) -> pd.DataFrame:
+    """Load per-task raw metric values into a long-format DataFrame.
+
+    Unlike :func:`load_runs_task_dataframe`, this reads the ``"raw"`` block from
+    each ``metrics.json`` and returns **one row per (run, dataset, task, metric)**.
+
+    Args:
+        run_dirs: Run directories containing ``metrics.json``.
+        metrics: If given, only load these metric keys.  ``None`` loads all.
+        translate_names: Whether to map model/dataset keys to display names.
+
+    Returns:
+        DataFrame with columns ``RunID``, ``Model``, ``ModelKey``, ``DatasetKey``,
+        ``Dataset``, ``TaskIdx``, ``Metric``, ``Value``, plus enrichment columns
+        ``GraphType``, ``MechType``, ``NNodes``, ``SparsityParam``,
+        ``SpectralDist``, ``KLDegreeDist``.
+    """
+    rows: list[dict[str, object]] = []
+
+    for run_dir in run_dirs:
+        metrics_path = Path(run_dir) / "metrics.json"
+        with open(metrics_path, "r") as f:
+            payload = json.load(f)
+
+        if not isinstance(payload, Mapping):
+            continue
+
+        metadata = _as_mapping(payload.get("metadata"))
+        run_id = str(metadata.get("run_id", Path(run_dir).name))
+
+        model_key_raw = metadata.get("model_name")
+        model_key = (
+            str(model_key_raw)
+            if model_key_raw is not None and str(model_key_raw).strip()
+            else _infer_model_key(run_id)
+        )
+        model_name = map_model_name(model_key) if translate_names else model_key
+
+        raw = _as_mapping(payload.get("raw"))
+        fam_meta = _as_mapping(payload.get("family_metadata"))
+        distances = _as_mapping(payload.get("distances"))
+
+        for dataset_key, raw_metrics_any in raw.items():
+            dataset_key_str = str(dataset_key)
+            raw_metrics = _as_mapping(raw_metrics_any)
+            if not raw_metrics:
+                continue
+
+            dataset_name = (
+                map_dataset_description(dataset_key_str)
+                if translate_names
+                else dataset_key_str
+            )
+
+            # Enrichment (Phase C/D)
+            ds_fam = _as_mapping(fam_meta.get(dataset_key_str))
+            graph_type = str(ds_fam.get("graph_type", "")) if ds_fam else ""
+            mech_type = str(ds_fam.get("mech_type", "")) if ds_fam else ""
+            n_nodes = ds_fam.get("n_nodes")
+            sparsity_param = ds_fam.get("sparsity_param")
+
+            ds_dist = _as_mapping(distances.get(dataset_key_str))
+            spectral_dist = _to_float(ds_dist.get("spectral"), float("nan"))
+            kl_degree_dist = _to_float(ds_dist.get("kl_degree"), float("nan"))
+
+            for metric_name, values_any in raw_metrics.items():
+                if metrics is not None and metric_name not in metrics:
+                    continue
+                if not isinstance(values_any, list):
+                    continue
+                # Skip prefixed duplicates (e.g. "dataset_key/metric")
+                if "/" in metric_name:
+                    continue
+
+                for task_idx, val in enumerate(values_any):
+                    rows.append(
+                        {
+                            "RunID": run_id,
+                            "Model": model_name,
+                            "ModelKey": model_key,
+                            "DatasetKey": dataset_key_str,
+                            "Dataset": dataset_name,
+                            "TaskIdx": task_idx,
+                            "Metric": metric_name,
+                            "Value": _to_float(val, float("nan")),
+                            "GraphType": graph_type,
+                            "MechType": mech_type,
+                            "NNodes": (int(n_nodes) if n_nodes is not None else None),
+                            "SparsityParam": (
+                                float(sparsity_param)
+                                if sparsity_param is not None
+                                else None
+                            ),
+                            "SpectralDist": spectral_dist,
+                            "KLDegreeDist": kl_degree_dist,
+                        }
+                    )
+
+    return pd.DataFrame(rows)
+
+
 def generate_all_artifacts_from_runs(
     run_dirs: Sequence[Path],
     output_dir: Path,
@@ -312,12 +418,24 @@ def generate_all_artifacts_from_runs(
         generate_calibration_scatter,
         generate_density_stratified_figure,
         generate_distance_degradation_scatter,
+        generate_entropy_histogram,
+        generate_failure_mode_bar,
         generate_performance_figure,
+        generate_selective_prediction_pareto,
         generate_structural_figure,
     )
     from causal_meta.analysis.tables.results import (
         generate_distance_regression_table,
         generate_robustness_table,
+    )
+    from causal_meta.analysis.failure_modes import (
+        classify_failure_modes,
+        failure_mode_fractions,
+    )
+    from causal_meta.analysis.ood_detection import (
+        compute_ood_detection_metrics,
+        compute_selective_prediction,
+        generate_ood_detection_table,
     )
 
     df = load_runs_dataframe(run_dirs)
@@ -337,5 +455,40 @@ def generate_all_artifacts_from_runs(
     generate_distance_degradation_scatter(df, output_dir / "distance_degradation.png")
     generate_density_stratified_figure(df, output_dir / "density_stratified.png")
     generate_distance_regression_table(df, output_dir / "distance_regression.tex")
+
+    # Phase F: Failure mode analysis (needs raw per-task data)
+    raw_df = load_raw_task_dataframe(
+        run_dirs,
+        metrics=["sparsity_ratio", "skeleton_f1", "orientation_accuracy"],
+    )
+    if not raw_df.empty:
+        classified = classify_failure_modes(raw_df)
+        if not classified.empty:
+            fractions = failure_mode_fractions(classified)
+            generate_failure_mode_bar(fractions, output_dir / "failure_modes.png")
+
+    # Phase G: OOD detection analysis (needs raw per-task data)
+    ood_raw_df = load_raw_task_dataframe(
+        run_dirs,
+        metrics=["edge_entropy", "graph_nll", "e-shd"],
+    )
+    if not ood_raw_df.empty:
+        # Entropy histogram (E.3a)
+        generate_entropy_histogram(ood_raw_df, output_dir / "entropy_histogram.png")
+
+        # OOD detection AUROC/AUPRC table
+        for score in ("edge_entropy", "graph_nll"):
+            detection_df = compute_ood_detection_metrics(ood_raw_df, score_metric=score)
+            if not detection_df.empty:
+                generate_ood_detection_table(
+                    detection_df,
+                    output_dir / f"ood_detection_{score}.tex",
+                )
+
+        # Selective prediction Pareto curve (E.3b)
+        pareto_df = compute_selective_prediction(ood_raw_df)
+        generate_selective_prediction_pareto(
+            pareto_df, output_dir / "selective_prediction.png"
+        )
 
     return df

@@ -400,3 +400,266 @@ def generate_density_stratified_figure(df: pd.DataFrame, output_path: Path) -> N
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     log.info("Saved density-stratified figure to %s", output_path)
+
+
+# ── E.1  Failure mode stacked bar chart (S1) ───────────────────────────
+
+
+def generate_failure_mode_bar(
+    fractions_df: pd.DataFrame,
+    output_path: Path,
+) -> None:
+    """Grouped stacked bar chart: x = OOD condition, colour = failure mode.
+
+    Args:
+        fractions_df: Output of
+            :func:`~causal_meta.analysis.failure_modes.failure_mode_fractions`
+            with columns ``Model``, ``DatasetKey``, and one column per failure
+            mode category (values in [0, 1]).
+        output_path: Where to save the figure.
+    """
+    from causal_meta.analysis.failure_modes import (
+        FAILURE_MODE_CATEGORIES,
+        FAILURE_MODE_COLORS,
+        ood_category,
+    )
+
+    if fractions_df.empty:
+        log.warning("Empty fractions DataFrame; skipping failure-mode bar chart.")
+        return
+
+    if "DatasetKey" not in fractions_df.columns or "Model" not in fractions_df.columns:
+        log.warning("Missing DatasetKey/Model columns; skipping failure-mode bar.")
+        return
+
+    # Ensure all category columns exist
+    for cat in FAILURE_MODE_CATEGORIES:
+        if cat not in fractions_df.columns:
+            fractions_df[cat] = 0.0
+
+    fractions_df = fractions_df.copy()
+    fractions_df["OODCategory"] = fractions_df["DatasetKey"].apply(ood_category)
+
+    # Aggregate: mean fractions over datasets in the same OOD category per model
+    agg_cols = FAILURE_MODE_CATEGORIES
+    grouped = (
+        fractions_df.groupby(["Model", "OODCategory"])[agg_cols].mean().reset_index()
+    )
+
+    models = sorted(grouped["Model"].unique())
+    categories = sorted(grouped["OODCategory"].unique())
+    n_models = len(models)
+    n_categories = len(categories)
+
+    if n_models == 0 or n_categories == 0:
+        log.warning("No data for failure-mode bar chart; skipping.")
+        return
+
+    fig, ax = plt.subplots(figsize=(max(8, 2.5 * n_categories * n_models), 6))
+
+    bar_width = 0.8 / n_models
+    x_base = np.arange(n_categories)
+
+    for model_idx, model in enumerate(models):
+        mdf = grouped[grouped["Model"] == model].set_index("OODCategory")
+        # Reindex to ensure all categories are present
+        mdf = mdf.reindex(categories).fillna(0.0)
+
+        bottoms = np.zeros(n_categories)
+        x_pos = x_base + model_idx * bar_width
+
+        for cat in FAILURE_MODE_CATEGORIES:
+            heights = mdf[cat].to_numpy(dtype=float)
+            ax.bar(
+                x_pos,
+                heights,
+                bar_width,
+                bottom=bottoms,
+                label=f"{model} - {cat}" if model_idx == 0 else cat,
+                color=FAILURE_MODE_COLORS.get(cat, "#999999"),
+                edgecolor="white",
+                linewidth=0.5,
+            )
+            bottoms += heights
+
+    # X-axis: category labels centered under group
+    ax.set_xticks(x_base + bar_width * (n_models - 1) / 2)
+    ax.set_xticklabels(categories, fontsize=11)
+    ax.set_ylabel("Fraction of Test Tasks", fontsize=12)
+    ax.set_title(
+        "Failure Mode Distribution by OOD Condition", fontsize=14, fontweight="bold"
+    )
+    ax.set_ylim(0, 1.05)
+    ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+
+    # Build legend: model patches (gray tones) + failure-mode patches (colors)
+    from matplotlib.patches import Patch
+
+    legend_handles = []
+    # Failure mode colors
+    for cat in FAILURE_MODE_CATEGORIES:
+        legend_handles.append(
+            Patch(facecolor=FAILURE_MODE_COLORS.get(cat, "#999"), label=cat)
+        )
+    # Model labels as text annotations in the bar groups
+    if n_models > 1:
+        for i, model in enumerate(models):
+            legend_handles.append(
+                Patch(
+                    facecolor="white",
+                    edgecolor="black",
+                    label=f"Group {i + 1}: {model}",
+                )
+            )
+
+    ax.legend(
+        handles=legend_handles,
+        loc="upper right",
+        fontsize=9,
+        framealpha=0.9,
+    )
+
+    plt.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    log.info("Saved failure-mode bar chart to %s", output_path)
+
+
+# ── E.3a  Entropy histogram: ID vs OOD (S4) ────────────────────────────
+
+
+def generate_entropy_histogram(
+    raw_df: pd.DataFrame,
+    output_path: Path,
+    score_metric: str = "edge_entropy",
+) -> None:
+    """Overlaid histograms of per-task entropy for ID vs OOD tasks, per model.
+
+    Args:
+        raw_df: Long-format per-task DataFrame from ``load_raw_task_dataframe``.
+        output_path: Where to save the figure.
+        score_metric: The uncertainty metric to histogram.
+    """
+    if raw_df.empty or "Metric" not in raw_df.columns:
+        log.warning("Empty raw DataFrame; skipping entropy histogram.")
+        return
+
+    score_rows = raw_df[raw_df["Metric"] == score_metric].copy()
+    if score_rows.empty:
+        log.warning("No '%s' data for histogram; skipping.", score_metric)
+        return
+
+    if "DatasetKey" not in score_rows.columns:
+        return
+
+    score_rows["is_ood"] = score_rows["DatasetKey"].apply(
+        lambda dk: (
+            "OOD"
+            if not (dk.lower().startswith("id_") or dk.lower() == "id_test")
+            else "ID"
+        )
+    )
+
+    models = sorted(score_rows["Model"].unique())
+    n_models = len(models)
+    if n_models == 0:
+        return
+
+    fig, axes = plt.subplots(1, n_models, figsize=(5 * n_models, 4), squeeze=False)
+    axes_flat = list(axes.flatten())
+
+    for idx, model in enumerate(models):
+        ax = axes_flat[idx]
+        mdf = score_rows[score_rows["Model"] == model]
+
+        id_vals = mdf[mdf["is_ood"] == "ID"]["Value"].dropna().to_numpy(dtype=float)
+        ood_vals = mdf[mdf["is_ood"] == "OOD"]["Value"].dropna().to_numpy(dtype=float)
+
+        bins = 30
+        if len(id_vals) > 0:
+            ax.hist(
+                id_vals, bins=bins, alpha=0.6, label="ID", color="#2ca02c", density=True
+            )
+        if len(ood_vals) > 0:
+            ax.hist(
+                ood_vals,
+                bins=bins,
+                alpha=0.6,
+                label="OOD",
+                color="#d62728",
+                density=True,
+            )
+
+        ax.set_xlabel(score_metric.replace("_", " ").title(), fontsize=11)
+        ax.set_ylabel("Density", fontsize=11)
+        ax.set_title(model, fontsize=13, fontweight="bold")
+        ax.legend(fontsize=10)
+        ax.grid(True, linestyle="--", alpha=0.3)
+
+    fig.suptitle(
+        f"Per-Task {score_metric.replace('_', ' ').title()} Distribution: ID vs OOD",
+        fontsize=14,
+        fontweight="bold",
+        y=1.02,
+    )
+    plt.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    log.info("Saved entropy histogram to %s", output_path)
+
+
+# ── E.3b  Selective prediction Pareto curve (S4) ───────────────────────
+
+
+def generate_selective_prediction_pareto(
+    pareto_df: pd.DataFrame,
+    output_path: Path,
+) -> None:
+    """Plot accuracy vs coverage for each model under selective prediction.
+
+    Args:
+        pareto_df: Output of
+            :func:`~causal_meta.analysis.ood_detection.compute_selective_prediction`
+            with columns ``Model``, ``Coverage``, ``MeanAccuracy``.
+        output_path: Where to save the figure.
+    """
+    if pareto_df.empty:
+        log.warning("Empty Pareto DataFrame; skipping selective prediction plot.")
+        return
+
+    if "Coverage" not in pareto_df.columns or "MeanAccuracy" not in pareto_df.columns:
+        log.warning("Missing Coverage/MeanAccuracy columns; skipping Pareto plot.")
+        return
+
+    models = sorted(pareto_df["Model"].unique())
+    cmap = plt.get_cmap("tab10")
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    for i, model in enumerate(models):
+        mdf = pareto_df[pareto_df["Model"] == model].sort_values("Coverage")
+        ax.plot(
+            mdf["Coverage"],
+            mdf["MeanAccuracy"],
+            label=model,
+            color=cmap(i),
+            linewidth=2,
+            marker=".",
+            markersize=4,
+        )
+
+    ax.set_xlabel("Coverage (fraction of predictions accepted)", fontsize=12)
+    ax.set_ylabel("Mean E-SHD of accepted predictions ↓", fontsize=12)
+    ax.set_title(
+        "Selective Prediction: Accuracy vs Coverage",
+        fontsize=14,
+        fontweight="bold",
+    )
+    ax.set_xlim(0, 1.05)
+    ax.grid(True, linestyle="--", alpha=0.4)
+    ax.legend(title="Model", fontsize=10)
+
+    plt.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    log.info("Saved selective prediction Pareto to %s", output_path)
