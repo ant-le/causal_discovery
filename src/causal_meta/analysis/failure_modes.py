@@ -17,7 +17,6 @@ loaded via :func:`~causal_meta.analysis.utils.load_raw_task_dataframe`.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Sequence
 
 import pandas as pd
@@ -211,11 +210,19 @@ def failure_mode_fractions(
     return fractions.reset_index()
 
 
-def ood_category(dataset_key: str) -> str:
-    """Classify a dataset key as ID, OOD-Graph, OOD-Mech, or OOD-Both."""
+def ood_category(dataset_key: str, *, binary: bool = False) -> str:
+    """Classify a dataset key as ID, OOD-Graph, OOD-Mech, or OOD-Both.
+
+    Args:
+        dataset_key: The dataset key string to classify.
+        binary: If ``True``, return only ``"ID"`` or ``"OOD"``
+            (coarse classification for tables).
+    """
     dk = dataset_key.lower()
     if dk.startswith("id_") or dk == "id_test":
         return "ID"
+    if binary:
+        return "OOD"
     if "both" in dk:
         return "OOD-Both"
     if "graph" in dk or "sbm" in dk:

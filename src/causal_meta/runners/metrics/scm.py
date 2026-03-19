@@ -144,8 +144,7 @@ class SCMMetrics(BaseMetrics):
                     self.history[f"{prefix}/inil"].append(inil_score.item())
 
     def compute(self, summary_stats: bool = True) -> Dict[str, Any]:
-        # Use memory-efficient distributed aggregation via all_reduce.
-        return self.summarize_distributed(summary_stats=summary_stats, use_reduce=True)
+        return self.summarize_distributed(summary_stats=summary_stats)
 
     def get_raw_results(self) -> Dict[str, List[float]]:
         return super().get_raw_results()

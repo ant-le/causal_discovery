@@ -9,7 +9,7 @@ def test_metrics_integration() -> None:
     samples = torch.randint(0, 2, (10, 1, 5, 5)).float()
 
     metrics = Metrics(metrics=["e-shd", "e-edgef1"])
-    results = metrics.compute(probs, targets, samples=samples)
+    results = metrics.compute(targets, samples=samples)
 
     assert "e-shd" in results
     assert "e-edgef1" in results

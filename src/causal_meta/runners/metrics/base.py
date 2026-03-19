@@ -200,58 +200,27 @@ class BaseMetrics:
 
         return results
 
-    def summarize_distributed(
-        self, *, summary_stats: bool = True, use_reduce: bool = True
-    ) -> Dict[str, Any]:
+    def summarize_distributed(self, *, summary_stats: bool = True) -> Dict[str, Any]:
         """
         Summarize history with distributed aggregation.
 
+        Uses memory-efficient all_reduce to compute global stats without
+        gathering all raw data to a single rank.
+
         Args:
             summary_stats: If True, returns {metric}_mean/sem/std. Else returns mean only.
-            use_reduce: If True, uses memory-efficient all_reduce (recommended for large
-                datasets). If False, uses all_gather_object (legacy behavior, OOM risk).
 
         Returns:
             Dictionary of summarized metrics.
         """
-        if use_reduce:
-            # Memory-efficient: compute stats via all_reduce
-            reduced = self._reduce_history_stats()
-            results: Dict[str, Any] = {}
-            for k, stats in reduced.items():
-                if summary_stats:
-                    results[f"{k}_mean"] = stats["mean"]
-                    results[f"{k}_sem"] = stats["sem"]
-                    results[f"{k}_std"] = stats["std"]
-                else:
-                    results[k] = stats["mean"]
-            return results
-        else:
-            # Legacy: gather all raw data (OOM risk on large datasets)
-            full_history = self._gather_history()
-            return self._summarize_history(full_history, summary_stats=summary_stats)
-
-    @staticmethod
-    def _summarize_history(
-        history: Dict[str, List[float]], *, summary_stats: bool
-    ) -> Dict[str, Any]:
+        # Memory-efficient: compute stats via all_reduce
+        reduced = self._reduce_history_stats()
         results: Dict[str, Any] = {}
-        for k, v in history.items():
-            if not v:
-                continue
-            arr = np.asarray(v, dtype=float)
-            arr = arr[np.isfinite(arr)]
-            if arr.size == 0:
-                continue
-
+        for k, stats in reduced.items():
             if summary_stats:
-                results[f"{k}_mean"] = float(arr.mean())
-                if arr.size > 1:
-                    results[f"{k}_sem"] = float(arr.std(ddof=1) / np.sqrt(arr.size))
-                    results[f"{k}_std"] = float(arr.std(ddof=1))
-                else:
-                    results[f"{k}_sem"] = 0.0
-                    results[f"{k}_std"] = 0.0
+                results[f"{k}_mean"] = stats["mean"]
+                results[f"{k}_sem"] = stats["sem"]
+                results[f"{k}_std"] = stats["std"]
             else:
-                results[k] = float(arr.mean())
+                results[k] = stats["mean"]
         return results

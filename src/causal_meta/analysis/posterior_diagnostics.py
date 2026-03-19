@@ -18,8 +18,6 @@ optional secondary view derived from these posterior-native diagnostics.
 
 from __future__ import annotations
 
-import gzip
-import io
 import json
 import logging
 from pathlib import Path
@@ -29,18 +27,11 @@ import numpy as np
 import pandas as pd
 import torch
 
+from causal_meta.runners.utils.artifacts import torch_load as _torch_load
+
 log = logging.getLogger(__name__)
 
 # ── Artifact loading ───────────────────────────────────────────────────
-
-
-def _torch_load(path: Path) -> Any:
-    """Load a .pt or .pt.gz artifact from disk."""
-    if path.suffix == ".gz":
-        with gzip.open(path, "rb") as f:
-            buffer = io.BytesIO(f.read())
-            return torch.load(buffer, map_location="cpu", weights_only=False)
-    return torch.load(path, map_location="cpu", weights_only=False)
 
 
 def _discover_artifacts(run_dir: Path) -> list[tuple[str, Path]]:

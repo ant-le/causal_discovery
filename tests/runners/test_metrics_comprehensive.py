@@ -12,7 +12,7 @@ def test_metrics_handler_compute() -> None:
     target = torch.tensor([[[0, 1], [0, 0]]]).float()
     samples = torch.tensor([[[[0, 1], [0, 0]]], [[[0, 0], [0, 0]]]]).float()
 
-    results = metrics.compute(None, target, samples=samples)
+    results = metrics.compute(target, samples=samples)
     assert "e-shd" in results
     assert "e-edgef1" in results
     assert results["e-shd"] == 0.5

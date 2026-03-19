@@ -93,8 +93,8 @@ def torch_load(path: Path) -> Any:
     if path.suffix == ".gz":
         with gzip.open(path, "rb") as f:
             buffer = io.BytesIO(f.read())
-            return torch.load(buffer, map_location="cpu")
-    return torch.load(path, map_location="cpu")
+            return torch.load(buffer, map_location="cpu", weights_only=False)
+    return torch.load(path, map_location="cpu", weights_only=False)
 
 
 def resolve_output_dir(cfg: Any, output_dir: Path | str | None = None) -> Path:

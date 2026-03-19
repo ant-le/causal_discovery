@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any, Dict, Mapping
 
 from causal_meta.datasets.generators import configs
-from causal_meta.datasets.generators._protocols import Instantiable
 
 # Optional Hydra support
 try:

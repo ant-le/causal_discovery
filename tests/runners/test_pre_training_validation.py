@@ -47,5 +47,5 @@ def test_pre_training_validate_uses_validation_loader() -> None:
 
     metrics = validate(model, data_module, torch.device("cpu"))
     assert data_module.val_called is True
-    assert metrics["id/e-edgef1"] == 0.0
+    assert metrics["id/e-edgef1"] == 1.0  # empty prediction matches empty truth
     assert "mean_e-edgef1" in metrics

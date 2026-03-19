@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.axes import Axes
 
+from causal_meta.analysis.failure_modes import ood_category as _ood_category
 from causal_meta.analysis.plots.utils import draw_point_plot
 
 log = logging.getLogger(__name__)
@@ -116,7 +117,7 @@ def generate_performance_figure(df: pd.DataFrame, output_path: Path) -> None:
     plt.tight_layout()
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
-    print(f"Saved {output_path}")
+    log.info("Saved %s", output_path)
 
 
 # ── Helper: pivot long-format DF to wide per-dataset rows ──────────────
@@ -165,20 +166,6 @@ def _pivot_metrics(
     ).reset_index()
     pivoted.columns.name = None
     return pivoted
-
-
-def _ood_category(dataset_key: str) -> str:
-    """Classify a dataset key as ID, OOD-Graph, OOD-Mech, or OOD-Both."""
-    dk = dataset_key.lower()
-    if dk.startswith("id_") or dk == "id_test":
-        return "ID"
-    if "both" in dk:
-        return "OOD-Both"
-    if "graph" in dk or "sbm" in dk:
-        return "OOD-Graph"
-    if "mech" in dk or any(t in dk for t in ("periodic", "square", "logistic", "pnl")):
-        return "OOD-Mech"
-    return "OOD"
 
 
 # ── E.2  Entropy-vs-accuracy scatter (S2: Posterior Calibration) ────────

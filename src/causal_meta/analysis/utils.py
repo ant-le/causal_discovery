@@ -65,13 +65,6 @@ DATASET_DESCRIPTION_MAP: dict[str, str] = {
     "ood_mech_pnl_tanh_er40": "OOD-M PNL (tanh)",
     # ── OOD Both: SBM × Periodic ──────────────────────────────────────
     "ood_both_sbm_periodic": "OOD-Both SBM Periodic",
-    # ── Legacy smoke-test keys (backward compatibility) ────────────────
-    "id_test": "ID",
-    "ood_logistic_map": "Logistic Map",
-    "ood_periodic": "Periodic",
-    "ood_pnl_tanh": "Post-Nonlinear (tanh)",
-    "ood_square": "Square",
-    "ood_sbm_strong": "SBM (strong)",
 }
 
 

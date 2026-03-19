@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
+
+from causal_meta.analysis.failure_modes import ood_category as _ood_category
 
 log = logging.getLogger(__name__)
 
@@ -18,9 +19,9 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
     metrics = ["e-shd", "e-sid"]
     subset = df[df["Metric"].isin(metrics)].copy()
 
-    # Clean dataset names for LaTeX
-    subset["Dataset"] = subset["Dataset"].str.replace("_", r"\_")
-    subset["Model"] = subset["Model"].str.replace("_", r"\_")
+    if subset.empty:
+        log.warning("No e-shd/e-sid data for robustness table; skipping.")
+        return
 
     models = sorted(subset["Model"].unique())
     datasets = sorted(subset["Dataset"].unique())
@@ -86,7 +87,7 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
 
     # Data Rows
     for ds in datasets:
-        row_str = f"{ds}"
+        row_str = ds.replace("_", r"\_")
 
         # Collect values to find best (lowest) per metric per row
         shd_vals = []
@@ -102,7 +103,7 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
                     & (subset["Metric"] == "e-shd")
                 ]["Mean"].iloc[0]
                 shd_vals.append(val)
-            except:
+            except (IndexError, KeyError):
                 shd_vals.append(float("inf"))
 
             # SID
@@ -113,7 +114,7 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
                     & (subset["Metric"] == "e-sid")
                 ]["Mean"].iloc[0]
                 sid_vals.append(val)
-            except:
+            except (IndexError, KeyError):
                 sid_vals.append(float("inf"))
 
         min_shd = min(shd_vals)
@@ -134,11 +135,11 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
                     & (subset["Metric"] == "e-shd")
                 ]["SEM"].iloc[0]
 
-                cell = f"${mean:.1f} \pm {sem:.1f}$"
+                cell = rf"${mean:.1f} \pm {sem:.1f}$"
                 if abs(mean - min_shd) < 0.001:  # Best value
                     cell = r"\textbf{" + cell + "}"
                 row_str += f" & {cell}"
-            except:
+            except (IndexError, KeyError):
                 row_str += " & -"
 
         # SID Columns
@@ -155,11 +156,11 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
                     & (subset["Metric"] == "e-sid")
                 ]["SEM"].iloc[0]
 
-                cell = f"${mean:.1f} \pm {sem:.1f}$"
+                cell = rf"${mean:.1f} \pm {sem:.1f}$"
                 if abs(mean - min_sid) < 0.001:  # Best value
                     cell = r"\textbf{" + cell + "}"
                 row_str += f" & {cell}"
-            except:
+            except (IndexError, KeyError):
                 row_str += " & -"
 
         row_str += r" \\"
@@ -175,13 +176,6 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
 
 
 # ── E.5  Multi-distance regression table (S5) ──────────────────────────
-
-
-def _ood_category(dataset_key: str) -> str:
-    dk = dataset_key.lower()
-    if dk.startswith("id_") or dk == "id_test":
-        return "ID"
-    return "OOD"
 
 
 def generate_distance_regression_table(
@@ -214,7 +208,9 @@ def generate_distance_regression_table(
         log.warning("Missing enrichment columns for regression table; skipping.")
         return
 
-    sid_df["OODCategory"] = sid_df["DatasetKey"].apply(_ood_category)
+    sid_df["OODCategory"] = sid_df["DatasetKey"].apply(
+        lambda dk: _ood_category(dk, binary=True)
+    )
 
     # Compute per-model ID baseline
     id_means = (

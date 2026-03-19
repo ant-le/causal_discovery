@@ -123,9 +123,7 @@ def auc_graph_scores_configurable(
     )
 
 
-def expected_shd(
-    target: torch.Tensor, pred: torch.Tensor, check_acyclic: bool = False
-) -> torch.Tensor:
+def expected_shd(target: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
     """Expected SHD for a batch of predictions (Vectorized).
 
     Args:
@@ -134,7 +132,6 @@ def expected_shd(
     Returns:
         Tensor of shape (batch_size,)
     """
-    _ = check_acyclic
     if target.ndim != 3 or pred.ndim != 4:
         raise ValueError("target must be 3D and pred must be 4D.")
     if pred.shape[1:] != target.shape:
@@ -157,10 +154,12 @@ def expected_shd(
     return shd_per_sample.float().mean(dim=0)
 
 
-def expected_f1_score(
-    target: torch.Tensor, pred: torch.Tensor, check_acyclic: bool = False
-) -> torch.Tensor:
+def expected_f1_score(target: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
     """Expected F1 score for a batch of predictions (Vectorized).
+
+    When both prediction and target are empty (denom == 0), F1 = 1.0
+    (perfect agreement on "no edges"), consistent with ``ancestor_f1_score``
+    and ``skeleton_orientation_scores``.
 
     Args:
         target: (batch_size, num_nodes, num_nodes)
@@ -168,7 +167,6 @@ def expected_f1_score(
     Returns:
         Tensor of shape (batch_size,)
     """
-    _ = check_acyclic
     if target.ndim != 3 or pred.ndim != 4:
         raise ValueError("target must be 3D and pred must be 4D.")
     if pred.shape[1:] != target.shape:
@@ -187,7 +185,7 @@ def expected_f1_score(
     # F1 per sample: (S, B)
     denom = 2 * tp + fp + fn
     # Avoid division by zero
-    f1 = torch.where(denom > 0, (2 * tp) / denom, torch.zeros_like(denom))
+    f1 = torch.where(denom > 0, (2 * tp) / denom, torch.ones_like(denom))
 
     # Mean over samples -> (B,)
     return f1.mean(dim=0)
@@ -197,6 +195,10 @@ def _bernoulli_log_prob(
     targets: torch.Tensor, preds: torch.Tensor, eps: float = 1e-6
 ) -> torch.Tensor:
     """Per-graph Bernoulli log-probability of targets under mean(preds).
+
+    Uses the posterior mean ``preds.float().mean(dim=0)`` as the Bernoulli
+    parameter.  This is the Bayes-optimal probability estimate and is the
+    natural choice for evaluating log-probability calibration.
 
     Args:
         targets: (B, N, N) binary adjacency.
@@ -233,6 +235,11 @@ def graph_nll_score(
 
 def edge_entropy(preds: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     """Mean entropy of edge existence probabilities across the batch.
+
+    Edge probabilities are computed as the posterior mean
+    ``preds.float().mean(dim=0)``.  Entropy is defined over the
+    probability estimate itself, so using the posterior mean is correct
+    by definition (it is not a point-estimate approximation).
 
     Args:
         preds: (num_samples, batch_size, num_nodes, num_nodes)
@@ -623,7 +630,6 @@ class Metrics(BaseMetrics):
 
     def compute(
         self,
-        probs: Optional[torch.Tensor] = None,
         targets: Optional[torch.Tensor] = None,
         *,
         samples: Optional[torch.Tensor] = None,
@@ -635,23 +641,20 @@ class Metrics(BaseMetrics):
            - call `update(...)` repeatedly
            - call `compute(summary_stats=...)` to summarize accumulated history
         2) One-shot computation:
-           - call `compute(probs, targets, samples=...)` to compute batch metrics
+           - call `compute(targets, samples=...)` to compute batch metrics
 
         Args:
-            probs: Unused placeholder for compatibility with older call sites/tests.
             targets: (B, N, N) ground truth adjacency.
             samples: (S, B, N, N) sampled graphs.
             summary_stats: If True, returns `{metric}_mean/sem/std`. Else returns mean per metric key.
         """
-        _ = probs
-
         if targets is not None and samples is not None:
             # One-shot compute returns scalar metrics (not a history summary).
             # Callers can sync separately if desired.
             return self._compute_batch_metrics(targets, samples)
 
         # Stateful mode: use memory-efficient distributed aggregation.
-        return self.summarize_distributed(summary_stats=summary_stats, use_reduce=True)
+        return self.summarize_distributed(summary_stats=summary_stats)
 
 
 def edge_confusion_decomposition(
@@ -830,7 +833,9 @@ def expected_calibration_error(
     """Expected Calibration Error (ECE) for edge-existence probabilities.
 
     Edge probabilities are obtained as ``pred.float().mean(dim=0)`` (the
-    posterior mean over samples).  Probabilities are binned into ``n_bins``
+    posterior mean over samples).  The posterior mean is the natural
+    Bayes-optimal probability estimate, making it the correct input for
+    calibration evaluation.  Probabilities are binned into ``n_bins``
     equal-width bins over [0, 1].  ECE is the weighted average of
     ``|accuracy_bin - confidence_bin|`` across bins.
 
@@ -887,29 +892,3 @@ def expected_calibration_error(
         ece_per_graph[b] = ece
 
     return ece_per_graph.mean()
-
-
-def log_prob_graph_scores(
-    targets: torch.Tensor, preds: torch.Tensor, eps: float = 1e-6
-) -> List[float]:
-    """
-    Log-probability of each target graph under a Bernoulli distribution with parameters
-    given by the mean of sampled graphs.
-
-    Args:
-        targets: (B, N, N) binary adjacency.
-        preds: (S, B, N, N) binary adjacency samples.
-        eps: clamp to avoid log(0).
-
-    Returns:
-        List[float] of length B with per-graph log-probabilities.
-    """
-    if targets.ndim != 3 or preds.ndim != 4:
-        raise ValueError("targets must be 3D and preds must be 4D.")
-    if preds.shape[1:] != targets.shape:
-        raise ValueError(
-            "preds shape must be (num_samples, batch, N, N) matching targets."
-        )
-
-    log_prob = _bernoulli_log_prob(targets, preds, eps=eps)
-    return [float(v) for v in log_prob.detach().cpu().tolist()]

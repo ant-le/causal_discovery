@@ -53,7 +53,7 @@ def test_resolve_run_directories_from_ids(tmp_path: Path) -> None:
         run_id="rq1_20260317_avici",
         run_name="rq1",
         model_name="avici",
-        dataset_key="id_test",
+        dataset_key="id_linear_er20",
         mean_offset=0.0,
     )
 
@@ -70,7 +70,7 @@ def test_resolve_run_directories_discovers_metrics_files(tmp_path: Path) -> None
         run_id="run_a",
         run_name="A",
         model_name="bcnp",
-        dataset_key="id_test",
+        dataset_key="id_linear_er20",
         mean_offset=0.0,
     )
     _write_metrics(
@@ -78,7 +78,7 @@ def test_resolve_run_directories_discovers_metrics_files(tmp_path: Path) -> None
         run_id="run_b",
         run_name="B",
         model_name="dibs",
-        dataset_key="ood_periodic",
+        dataset_key="ood_mech_periodic_er40",
         mean_offset=2.0,
     )
 
@@ -94,7 +94,7 @@ def test_load_runs_dataframe_maps_model_and_dataset_names(tmp_path: Path) -> Non
         run_id="rq1_20260317_avici",
         run_name="rq1",
         model_name="avici",
-        dataset_key="id_test",
+        dataset_key="id_linear_er20",
         mean_offset=0.0,
     )
 
@@ -106,7 +106,7 @@ def test_load_runs_dataframe_maps_model_and_dataset_names(tmp_path: Path) -> Non
     first = shd_rows.iloc[0]
     assert first["RunID"] == "rq1_20260317_avici"
     assert first["Model"] == "AviCi"
-    assert first["Dataset"] == "ID"
+    assert first["Dataset"] == "ID Linear ER-20"
     assert float(first["Mean"]) == 10.0
 
 
@@ -119,7 +119,7 @@ def test_generate_all_artifacts_from_runs_writes_expected_files(tmp_path: Path) 
         run_id="rq1_20260317_avici",
         run_name="rq1",
         model_name="avici",
-        dataset_key="id_test",
+        dataset_key="id_linear_er20",
         mean_offset=0.0,
     )
     _write_metrics(
@@ -127,7 +127,7 @@ def test_generate_all_artifacts_from_runs_writes_expected_files(tmp_path: Path) 
         run_id="rq1_20260317_bcnp",
         run_name="rq1",
         model_name="bcnp",
-        dataset_key="ood_periodic",
+        dataset_key="ood_mech_periodic_er40",
         mean_offset=1.0,
     )
 
@@ -225,7 +225,7 @@ def test_load_runs_dataframe_handles_missing_enrichment(tmp_path: Path) -> None:
         run_id="run_legacy",
         run_name="legacy",
         model_name="dibs",
-        dataset_key="ood_periodic",
+        dataset_key="ood_mech_periodic_er40",
         mean_offset=0.0,
     )
 

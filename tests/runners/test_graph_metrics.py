@@ -6,7 +6,6 @@ from causal_meta.runners.metrics.graph import (
     auc_graph_scores_configurable,
     expected_f1_score,
     expected_shd,
-    log_prob_graph_scores,
 )
 
 
@@ -61,17 +60,6 @@ def test_expected_shd_and_expected_f1() -> None:
     # F1 = 0 / (0 + 1 + 1) = 0.0
     # Mean F1 = (1.0 + 0.0) / 2 = 0.5
     assert np.isclose(f1[0].item(), 0.5)
-
-
-def test_log_prob_graph_scores() -> None:
-    targets = torch.tensor([[[0.0, 1.0], [0.0, 0.0]]])
-    preds = torch.stack([targets, targets], dim=0)  # (S=2, B=1, N=2, N=2)
-
-    log_probs = log_prob_graph_scores(targets, preds)
-    assert len(log_probs) == 1
-    assert np.isfinite(log_probs[0])
-    # Probability is 1.0 (clamped), log prob should be near 0
-    assert log_probs[0] > -1e-3
 
 
 def test_auc_graph_scores_default_is_perfect_for_perfect_predictions() -> None:
