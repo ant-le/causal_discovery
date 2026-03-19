@@ -663,3 +663,215 @@ def generate_selective_prediction_pareto(
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     log.info("Saved selective prediction Pareto to %s", output_path)
+
+
+# ── Posterior Failure Diagnostics plots (Section 1) ─────────────────────
+
+
+def generate_event_probability_bar(
+    diagnostics_df: pd.DataFrame,
+    output_path: Path,
+) -> None:
+    """Grouped bar chart of posterior event probabilities by OOD condition.
+
+    One group per OOD category, one bar per event type, faceted by model.
+
+    Args:
+        diagnostics_df: Output of
+            :func:`~causal_meta.analysis.posterior_diagnostics.run_posterior_diagnostics`
+            with columns ``Model``, ``DatasetKey``, ``p_empty``, ``p_dense``,
+            ``p_skeleton_correct_orient_wrong``, ``p_fragmented``.
+        output_path: Where to save the figure.
+    """
+    event_cols = [
+        "p_empty",
+        "p_dense",
+        "p_skeleton_correct_orient_wrong",
+        "p_fragmented",
+    ]
+    event_labels = {
+        "p_empty": "P(empty)",
+        "p_dense": "P(dense)",
+        "p_skeleton_correct_orient_wrong": "P(skel ok, orient wrong)",
+        "p_fragmented": "P(fragmented)",
+    }
+    event_colors = {
+        "p_empty": "#1f77b4",
+        "p_dense": "#d62728",
+        "p_skeleton_correct_orient_wrong": "#ff7f0e",
+        "p_fragmented": "#9467bd",
+    }
+
+    if diagnostics_df.empty:
+        log.warning("Empty diagnostics DataFrame; skipping event probability bar.")
+        return
+
+    for col in event_cols:
+        if col not in diagnostics_df.columns:
+            log.warning("Missing column %s; skipping event probability bar.", col)
+            return
+
+    df = diagnostics_df.copy()
+    df["OODCategory"] = df["DatasetKey"].apply(_ood_category)
+
+    # Average event probabilities per (Model, OODCategory)
+    grouped = df.groupby(["Model", "OODCategory"])[event_cols].mean().reset_index()
+
+    models = sorted(grouped["Model"].unique())
+    categories = sorted(grouped["OODCategory"].unique())
+    n_models = len(models)
+    n_categories = len(categories)
+    n_events = len(event_cols)
+
+    if n_models == 0 or n_categories == 0:
+        log.warning("No data for event probability bar chart; skipping.")
+        return
+
+    fig, axes = plt.subplots(
+        1, n_models, figsize=(max(6, 3 * n_categories) * n_models, 6), squeeze=False
+    )
+
+    for m_idx, model in enumerate(models):
+        ax = axes[0, m_idx]
+        mdf = grouped[grouped["Model"] == model].set_index("OODCategory")
+        mdf = mdf.reindex(categories).fillna(0.0)
+
+        x = np.arange(n_categories)
+        bar_width = 0.8 / n_events
+
+        for e_idx, event in enumerate(event_cols):
+            heights = mdf[event].to_numpy(dtype=float)
+            ax.bar(
+                x + e_idx * bar_width,
+                heights,
+                bar_width,
+                label=event_labels[event],
+                color=event_colors[event],
+                edgecolor="white",
+                linewidth=0.5,
+            )
+
+        ax.set_xticks(x + bar_width * (n_events - 1) / 2)
+        ax.set_xticklabels(categories, fontsize=10, rotation=15, ha="right")
+        ax.set_ylabel("Mean Posterior Probability", fontsize=11)
+        ax.set_title(model, fontsize=13, fontweight="bold")
+        ax.set_ylim(0, 1.05)
+        ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+
+        if m_idx == 0:
+            ax.legend(fontsize=9, loc="upper right", framealpha=0.9)
+
+    fig.suptitle(
+        "Posterior Event Probabilities by OOD Condition",
+        fontsize=14,
+        fontweight="bold",
+        y=1.02,
+    )
+    plt.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    log.info("Saved event probability bar chart to %s", output_path)
+
+
+def generate_posterior_diagnostic_violins(
+    diagnostics_df: pd.DataFrame,
+    output_path: Path,
+) -> None:
+    """Violin/box plots of posterior diagnostic summaries by OOD condition.
+
+    Shows density_ratio and orientation_accuracy distributions across tasks,
+    faceted by model.
+
+    Args:
+        diagnostics_df: Output of
+            :func:`~causal_meta.analysis.posterior_diagnostics.run_posterior_diagnostics`
+            with columns ``Model``, ``DatasetKey``, ``density_ratio_mean``,
+            ``orientation_accuracy_mean``.
+        output_path: Where to save the figure.
+    """
+    diag_cols = [
+        ("density_ratio_mean", "Density Ratio (posterior mean)"),
+        ("orientation_accuracy_mean", "Orientation Accuracy (posterior mean)"),
+    ]
+
+    if diagnostics_df.empty:
+        log.warning("Empty diagnostics DataFrame; skipping violin plots.")
+        return
+
+    df = diagnostics_df.copy()
+    df["OODCategory"] = df["DatasetKey"].apply(_ood_category)
+
+    models = sorted(df["Model"].unique())
+    categories = sorted(df["OODCategory"].unique())
+    n_diags = len(diag_cols)
+
+    if not models or not categories:
+        log.warning("No data for posterior diagnostic violins; skipping.")
+        return
+
+    fig, axes = plt.subplots(
+        n_diags,
+        len(models),
+        figsize=(max(6, 3 * len(categories)) * len(models), 5 * n_diags),
+        squeeze=False,
+    )
+
+    cmap = plt.get_cmap("tab10")
+    cat_colors = {cat: cmap(i) for i, cat in enumerate(categories)}
+
+    for m_idx, model in enumerate(models):
+        mdf = df[df["Model"] == model]
+
+        for d_idx, (col, label) in enumerate(diag_cols):
+            ax = axes[d_idx, m_idx]
+
+            if col not in mdf.columns:
+                ax.set_visible(False)
+                continue
+
+            data_per_cat = []
+            cat_labels = []
+            for cat in categories:
+                vals = mdf.loc[mdf["OODCategory"] == cat, col].dropna().values
+                if len(vals) > 0:
+                    data_per_cat.append(vals)
+                    cat_labels.append(cat)
+
+            if not data_per_cat:
+                ax.set_visible(False)
+                continue
+
+            bp = ax.boxplot(
+                data_per_cat,
+                tick_labels=cat_labels,
+                patch_artist=True,
+                widths=0.6,
+                showfliers=True,
+                flierprops={"markersize": 3, "alpha": 0.5},
+            )
+
+            for patch, cat in zip(bp["boxes"], cat_labels):
+                patch.set_facecolor(cat_colors.get(cat, "#cccccc"))
+                patch.set_alpha(0.7)
+
+            ax.set_ylabel(label, fontsize=10)
+            ax.set_title(
+                f"{model}" if d_idx == 0 else "", fontsize=12, fontweight="bold"
+            )
+            ax.tick_params(axis="x", rotation=15)
+            ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+
+            # Add reference line for density ratio = 1
+            if "density_ratio" in col:
+                ax.axhline(y=1.0, color="gray", linestyle="--", linewidth=1, alpha=0.6)
+
+    fig.suptitle(
+        "Posterior Diagnostic Distributions by OOD Condition",
+        fontsize=14,
+        fontweight="bold",
+        y=1.02,
+    )
+    plt.tight_layout()
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    log.info("Saved posterior diagnostic violin plots to %s", output_path)

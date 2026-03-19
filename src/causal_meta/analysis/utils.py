@@ -419,8 +419,10 @@ def generate_all_artifacts_from_runs(
         generate_density_stratified_figure,
         generate_distance_degradation_scatter,
         generate_entropy_histogram,
+        generate_event_probability_bar,
         generate_failure_mode_bar,
         generate_performance_figure,
+        generate_posterior_diagnostic_violins,
         generate_selective_prediction_pareto,
         generate_structural_figure,
     )
@@ -436,6 +438,9 @@ def generate_all_artifacts_from_runs(
         compute_ood_detection_metrics,
         compute_selective_prediction,
         generate_ood_detection_table,
+    )
+    from causal_meta.analysis.posterior_diagnostics import (
+        run_posterior_diagnostics_from_runs,
     )
 
     df = load_runs_dataframe(run_dirs)
@@ -489,6 +494,25 @@ def generate_all_artifacts_from_runs(
         pareto_df = compute_selective_prediction(ood_raw_df)
         generate_selective_prediction_pareto(
             pareto_df, output_dir / "selective_prediction.png"
+        )
+
+    # Phase F (updated): Posterior failure diagnostics from .pt artifacts
+    try:
+        posterior_df = run_posterior_diagnostics_from_runs(run_dirs)
+        if not posterior_df.empty:
+            generate_event_probability_bar(
+                posterior_df, output_dir / "event_probabilities.png"
+            )
+            generate_posterior_diagnostic_violins(
+                posterior_df, output_dir / "posterior_diagnostics.png"
+            )
+            log.info("Generated posterior diagnostics from %d tasks", len(posterior_df))
+        else:
+            log.info("No inference artifacts found; skipping posterior diagnostics.")
+    except Exception:
+        log.warning(
+            "Posterior diagnostics failed; continuing with remaining artifacts.",
+            exc_info=True,
         )
 
     return df
