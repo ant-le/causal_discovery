@@ -24,32 +24,35 @@ by `load_runs_dataframe()` (columns: `RunID`, `RunName`, `RunDir`, `Model`,
 
 ---
 
-## 1. Failure Mode Taxonomy
+## 1. Posterior Failure Diagnostics
 
 **Goal:** Transform "meta-learners degrade under shift" from a single number
-into a characterised set of failure behaviours (empty graphs, dense graphs,
-reversed edges, correct skeleton / wrong orientation, etc.).
+into a characterised set of posterior failure behaviours by analysing where
+the model places probability mass under OOD shift (empty graphs, dense
+graphs, fragmented skeletons, correct skeleton / wrong orientation, etc.).
 
 ### What exists
 
-- `runners/metrics/graph.py` — `expected_shd()` (line 126) computes aggregate
-  SHD but does not decompose it.
-- `expected_f1_score()` (line 160) computes F1 but does not separate FP/FN.
-- The evaluation pipeline (`runners/tasks/evaluation.py`) saves **raw per-task
-  metric values** to `metrics.json` under the `"raw"` key, and posterior graph
-  samples are cached as `.pt` artifacts under the inference directory.
+- `runners/tasks/evaluation.py` and `runners/tasks/inference.py` already cache
+  posterior graph samples as `.pt` artifacts under each run's inference
+  directory.
+- Each artifact contains the sampled graphs and ground-truth adjacency needed
+  for post-hoc posterior analysis.
+- `metrics.json` already gives run-level metadata and dataset-level summaries,
+  but it is not sufficient for posterior-native failure analysis because it
+  collapses each task to scalar summaries.
 
 ### What needs to be implemented
 
-| Item                                        | Location                                                            | Description                                                                                                                                                                                                                                                                                                                       |
-| ------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Edge confusion decomposition**            | New function in `runners/metrics/graph.py`                          | Compute per-sample then expected FP count, FN count, reversed-edge count, and correct-edge count from `(target, pred)` tensors. Return a dict `{"fp": float, "fn": float, "reversed": float, "correct": float}`. Reversed = edge present in both but direction flipped (check `target[i,j]=1, pred[j,i]=1`).                      |
-| **Sparsity ratio metric**                   | New function in `runners/metrics/graph.py`                          | `predicted_density / true_density` per sample, averaged. Values <1 = under-prediction, >1 = over-prediction.                                                                                                                                                                                                                      |
-| **Skeleton-vs-orientation split**           | New function in `runners/metrics/graph.py`                          | Compute skeleton F1 (ignoring direction) and orientation accuracy (among correctly identified skeleton edges, fraction with correct direction).                                                                                                                                                                                   |
-| **Register new metrics in `Metrics` class** | `runners/metrics/graph.py` — `_compute_batch_metrics()` at line 501 | Add dispatch entries for the new metric keys so they flow through `update()` → `compute()` → `summarize_distributed()` and are written into each run's `metrics.json` automatically.                                                                                                                                              |
-| **Failure mode classification**             | New file `analysis/failure_modes.py`                                | Post-hoc: load raw per-task predictions from cached `.pt` artifacts, classify each prediction as one of: `empty` (density < 0.01), `dense` (density > 2× true), `skeleton_correct_orientation_wrong`, `fragmented` (>1 connected component when truth is connected), `reasonable`. Produce a stacked bar chart per OOD condition. |
-| **Failure mode figure generator**           | New function in `analysis/plots/`                                   | A grouped stacked bar chart: x-axis = OOD condition, y-axis = fraction of test tasks, colour = failure mode category. Wire into `generate_all_artifacts_from_runs()`.                                                                                                                                                             |
-| **Update `DATASET_DESCRIPTION_MAP`**        | `analysis/utils.py:36`                                              | Replace the 6 stale smoke-test keys with the 27 family keys from `full.yaml` (e.g. `id_linear_er20`, `ood_graph_sbm_linear`, `ood_mech_pnl_tanh_er40`, etc.) so that full-sweep plots render readable labels.                                                                                                                     |
+| Item                                     | Location                                        | Description                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Artifact-based posterior loader**      | New file `analysis/failure_modes.py`            | Load cached inference artifacts (`.pt` / `.pt.gz`) from selected run directories. For each task, recover posterior graph samples and the true adjacency, together with run/dataset metadata from `metrics.json`. This becomes the canonical input for posterior failure analysis.                                      |
+| **Posterior diagnostic primitives**      | New helpers in `analysis/failure_modes.py`      | For every posterior sample, compute graph density, density ratio relative to truth, skeleton F1, orientation accuracy, and number of connected components in the predicted skeleton. Do not collapse to a posterior mean graph before computing these diagnostics.                                                     |
+| **Posterior event probabilities**        | New helpers in `analysis/failure_modes.py`      | Define sample-level events and report per-task posterior probabilities such as `P(empty)`, `P(dense relative to truth)`, `P(skeleton correct & orientation wrong)`, and `P(fragmented ∣ truth connected)`. These event probabilities replace brittle one-label-per-task classification as the primary analysis object. |
+| **Posterior summary statistics**         | New helpers in `analysis/failure_modes.py`      | For each task, compute exact posterior summaries (mean, std, quantiles) for density ratio, orientation accuracy, skeleton F1, and connected-component count. These are the quantities shown in tables/plots.                                                                                                           |
+| **Failure diagnostics figure generator** | New functions in `analysis/plots/`              | Replace the grouped stacked bar chart with posterior-native diagnostics: e.g. event-probability bar charts, violin/box plots for density ratio and orientation accuracy, and/or connected-component distributions by OOD condition. Wire these into `generate_all_artifacts_from_runs()`.                              |
+| **Optional taxonomy view**               | `analysis/failure_modes.py` + `analysis/plots/` | If a simple categorical summary is still useful for presentation, derive it only as a secondary view from posterior event probabilities (for example by assigning the dominant failure event per task). The thesis should emphasise posterior mass and exact numbers, not thresholded posterior-mean labels.           |
+| **Update `DATASET_DESCRIPTION_MAP`**     | `analysis/utils.py:36`                          | Replace the 6 stale smoke-test keys with the 27 family keys from `full.yaml` (e.g. `id_linear_er20`, `ood_graph_sbm_linear`, `ood_mech_pnl_tanh_er40`, etc.) so that full-sweep plots render readable labels.                                                                                                          |
 
 ---
 
@@ -70,10 +73,10 @@ wrong is a safety-critical finding.
 ### What needs to be implemented
 
 | Item                                 | Location                                               | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------ |
+| ------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Entropy-vs-accuracy scatter**      | New function in `analysis/plots/`                      | For each model, plot `edge_entropy` (x) vs `e-shd` (y) with one point per dataset. Colour by ID/OOD category. An ideal model would show high entropy → high SHD (uncertain and wrong) and low entropy → low SHD (confident and right). Meta-learners that are overconfident under OOD will cluster at low-entropy, high-SHD — the dangerous quadrant. Data source: the `pd.DataFrame` from `load_runs_dataframe()` (both metrics are already in the summary). |
 | **Edge-level calibration curve**     | New function in `analysis/plots/` or standalone script | Requires raw posterior edge probabilities (available from cached inference `.pt` files). Bin predicted edge probabilities into deciles, compute fraction of true edges in each bin. Plot reliability diagram. One curve per model, one panel per OOD condition. Implementation: load cached `(S,B,N,N)` samples → compute mean edge probs `(B,N,N)` → flatten → bin → plot.                                                                                   |
-| **Expected Calibration Error (ECE)** | New metric in `runners/metrics/graph.py`               | Standard ECE: weighted average of                                                                                                                                                                                                                                                                                                                                                                                                                             | accuracy_bin - confidence_bin | across bins. Register in `_compute_batch_metrics()` so it flows into `metrics.json`. |
+| **Expected Calibration Error (ECE)** | New metric in `runners/metrics/graph.py`               | Standard ECE: weighted average of `∣accuracy_bin − confidence_bin∣` across bins. Register in `_compute_batch_metrics()` so it flows into `metrics.json`.                                                                                                                                                                                                                                                                                                      |
 
 ---
 
@@ -203,8 +206,9 @@ removing the RQ2 promise.
 
 The items above are ordered by impact-to-effort ratio:
 
-1. **Failure mode taxonomy** (Section 1) — highest impact, moderate effort.
-   Transforms the core negative result into a publishable diagnostic.
+1. **Posterior failure diagnostics** (Section 1) — highest impact, moderate
+   effort. Transforms the core negative result into a publishable posterior
+   diagnostic rather than a thresholded taxonomy.
 2. **Posterior calibration** (Section 2) — high impact, low effort.
    `edge_entropy` already exists; the scatter plot is trivial.
 3. **OOD detection** (Section 4) — high practical impact, low-moderate effort.
@@ -222,15 +226,15 @@ The items above are ordered by impact-to-effort ratio:
 
 ## Implementation Phases
 
-| Phase                              | Work                                                                    | Blocks on                             |
-| ---------------------------------- | ----------------------------------------------------------------------- | ------------------------------------- |
-| **A. Metrics**                     | Add new metric functions + register in `Metrics` class (`graph.py`)     | Nothing — can start now               |
-| **B. DATASET_DESCRIPTION_MAP**     | Update the 6 stale keys to 27 full.yaml keys (`analysis/utils.py`)      | Nothing — can start now               |
-| **C. Metadata enrichment**         | Extend `metrics.json` metadata with family properties (`evaluation.py`) | Nothing — can start now               |
-| **D. Distance persistence**        | Persist spectral/KL distances to run directory (`evaluation.py`)        | Nothing — can start now               |
-| **E. Analysis plots/tables**       | All new figures and tables (`analysis/plots/`, `analysis/tables/`)      | Phases A-D (needs enriched data)      |
-| **F. Failure mode classification** | New `analysis/failure_modes.py`                                         | Phase A (needs decomposition metrics) |
-| **G. OOD detection module**        | New `analysis/ood_detection.py`                                         | Phase E (needs raw data loading)      |
-| **H. Ablation configs**            | YAML-only (`configs/data/`)                                             | Nothing — can start now               |
-| **I. Cluster runs**                | Execute full + ablation sweeps                                          | Phases A-D, H (needs code + configs)  |
-| **J. Paper restructuring**         | LaTeX edits                                                             | Phase I (needs results)               |
+| Phase                          | Work                                                                    | Blocks on                            |
+| ------------------------------ | ----------------------------------------------------------------------- | ------------------------------------ |
+| **A. Posterior loaders**       | Implement artifact loading + posterior diagnostic primitives            | Nothing — can start now              |
+| **B. DATASET_DESCRIPTION_MAP** | Update the 6 stale keys to 27 full.yaml keys (`analysis/utils.py`)      | Nothing — can start now              |
+| **C. Metadata enrichment**     | Extend `metrics.json` metadata with family properties (`evaluation.py`) | Nothing — can start now              |
+| **D. Distance persistence**    | Persist spectral/KL distances to run directory (`evaluation.py`)        | Nothing — can start now              |
+| **E. Analysis plots/tables**   | All new figures and tables (`analysis/plots/`, `analysis/tables/`)      | Phases A-D (needs enriched data)     |
+| **F. Posterior diagnostics**   | New `analysis/failure_modes.py` with event probabilities + summaries    | Phase A                              |
+| **G. OOD detection module**    | New `analysis/ood_detection.py`                                         | Phase E (needs raw data loading)     |
+| **H. Ablation configs**        | YAML-only (`configs/data/`)                                             | Nothing — can start now              |
+| **I. Cluster runs**            | Execute full + ablation sweeps                                          | Phases A-D, H (needs code + configs) |
+| **J. Paper restructuring**     | LaTeX edits                                                             | Phase I (needs results)              |
