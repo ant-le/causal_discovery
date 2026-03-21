@@ -182,7 +182,7 @@ def generate_distance_regression_table(
     df: pd.DataFrame,
     output_path: Path,
 ) -> None:
-    """Regress E-SID degradation on (spectral distance, KL degree distance) via OLS.
+    """Regress E-SID degradation on shift-distance predictors via OLS.
 
     Produces a LaTeX table with R^2, coefficients, and p-values per model.
     Answers: *which type of distributional shift predicts degradation most strongly?*
@@ -207,24 +207,48 @@ def generate_distance_regression_table(
     if not needed_cols.issubset(sid_df.columns):
         log.warning("Missing enrichment columns for regression table; skipping.")
         return
+    if "MechanismDist" not in sid_df.columns:
+        sid_df["MechanismDist"] = np.nan
 
     sid_df["OODCategory"] = sid_df["DatasetKey"].apply(
         lambda dk: _ood_category(dk, binary=True)
     )
 
-    # Compute per-model ID baseline
+    group_cols = [c for c in ("RunID", "Model") if c in sid_df.columns]
+    if not group_cols:
+        group_cols = ["Model"]
+
+    # Compute per-run/per-model ID baseline
     id_means = (
         sid_df[sid_df["OODCategory"] == "ID"]
-        .groupby("Model")["Mean"]
+        .groupby(group_cols)["Mean"]
         .mean()
         .rename("id_baseline")
     )
-    sid_df = sid_df.merge(id_means, on="Model", how="left")
+    sid_df = sid_df.merge(id_means, on=group_cols, how="left")
     sid_df["degradation"] = sid_df["Mean"] - sid_df["id_baseline"]
-    sid_df = sid_df.dropna(subset=["SpectralDist", "KLDegreeDist", "degradation"])
+    sid_df = sid_df[sid_df["OODCategory"] != "ID"]
 
-    models = sorted(sid_df["Model"].unique())
-    if not models:
+    predictors: list[tuple[str, str]] = [
+        ("SpectralDist", "spectral"),
+        ("KLDegreeDist", "KL"),
+    ]
+    if sid_df["MechanismDist"].notna().any():
+        predictors.append(("MechanismDist", "mechanism"))
+
+    sid_df = sid_df.dropna(subset=["degradation", *[c for c, _ in predictors]])
+
+    if "RunID" in group_cols:
+        series_keys: list[tuple[str, str]] = sorted(
+            {
+                (str(run_id), str(model))
+                for run_id, model in sid_df[["RunID", "Model"]].values
+            }
+        )
+    else:
+        series_keys = [("", str(model)) for model in sorted(sid_df["Model"].unique())]
+
+    if not series_keys:
         log.warning("No valid models for regression; skipping.")
         return
 
@@ -238,31 +262,48 @@ def generate_distance_regression_table(
         r" ID performance.}"
     )
     lines.append(r"\label{tab:distance_regression}")
-    lines.append(r"\begin{tabular}{l c c c c c}")
+    lines.append(r"\begin{tabular}{" + "l c" + " c c" * len(predictors) + "}")
     lines.append(r"\toprule")
-    lines.append(
-        r"\textbf{Model} & \textbf{$R^2$} & \textbf{$\beta_{\mathrm{spectral}}$}"
-        r" & \textbf{$p_{\mathrm{spectral}}$} & \textbf{$\beta_{\mathrm{KL}}$}"
-        r" & \textbf{$p_{\mathrm{KL}}$} \\"
-    )
+    header = [r"\textbf{Model}", r"\textbf{$R^2$}"]
+    for _, short_name in predictors:
+        header.append(rf"\textbf{{$\beta_{{\mathrm{{{short_name}}}}}$}}")
+        header.append(rf"\textbf{{$p_{{\mathrm{{{short_name}}}}}$}}")
+    lines.append(" & ".join(header) + r" \\")
     lines.append(r"\midrule")
 
-    for model in models:
-        mdf = sid_df[sid_df["Model"] == model]
-        if len(mdf) < 3:
-            lines.append(f"{model} & \\multicolumn{{5}}{{c}}{{insufficient data}} \\\\")
+    for run_id, model in series_keys:
+        if "RunID" in group_cols:
+            mdf = sid_df[(sid_df["RunID"] == run_id) & (sid_df["Model"] == model)]
+            series_label = f"{model} [{run_id}]"
+        else:
+            mdf = sid_df[sid_df["Model"] == model]
+            series_label = model
+
+        model_tex = str(series_label).replace("_", r"\_")
+        n_predictors = len(predictors)
+        min_rows = n_predictors + 2
+        n_data_cols = 1 + 2 * n_predictors
+        if len(mdf) < min_rows:
+            lines.append(
+                f"{model_tex} & "
+                + f"\\multicolumn{{{n_data_cols}}}{{c}}{{insufficient data}}"
+                + r" \\"
+            )
             continue
 
         y = mdf["degradation"].to_numpy(dtype=float)
-        x_spectral = mdf["SpectralDist"].to_numpy(dtype=float)
-        x_kl = mdf["KLDegreeDist"].to_numpy(dtype=float)
+        x_cols = [mdf[col].to_numpy(dtype=float) for col, _ in predictors]
 
-        # Simple bivariate OLS via normal equations
-        X = np.column_stack([np.ones(len(y)), x_spectral, x_kl])
+        # OLS via normal equations
+        X = np.column_stack([np.ones(len(y)), *x_cols])
         try:
             beta, residuals, rank, sv = np.linalg.lstsq(X, y, rcond=None)
         except np.linalg.LinAlgError:
-            lines.append(f"{model} & \\multicolumn{{5}}{{c}}{{singular}} \\\\")
+            lines.append(
+                f"{model_tex} & "
+                + f"\\multicolumn{{{n_data_cols}}}{{c}}{{singular}}"
+                + r" \\"
+            )
             continue
 
         y_hat = X @ beta
@@ -289,15 +330,16 @@ def generate_distance_regression_table(
             if np.isnan(p):
                 return "--"
             if p < 0.001:
-                return f"$<$0.001"
+                return "$<$0.001"
             return f"{p:.3f}"
 
-        model_tex = model.replace("_", r"\_")
-        lines.append(
-            f"{model_tex} & {r2:.3f}"
-            f" & {beta[1]:.2f} & {_fmt_p(p_vals[1])}"
-            f" & {beta[2]:.2f} & {_fmt_p(p_vals[2])} \\\\"
-        )
+        row = f"{model_tex} & {r2:.3f}"
+        for idx in range(n_predictors):
+            coef = float(beta[idx + 1])
+            p_val = p_vals[idx + 1] if (idx + 1) < len(p_vals) else float("nan")
+            row += f" & {coef:.2f} & {_fmt_p(float(p_val))}"
+        row += r" \\"
+        lines.append(row)
 
     lines.append(r"\bottomrule")
     lines.append(r"\end{tabular}")

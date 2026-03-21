@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 import pytest
@@ -121,6 +122,17 @@ def test_distance_degradation_scatter_creates_file(tmp_path: Path) -> None:
     assert out.stat().st_size > 0
 
 
+def test_distance_degradation_scatter_skips_id_only(tmp_path: Path) -> None:
+    df = _make_synthetic_df()
+    id_only = cast(
+        pd.DataFrame,
+        df[df["DatasetKey"].astype(str).str.startswith("id_")].copy(),
+    )
+    out = tmp_path / "dist_deg_id_only.png"
+    generate_distance_degradation_scatter(id_only, out)
+    assert not out.exists()
+
+
 # ── Density-stratified plot (E.6) ───────────────────────────────────────
 
 
@@ -143,6 +155,17 @@ def test_distance_regression_table_creates_file(tmp_path: Path) -> None:
     content = out.read_text()
     assert r"\begin{table}" in content
     assert "R^2" in content
+
+
+def test_distance_regression_table_skips_id_only(tmp_path: Path) -> None:
+    df = _make_synthetic_df()
+    id_only = cast(
+        pd.DataFrame,
+        df[df["DatasetKey"].astype(str).str.startswith("id_")].copy(),
+    )
+    out = tmp_path / "reg_id_only.tex"
+    generate_distance_regression_table(id_only, out)
+    assert not out.exists()
 
 
 def test_distance_regression_table_handles_empty(tmp_path: Path) -> None:

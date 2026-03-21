@@ -36,10 +36,12 @@ def _make_raw_ood_df(
     for _ in range(n_id):
         entropy = float(rng.normal(id_entropy_mean, 0.1))
         shd = float(rng.normal(5.0, 1.0))
+        sid = float(rng.normal(20.0, 2.0))
         nll = float(rng.normal(2.0, 0.5))
         for metric, val in [
             ("edge_entropy", entropy),
             ("e-shd", shd),
+            ("e-sid", sid),
             ("graph_nll", nll),
         ]:
             rows.append(
@@ -66,10 +68,12 @@ def _make_raw_ood_df(
     for _ in range(n_ood):
         entropy = float(rng.normal(ood_entropy_mean, 0.1))
         shd = float(rng.normal(15.0, 2.0))
+        sid = float(rng.normal(40.0, 4.0))
         nll = float(rng.normal(5.0, 1.0))
         for metric, val in [
             ("edge_entropy", entropy),
             ("e-shd", shd),
+            ("e-sid", sid),
             ("graph_nll", nll),
         ]:
             rows.append(
@@ -189,8 +193,10 @@ class TestComputeSelectivePrediction:
         result = compute_selective_prediction(raw_df)
         assert not result.empty
         assert "Coverage" in result.columns
-        assert "MeanAccuracy" in result.columns
+        assert "MeanValue" in result.columns
+        assert "AccuracyMetric" in result.columns
         assert "Threshold" in result.columns
+        assert set(result["AccuracyMetric"]) == {"e-shd", "e-sid"}
 
     def test_coverage_range(self) -> None:
         raw_df = _make_raw_ood_df()
@@ -205,15 +211,29 @@ class TestComputeSelectivePrediction:
         """Accepting only low-entropy predictions should give lower E-SHD."""
         raw_df = _make_raw_ood_df()
         result = compute_selective_prediction(raw_df, n_thresholds=50)
-        if len(result) > 1:
-            low_t = result.nsmallest(3, "Coverage")["MeanAccuracy"].mean()
-            high_t = result.nlargest(3, "Coverage")["MeanAccuracy"].mean()
+        shd_result = result[result["AccuracyMetric"] == "e-shd"]
+        if len(shd_result) > 1:
+            low_t = (
+                shd_result.sort_values(by="Coverage", ascending=True)
+                .head(3)["MeanValue"]
+                .mean()
+            )
+            high_t = (
+                shd_result.sort_values(by="Coverage", ascending=False)
+                .head(3)["MeanValue"]
+                .mean()
+            )
             # Low-entropy (low threshold) predictions should be better (lower SHD)
             assert low_t <= high_t + 5.0  # Allow some noise
 
     def test_empty_input(self) -> None:
         result = compute_selective_prediction(pd.DataFrame())
         assert result.empty
+
+    def test_rejects_single_metric_mode(self) -> None:
+        raw_df = _make_raw_ood_df()
+        with pytest.raises(ValueError):
+            compute_selective_prediction(raw_df, accuracy_metrics=["e-shd"])
 
 
 # ── generate_ood_detection_table ────────────────────────────────────────

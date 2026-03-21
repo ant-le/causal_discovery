@@ -24,11 +24,8 @@ def generate_structural_figure(df: pd.DataFrame, output_path: Path) -> None:
         ("e-sid", "Expected SID", "Level 2: Interventional Accuracy (SID) ↓"),
     ]
 
-    fig, axes = plt.subplots(
-        1, 2, figsize=(18, 7), sharey=True
-    )  # Increased height for legend, share Y axis
+    fig, axes = plt.subplots(1, 2, figsize=(18, 7), sharey=False)
 
-    # Flatten axes in case we change dimensions later, though 1x2 is 1D array
     axes_flat = axes.flatten()
 
     for idx, (metric_id, ylabel, title) in enumerate(structural_metrics):
@@ -56,26 +53,41 @@ def generate_structural_figure(df: pd.DataFrame, output_path: Path) -> None:
             frameon=False,  # Remove border
         )
 
-    # Calculate global min/max for structural metrics to set tight ylim
-    struct_df = df[df["Metric"].isin(["e-shd", "e-sid"])]
-    if not struct_df.empty:
-        # Cast to numeric to ensure calculations work
-        means = pd.to_numeric(struct_df["Mean"], errors="coerce")
-        sems = pd.to_numeric(struct_df["SEM"], errors="coerce").fillna(0)
+    # Set axis limits per metric independently (SHD and SID are on different scales).
+    for idx, (metric_id, _, _) in enumerate(structural_metrics):
+        metric_df = df[df["Metric"] == metric_id]
+        if metric_df.empty:
+            continue
 
-        min_val = (means - sems).min()
-        max_val = (means + sems).max()
+        means = pd.to_numeric(metric_df["Mean"], errors="coerce")
+        if "SEM" in metric_df.columns:
+            sems = pd.to_numeric(metric_df["SEM"], errors="coerce").fillna(0.0)
+        else:
+            sems = pd.Series(0.0, index=metric_df.index)
+        lower = (means - sems).dropna()
+        upper = (means + sems).dropna()
+        if lower.empty or upper.empty:
+            continue
 
-        if min_val > 0:
-            # Add 10% padding
-            axes_flat[0].set_ylim(bottom=min_val * 0.9, top=max_val * 1.1)
+        min_val = float(lower.min())
+        max_val = float(upper.max())
+        if not np.isfinite(min_val) or not np.isfinite(max_val):
+            continue
+
+        if np.isclose(min_val, max_val):
+            pad = max(1.0, abs(max_val) * 0.1)
+            axes_flat[idx].set_ylim(min_val - pad, max_val + pad)
+            continue
+
+        span = max_val - min_val
+        axes_flat[idx].set_ylim(min_val - 0.1 * span, max_val + 0.1 * span)
 
     # Reserve top 10% for legend
     plt.tight_layout(rect=(0, 0, 1, 0.9))
 
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
-    print(f"Saved {output_path}")
+    log.info("Saved %s", output_path)
 
 
 def generate_performance_figure(df: pd.DataFrame, output_path: Path) -> None:
@@ -261,34 +273,58 @@ def generate_distance_degradation_scatter(df: pd.DataFrame, output_path: Path) -
 
     wide["OODCategory"] = wide["DatasetKey"].apply(_ood_category)
 
-    # Compute per-model ID baseline (mean E-SID across ID datasets)
+    group_cols = [c for c in ("RunID", "Model") if c in wide.columns]
+    if not group_cols:
+        group_cols = ["Model"]
+
+    # Compute per-run/per-model ID baseline (mean E-SID across ID datasets)
     id_means = (
         wide[wide["OODCategory"] == "ID"]
-        .groupby("Model")["e-sid"]
+        .groupby(group_cols)["e-sid"]
         .mean()
         .rename("id_baseline")
     )
-    wide = wide.merge(id_means, on="Model", how="left")
+    wide = wide.merge(id_means, on=group_cols, how="left")
     wide["degradation"] = wide["e-sid"] - wide["id_baseline"]
 
-    # Drop rows with NaN distance or degradation
-    plot_df = wide.dropna(subset=["SpectralDist", "degradation"])
+    # OOD-only fit/scatter (ID rows define the baseline and are not fit points).
+    plot_df = wide[wide["OODCategory"] != "ID"].dropna(
+        subset=["SpectralDist", "degradation"]
+    )
     if plot_df.empty:
         log.warning("No valid rows for distance-degradation scatter; skipping.")
         return
 
-    models = sorted(plot_df["Model"].unique())
+    if "RunID" in group_cols:
+        series_keys: list[tuple[str, str]] = sorted(
+            {
+                (str(rid), str(model))
+                for rid, model in plot_df[["RunID", "Model"]].values
+            }
+        )
+    else:
+        series_keys = [("", str(model)) for model in sorted(plot_df["Model"].unique())]
+
     cmap = plt.get_cmap("tab10")
 
     fig, ax = plt.subplots(figsize=(8, 6))
 
-    for i, model in enumerate(models):
-        mdf = plot_df[plot_df["Model"] == model]
+    for i, (run_id, model) in enumerate(series_keys):
+        if "RunID" in group_cols:
+            mdf = plot_df[(plot_df["RunID"] == run_id) & (plot_df["Model"] == model)]
+            label = f"{model} [{run_id}]"
+        else:
+            mdf = plot_df[plot_df["Model"] == model]
+            label = model
+
+        if mdf.empty:
+            continue
+
         colour = cmap(i)
         ax.scatter(
             mdf["SpectralDist"],
             mdf["degradation"],
-            label=model,
+            label=label,
             color=colour,
             s=60,
             alpha=0.85,
@@ -311,12 +347,11 @@ def generate_distance_degradation_scatter(df: pd.DataFrame, output_path: Path) -
 
     ax.set_xlabel("Spectral Distance from Training Distribution", fontsize=12)
     ax.set_ylabel("E-SID Degradation (vs. ID baseline) ↑ = worse", fontsize=12)
-    ax.set_title(
-        "Shift Distance vs. Performance Degradation", fontsize=14, fontweight="bold"
-    )
+    ax.set_title("Shift Distance vs. OOD Degradation", fontsize=14, fontweight="bold")
     ax.axhline(0, color="grey", linestyle=":", alpha=0.5)
     ax.grid(True, linestyle="--", alpha=0.4)
-    ax.legend(title="Model", fontsize=10)
+    legend_title = "Run/Model" if "RunID" in group_cols else "Model"
+    ax.legend(title=legend_title, fontsize=10)
 
     plt.tight_layout()
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
@@ -607,44 +642,100 @@ def generate_selective_prediction_pareto(
     Args:
         pareto_df: Output of
             :func:`~causal_meta.analysis.ood_detection.compute_selective_prediction`
-            with columns ``Model``, ``Coverage``, ``MeanAccuracy``.
+            with columns ``Model``, ``Coverage``, ``MeanValue`` and
+            ``AccuracyMetric`` (plus ``RunID`` when available).
         output_path: Where to save the figure.
     """
     if pareto_df.empty:
         log.warning("Empty Pareto DataFrame; skipping selective prediction plot.")
         return
 
-    if "Coverage" not in pareto_df.columns or "MeanAccuracy" not in pareto_df.columns:
-        log.warning("Missing Coverage/MeanAccuracy columns; skipping Pareto plot.")
+    if "Coverage" not in pareto_df.columns:
+        log.warning("Missing Coverage column; skipping Pareto plot.")
         return
 
-    models = sorted(pareto_df["Model"].unique())
+    value_col = "MeanValue" if "MeanValue" in pareto_df.columns else "MeanAccuracy"
+    if value_col not in pareto_df.columns:
+        log.warning("Missing MeanValue/MeanAccuracy columns; skipping Pareto plot.")
+        return
+
+    df = pareto_df.copy()
+    if "AccuracyMetric" not in df.columns:
+        df["AccuracyMetric"] = "e-shd"
+
+    metric_order = sorted(df["AccuracyMetric"].dropna().unique())
+    if not metric_order:
+        log.warning("No accuracy metrics found for Pareto plot; skipping.")
+        return
+
+    series_cols = [c for c in ("RunID", "Model") if c in df.columns]
+    if not series_cols:
+        series_cols = ["Model"]
+
+    def _series_label(group_key: object) -> str:
+        if not isinstance(group_key, tuple):
+            if len(series_cols) == 1 and series_cols[0] == "Model":
+                return str(group_key)
+            return str(group_key)
+        key_map = {k: v for k, v in zip(series_cols, group_key)}
+        model = str(key_map.get("Model", "unknown"))
+        run_id = key_map.get("RunID")
+        return f"{model} [{run_id}]" if run_id is not None else model
+
+    all_series_keys = list(df.groupby(series_cols, dropna=False).groups.keys())
+    all_labels = [_series_label(k) for k in all_series_keys]
+
     cmap = plt.get_cmap("tab10")
+    color_map = {label: cmap(i % 10) for i, label in enumerate(sorted(set(all_labels)))}
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, axes = plt.subplots(
+        1,
+        len(metric_order),
+        figsize=(8 * len(metric_order), 6),
+        squeeze=False,
+    )
 
-    for i, model in enumerate(models):
-        mdf = pareto_df[pareto_df["Model"] == model].sort_values("Coverage")
-        ax.plot(
-            mdf["Coverage"],
-            mdf["MeanAccuracy"],
-            label=model,
-            color=cmap(i),
-            linewidth=2,
-            marker=".",
-            markersize=4,
-        )
+    for axis_idx, metric in enumerate(metric_order):
+        ax = axes[0, axis_idx]
+        metric_df = df[df["AccuracyMetric"] == metric]
+        if metric_df.empty:
+            ax.set_visible(False)
+            continue
 
-    ax.set_xlabel("Coverage (fraction of predictions accepted)", fontsize=12)
-    ax.set_ylabel("Mean E-SHD of accepted predictions ↓", fontsize=12)
-    ax.set_title(
+        for group_key, series_df in metric_df.groupby(series_cols, dropna=False):
+            label = _series_label(group_key)
+            mdf = series_df.sort_values("Coverage")
+            ax.plot(
+                mdf["Coverage"],
+                mdf[value_col],
+                label=label,
+                color=color_map[label],
+                linewidth=2,
+                marker=".",
+                markersize=4,
+            )
+
+        metric_label = metric.replace("-", "-").upper()
+        if metric == "e-shd":
+            y_label = "Mean E-SHD of accepted predictions ↓"
+        elif metric == "e-sid":
+            y_label = "Mean E-SID of accepted predictions ↓"
+        else:
+            y_label = f"Mean {metric} of accepted predictions"
+
+        ax.set_xlabel("Coverage (fraction of predictions accepted)", fontsize=12)
+        ax.set_ylabel(y_label, fontsize=12)
+        ax.set_title(metric_label, fontsize=13, fontweight="bold")
+        ax.set_xlim(0, 1.05)
+        ax.grid(True, linestyle="--", alpha=0.4)
+        ax.legend(title="Run/Model", fontsize=9)
+
+    fig.suptitle(
         "Selective Prediction: Accuracy vs Coverage",
         fontsize=14,
         fontweight="bold",
+        y=1.02,
     )
-    ax.set_xlim(0, 1.05)
-    ax.grid(True, linestyle="--", alpha=0.4)
-    ax.legend(title="Model", fontsize=10)
 
     plt.tight_layout()
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
@@ -680,7 +771,7 @@ def generate_event_probability_bar(
         "p_empty": "P(empty)",
         "p_dense": "P(dense)",
         "p_skeleton_correct_orient_wrong": "P(skel ok, orient wrong)",
-        "p_fragmented": "P(fragmented)",
+        "p_fragmented": "P(fragmented | truth connected)",
     }
     event_colors = {
         "p_empty": "#1f77b4",
@@ -704,6 +795,19 @@ def generate_event_probability_bar(
     # Average event probabilities per (Model, OODCategory)
     grouped = df.groupby(["Model", "OODCategory"])[event_cols].mean().reset_index()
 
+    if "TruthConnected" in df.columns:
+        connected_stats = (
+            df.groupby(["Model", "OODCategory"])["TruthConnected"]
+            .agg(
+                ConnectedTasks=lambda s: int(pd.to_numeric(s, errors="coerce").sum()),
+                TotalTasks="count",
+            )
+            .reset_index()
+        )
+        grouped = grouped.merge(
+            connected_stats, on=["Model", "OODCategory"], how="left"
+        )
+
     models = sorted(grouped["Model"].unique())
     categories = sorted(grouped["OODCategory"].unique())
     n_models = len(models)
@@ -721,32 +825,72 @@ def generate_event_probability_bar(
     for m_idx, model in enumerate(models):
         ax = axes[0, m_idx]
         mdf = grouped[grouped["Model"] == model].set_index("OODCategory")
-        mdf = mdf.reindex(categories).fillna(0.0)
+        mdf = mdf.reindex(categories)
 
         x = np.arange(n_categories)
         bar_width = 0.8 / n_events
 
-        for e_idx, event in enumerate(event_cols):
-            heights = mdf[event].to_numpy(dtype=float)
-            ax.bar(
-                x + e_idx * bar_width,
-                heights,
-                bar_width,
-                label=event_labels[event],
-                color=event_colors[event],
-                edgecolor="white",
-                linewidth=0.5,
+        connected_counts = None
+        if "ConnectedTasks" in mdf.columns:
+            connected_counts = (
+                pd.to_numeric(mdf["ConnectedTasks"], errors="coerce")
+                .fillna(0)
+                .to_numpy(dtype=int)
             )
 
+        for e_idx, event in enumerate(event_cols):
+            heights = mdf[event].to_numpy(dtype=float)
+            for c_idx, h in enumerate(heights):
+                xpos = x[c_idx] + e_idx * bar_width
+                if np.isnan(h):
+                    ax.text(
+                        xpos,
+                        0.02,
+                        "NA",
+                        color=event_colors[event],
+                        fontsize=7,
+                        rotation=90,
+                        ha="center",
+                        va="bottom",
+                    )
+                    continue
+
+                ax.bar(
+                    xpos,
+                    float(h),
+                    bar_width,
+                    color=event_colors[event],
+                    edgecolor="white",
+                    linewidth=0.5,
+                )
+
         ax.set_xticks(x + bar_width * (n_events - 1) / 2)
-        ax.set_xticklabels(categories, fontsize=10, rotation=15, ha="right")
+        if connected_counts is not None:
+            xticklabels = [
+                f"{cat}\n(n_conn={connected_counts[i]})"
+                for i, cat in enumerate(categories)
+            ]
+        else:
+            xticklabels = categories
+        ax.set_xticklabels(xticklabels, fontsize=10, rotation=15, ha="right")
         ax.set_ylabel("Mean Posterior Probability", fontsize=11)
         ax.set_title(model, fontsize=13, fontweight="bold")
         ax.set_ylim(0, 1.05)
         ax.grid(True, axis="y", linestyle="--", alpha=0.4)
 
         if m_idx == 0:
-            ax.legend(fontsize=9, loc="upper right", framealpha=0.9)
+            from matplotlib.patches import Patch
+
+            legend_handles = [
+                Patch(facecolor=event_colors[event], label=event_labels[event])
+                for event in event_cols
+            ]
+            ax.legend(
+                handles=legend_handles,
+                fontsize=9,
+                loc="upper right",
+                framealpha=0.9,
+            )
 
     fig.suptitle(
         "Posterior Event Probabilities by OOD Condition",

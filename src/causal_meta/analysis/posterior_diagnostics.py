@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Sequence, cast
 
 import numpy as np
 import pandas as pd
@@ -34,25 +34,65 @@ log = logging.getLogger(__name__)
 # ── Artifact loading ───────────────────────────────────────────────────
 
 
-def _discover_artifacts(run_dir: Path) -> list[tuple[str, Path]]:
-    """Find all inference artifact files under a run directory.
+def _discover_artifacts(
+    run_dir: Path,
+    *,
+    model_name: str | None = None,
+    inference_root: Path | None = None,
+    use_model_subdir: bool | None = None,
+) -> list[tuple[str, Path]]:
+    """Find all cached inference artifacts for a run.
+
+    Supports both cache layouts:
+
+    - run-local: ``<run>/inference/<dataset>/seed_*.pt[.gz]``
+    - shared cache: ``<root>/<model>/<dataset>/seed_*.pt[.gz]``
+
+    Args:
+        run_dir: Run directory.
+        model_name: Optional model identifier for shared-cache discovery.
+        inference_root: Optional explicit inference root. If omitted,
+            ``<run>/inference`` is used.
+        use_model_subdir: Optional layout hint from metadata.
+            ``True`` -> only ``<root>/<model>/<dataset>``
+            ``False`` -> only ``<root>/<dataset>``
+            ``None`` -> probe both.
 
     Returns:
         List of ``(dataset_key, artifact_path)`` tuples.
     """
-    inference_root = run_dir / "inference"
-    if not inference_root.is_dir():
+    scan_root = inference_root or (run_dir / "inference")
+    if not scan_root.is_dir():
         return []
 
-    results: list[tuple[str, Path]] = []
-    for dataset_dir in sorted(inference_root.iterdir()):
-        if not dataset_dir.is_dir():
+    candidate_bases: list[Path] = []
+    if use_model_subdir is True:
+        if model_name:
+            candidate_bases.append(scan_root / model_name)
+    elif use_model_subdir is False:
+        candidate_bases.append(scan_root)
+    else:
+        candidate_bases.append(scan_root)
+        if model_name:
+            candidate_bases.append(scan_root / model_name)
+
+    discovered: dict[tuple[str, str], tuple[str, Path]] = {}
+    for base in candidate_bases:
+        if not base.is_dir():
             continue
-        dataset_key = dataset_dir.name
-        for pt_file in sorted(dataset_dir.glob("seed_*")):
-            if pt_file.suffix in (".pt", ".gz"):
-                results.append((dataset_key, pt_file))
-    return results
+        for dataset_dir in sorted(base.iterdir()):
+            if not dataset_dir.is_dir():
+                continue
+            dataset_key = dataset_dir.name
+
+            artifact_paths = sorted(dataset_dir.glob("seed_*.pt")) + sorted(
+                dataset_dir.glob("seed_*.pt.gz")
+            )
+            for artifact_path in artifact_paths:
+                key = (dataset_key, str(artifact_path.resolve()))
+                discovered[key] = (dataset_key, artifact_path)
+
+    return sorted(discovered.values(), key=lambda item: (item[0], str(item[1])))
 
 
 def load_posterior_artifacts(
@@ -101,9 +141,34 @@ def load_posterior_artifacts(
             _as_mapping(payload.get("metadata")) if isinstance(payload, Mapping) else {}
         )
         run_id = str(metadata.get("run_id", run_dir.name))
+        run_name = str(metadata.get("run_name", run_id))
         model_name = str(metadata.get("model_name", "unknown"))
 
-        artifacts = _discover_artifacts(run_dir)
+        inference_root_raw = metadata.get("inference_root")
+        inference_root: Path | None = None
+        if inference_root_raw is not None and str(inference_root_raw).strip():
+            candidate_root = Path(str(inference_root_raw)).expanduser()
+            if not candidate_root.is_absolute():
+                candidate_root = run_dir / candidate_root
+            inference_root = candidate_root
+
+        layout_raw = str(metadata.get("inference_layout", "")).strip().lower()
+        if layout_raw == "model_dataset":
+            use_model_subdir: bool | None = True
+        elif layout_raw == "dataset":
+            use_model_subdir = False
+        else:
+            use_model_subdir = None
+
+        artifacts = _discover_artifacts(
+            run_dir,
+            model_name=model_name,
+            inference_root=inference_root,
+            use_model_subdir=use_model_subdir,
+        )
+        if not artifacts:
+            # Backward-compatible fallback to run-local discovery.
+            artifacts = _discover_artifacts(run_dir, model_name=model_name)
         if not artifacts:
             log.debug("No inference artifacts in %s", run_dir)
             continue
@@ -157,6 +222,7 @@ def load_posterior_artifacts(
                 rows.append(
                     {
                         "RunID": run_id,
+                        "RunName": run_name,
                         "RunDir": str(run_dir),
                         "Model": model_name,
                         "DatasetKey": dataset_key,
@@ -194,7 +260,12 @@ def _graph_density(adj: torch.Tensor) -> torch.Tensor:
     n_potential = n * (n - 1)  # off-diagonal entries for a DAG
     if n_potential == 0:
         return torch.zeros(adj.shape[:-2], device=adj.device)
-    return adj.float().sum(dim=(-1, -2)) / n_potential
+
+    adj_f = adj.float()
+    off_diag_edges = adj_f.sum(dim=(-1, -2)) - torch.diagonal(
+        adj_f, dim1=-2, dim2=-1
+    ).sum(dim=-1)
+    return off_diag_edges / n_potential
 
 
 def _skeleton(adj: torch.Tensor) -> torch.Tensor:
@@ -218,7 +289,7 @@ def _connected_components(adj: torch.Tensor) -> int:
     Returns:
         Number of connected components.
     """
-    n = adj.shape[0]
+    n = int(adj.shape[0])
     if n == 0:
         return 0
 
@@ -235,9 +306,11 @@ def _connected_components(adj: torch.Tensor) -> int:
         visited[start] = True
         while queue:
             node = queue.pop(0)
-            neighbours = torch.nonzero(skel[node] > 0.5, as_tuple=False).flatten()
+            neighbours = (
+                torch.nonzero(skel[node] > 0.5, as_tuple=False).flatten().tolist()
+            )
             for nb in neighbours:
-                nb_int = nb.item()
+                nb_int = int(nb)
                 if not visited[nb_int]:
                     visited[nb_int] = True
                     queue.append(nb_int)
@@ -273,7 +346,7 @@ def compute_per_sample_diagnostics(
     truth = true_adj.float()
 
     # ── Density ────────────────────────────────────────────────────────
-    densities = _graph_density(samples).numpy()  # (S,)
+    densities = _graph_density(samples).cpu().numpy()  # (S,)
     true_density = _graph_density(truth).item()
     density_ratios = densities / (true_density + eps)
 
@@ -342,7 +415,7 @@ ORIENTATION_WRONG_THRESHOLD: float = 0.5
 def compute_event_probabilities(
     diagnostics: dict[str, np.ndarray],
     true_adj: torch.Tensor,
-) -> dict[str, float]:
+) -> dict[str, float | bool]:
     """Compute posterior event probabilities from per-sample diagnostics.
 
     Args:
@@ -356,16 +429,20 @@ def compute_event_probabilities(
         - ``p_dense``: P(density_ratio > threshold)
         - ``p_skeleton_correct_orient_wrong``: P(skeleton_f1 >= 0.8 AND
           orientation_accuracy < 0.5)
-        - ``p_fragmented``: P(predicted graph has more connected components
-          than the truth)
+        - ``p_fragmented``: P(predicted graph is fragmented | truth connected)
+        - ``truth_connected``: whether the truth graph is connected
     """
     s = len(diagnostics["density"])
+    true_cc = _connected_components(true_adj)
+    truth_connected = true_cc == 1
+
     if s == 0:
         return {
             "p_empty": 0.0,
             "p_dense": 0.0,
             "p_skeleton_correct_orient_wrong": 0.0,
-            "p_fragmented": 0.0,
+            "p_fragmented": 0.0 if truth_connected else float("nan"),
+            "truth_connected": truth_connected,
         }
 
     density = diagnostics["density"]
@@ -373,9 +450,6 @@ def compute_event_probabilities(
     skel_f1 = diagnostics["skeleton_f1"]
     orient_acc = diagnostics["orientation_accuracy"]
     cc = diagnostics["connected_components"]
-
-    # Ground truth connected components
-    true_cc = _connected_components(true_adj)
 
     p_empty = float(np.mean(density < EMPTY_DENSITY_THRESHOLD))
     p_dense = float(np.mean(density_ratio > DENSE_RATIO_THRESHOLD))
@@ -385,13 +459,17 @@ def compute_event_probabilities(
             & (orient_acc < ORIENTATION_WRONG_THRESHOLD)
         )
     )
-    p_fragmented = float(np.mean(cc > true_cc))
+    if truth_connected:
+        p_fragmented = float(np.mean(cc > 1))
+    else:
+        p_fragmented = float("nan")
 
     return {
         "p_empty": p_empty,
         "p_dense": p_dense,
         "p_skeleton_correct_orient_wrong": p_skel_orient,
         "p_fragmented": p_fragmented,
+        "truth_connected": truth_connected,
     }
 
 
@@ -472,14 +550,20 @@ def run_posterior_diagnostics(
     result_rows: list[dict[str, Any]] = []
 
     for _, row in artifacts_df.iterrows():
-        graph_samples: torch.Tensor = row["GraphSamples"]
-        true_adj: torch.Tensor = row["TrueAdj"]
+        graph_samples_raw = row.get("GraphSamples")
+        true_adj_raw = row.get("TrueAdj")
+        if not torch.is_tensor(graph_samples_raw) or not torch.is_tensor(true_adj_raw):
+            continue
+
+        graph_samples = cast(torch.Tensor, graph_samples_raw)
+        true_adj = cast(torch.Tensor, true_adj_raw)
 
         # Per-sample diagnostics
         diag = compute_per_sample_diagnostics(graph_samples, true_adj)
 
         # Event probabilities
         events = compute_event_probabilities(diag, true_adj)
+        truth_connected = bool(events.pop("truth_connected", True))
 
         # Summary statistics
         summary = compute_posterior_summary(diag)
@@ -494,6 +578,8 @@ def run_posterior_diagnostics(
             "TaskIdx": row.get("TaskIdx"),
             "NumSamples": row.get("NumSamples"),
             "NNodes": row.get("NNodes"),
+            "TruthConnected": truth_connected,
+            "ConnectedTaskCount": int(truth_connected),
         }
 
         # Event probabilities

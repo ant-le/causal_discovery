@@ -40,6 +40,7 @@ def _make_run_dir(
     model_name: str = "test_model",
     dataset_key: str = "id_linear_er20",
     graph_gen: str = "identity",
+    use_shared_cache: bool = False,
 ) -> Path:
     """Create a fake run directory with metrics.json and inference artifacts.
 
@@ -51,13 +52,20 @@ def _make_run_dir(
     run_dir.mkdir(parents=True, exist_ok=True)
 
     # Write metrics.json
+    metadata = {
+        "run_id": "run_001",
+        "run_name": "test_run",
+        "model_name": model_name,
+        "output_dir": str(run_dir),
+    }
+
+    if use_shared_cache:
+        cache_root = tmp_path / "shared_cache"
+        metadata["inference_root"] = str(cache_root)
+        metadata["inference_layout"] = "model_dataset"
+
     metrics = {
-        "metadata": {
-            "run_id": "run_001",
-            "run_name": "test_run",
-            "model_name": model_name,
-            "output_dir": str(run_dir),
-        },
+        "metadata": metadata,
         "family_metadata": {
             dataset_key: {
                 "n_nodes": n_nodes,
@@ -76,7 +84,10 @@ def _make_run_dir(
         json.dump(metrics, f)
 
     # Create inference artifacts
-    inference_dir = run_dir / "inference" / dataset_key
+    if use_shared_cache:
+        inference_dir = tmp_path / "shared_cache" / model_name / dataset_key
+    else:
+        inference_dir = run_dir / "inference" / dataset_key
     inference_dir.mkdir(parents=True, exist_ok=True)
 
     torch.manual_seed(42)
@@ -161,6 +172,11 @@ class TestGraphDensity:
 
     def test_single_node(self) -> None:
         adj = torch.zeros(1, 1)
+        assert _graph_density(adj).item() == pytest.approx(0.0)
+
+    def test_ignores_diagonal_entries(self) -> None:
+        adj = torch.zeros(4, 4)
+        adj.fill_diagonal_(1)
         assert _graph_density(adj).item() == pytest.approx(0.0)
 
 
@@ -296,7 +312,7 @@ class TestEventProbabilities:
 
     def test_perfect_predictions_no_failures(self) -> None:
         """Perfect predictions → all event probabilities near 0."""
-        true_adj = _make_simple_adj([(0, 1), (1, 2), (2, 3)], 5)
+        true_adj = _make_simple_adj([(0, 1), (1, 2), (2, 3)], 4)
         samples = true_adj.unsqueeze(0).expand(20, -1, -1).float()
         diag = compute_per_sample_diagnostics(samples, true_adj)
         events = compute_event_probabilities(diag, true_adj)
@@ -341,6 +357,15 @@ class TestEventProbabilities:
         events = compute_event_probabilities(diag, true_adj)
         assert events["p_empty"] == 0.0
         assert events["p_dense"] == 0.0
+
+    def test_fragmented_is_nan_when_truth_disconnected(self) -> None:
+        true_adj = _make_simple_adj([(0, 1), (2, 3)], 4)  # two components
+        samples = true_adj.unsqueeze(0).expand(8, -1, -1).float()
+        diag = compute_per_sample_diagnostics(samples, true_adj)
+        events = compute_event_probabilities(diag, true_adj)
+
+        assert bool(events["truth_connected"]) is False
+        assert np.isnan(float(events["p_fragmented"]))
 
 
 # ── Unit tests: posterior summary ─────────────────────────────────────
@@ -410,6 +435,16 @@ class TestArtifactDiscovery:
         assert "dataset_a" in dataset_keys
         assert "dataset_b" in dataset_keys
 
+    def test_discovers_shared_cache_layout(self, tmp_path: Path) -> None:
+        run_dir = _make_run_dir(tmp_path, n_tasks=2, use_shared_cache=True)
+        artifacts = _discover_artifacts(
+            run_dir,
+            model_name="test_model",
+            inference_root=tmp_path / "shared_cache",
+            use_model_subdir=True,
+        )
+        assert len(artifacts) == 2
+
 
 class TestLoadPosteriorArtifacts:
     def test_loads_correctly(self, tmp_path: Path) -> None:
@@ -448,6 +483,12 @@ class TestLoadPosteriorArtifacts:
         # Values should be 0 or 1
         unique_vals = torch.unique(samples)
         assert all(v.item() in (0, 1) for v in unique_vals)
+
+    def test_loads_from_shared_cache_layout(self, tmp_path: Path) -> None:
+        run_dir = _make_run_dir(tmp_path, n_tasks=2, use_shared_cache=True)
+        df = load_posterior_artifacts([run_dir])
+        assert len(df) == 2
+        assert set(df["DatasetKey"]) == {"id_linear_er20"}
 
 
 # ── Integration tests: full pipeline ──────────────────────────────────
@@ -547,7 +588,10 @@ class TestEndToEndPipeline:
         for _, row in result.iterrows():
             assert 0.0 <= row["p_empty"] <= 1.0
             assert 0.0 <= row["p_dense"] <= 1.0
-            assert 0.0 <= row["p_fragmented"] <= 1.0
+            if bool(row.get("TruthConnected", False)):
+                assert 0.0 <= row["p_fragmented"] <= 1.0
+            else:
+                assert np.isnan(float(row["p_fragmented"]))
             assert row["density_ratio_mean"] >= 0.0
 
     def test_with_dataset_filter(self, tmp_path: Path) -> None:

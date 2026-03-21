@@ -12,6 +12,7 @@ All functions consume the per-task raw DataFrame produced by
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Sequence
 
 import numpy as np
@@ -135,13 +136,13 @@ def compute_ood_detection_metrics(
             Higher score should indicate more likely OOD.
 
     Returns:
-        DataFrame with columns ``Model``, ``ScoreMetric``, ``AUROC``, ``AUPRC``,
-        ``N_ID``, ``N_OOD``.
+        DataFrame with columns ``RunID`` (if available), ``Model``,
+        ``ScoreMetric``, ``AUROC``, ``AUPRC``, ``N_ID``, ``N_OOD``.
     """
     if raw_df.empty or "Metric" not in raw_df.columns:
         return pd.DataFrame()
 
-    # We also need an accuracy metric (e-shd) to pair with the score
+    # Pivot selected score metric to one row per task.
     wide = _pivot_raw_wide(raw_df, [score_metric])
     if wide.empty or score_metric not in wide.columns:
         log.warning("Score metric '%s' not found in raw data; skipping.", score_metric)
@@ -152,9 +153,19 @@ def compute_ood_detection_metrics(
 
     wide["is_ood"] = wide["DatasetKey"].apply(_is_ood).astype(int)
 
+    group_cols = [c for c in ("RunID", "Model") if c in wide.columns]
+    if not group_cols:
+        group_cols = ["Model"]
+
     rows: list[dict[str, object]] = []
-    for model in sorted(wide["Model"].unique()):
-        mdf = wide[wide["Model"] == model].dropna(subset=[score_metric])
+    for group_key, group_df in wide.groupby(group_cols, dropna=False):
+        if isinstance(group_key, tuple):
+            key_map = {k: v for k, v in zip(group_cols, group_key)}
+        else:
+            key_map = {group_cols[0]: group_key}
+
+        model = str(key_map.get("Model", "unknown"))
+        mdf = group_df.dropna(subset=[score_metric])
         labels = mdf["is_ood"].to_numpy()
         scores = mdf[score_metric].to_numpy(dtype=float)
 
@@ -167,16 +178,17 @@ def compute_ood_detection_metrics(
         auroc = _roc_auc_manual(labels, scores)
         auprc = _precision_recall_auc_manual(labels, scores)
 
-        rows.append(
-            {
-                "Model": model,
-                "ScoreMetric": score_metric,
-                "AUROC": round(auroc, 4),
-                "AUPRC": round(auprc, 4),
-                "N_ID": n_id,
-                "N_OOD": n_ood,
-            }
-        )
+        row: dict[str, object] = {
+            "Model": model,
+            "ScoreMetric": score_metric,
+            "AUROC": round(auroc, 4),
+            "AUPRC": round(auprc, 4),
+            "N_ID": n_id,
+            "N_OOD": n_ood,
+        }
+        if "RunID" in key_map:
+            row["RunID"] = str(key_map["RunID"])
+        rows.append(row)
 
     return pd.DataFrame(rows)
 
@@ -187,7 +199,7 @@ def compute_ood_detection_metrics(
 def compute_selective_prediction(
     raw_df: pd.DataFrame,
     score_metric: str = "edge_entropy",
-    accuracy_metric: str = "e-shd",
+    accuracy_metrics: Sequence[str] = ("e-shd", "e-sid"),
     n_thresholds: int = 50,
 ) -> pd.DataFrame:
     """Compute selective prediction curves: accuracy vs coverage at varying thresholds.
@@ -197,18 +209,29 @@ def compute_selective_prediction(
     Args:
         raw_df: Long-format per-task DataFrame.
         score_metric: Uncertainty metric (higher = less trustworthy).
-        accuracy_metric: Performance metric to evaluate accepted predictions.
+        accuracy_metrics: Performance metrics to evaluate for accepted
+            predictions. This function expects a multi-metric sequence
+            (for example ``["e-shd", "e-sid"]``).
         n_thresholds: Number of threshold values to sweep.
 
     Returns:
-        DataFrame with columns ``Model``, ``Threshold``, ``Coverage``,
-        ``MeanAccuracy``, ``N_Accepted``.
+        DataFrame with columns ``RunID`` (if available), ``Model``,
+        ``AccuracyMetric``, ``Threshold``, ``Coverage``, ``MeanValue``,
+        ``MeanAccuracy`` (backward-compatible alias), and ``N_Accepted``.
     """
     if raw_df.empty or "Metric" not in raw_df.columns:
         return pd.DataFrame()
 
-    wide = _pivot_raw_wide(raw_df, [score_metric, accuracy_metric])
-    needed = {score_metric, accuracy_metric}
+    if isinstance(accuracy_metrics, str):
+        raise ValueError("accuracy_metrics must be a sequence, not a string.")
+    metric_list = list(dict.fromkeys(accuracy_metrics))
+    if len(metric_list) < 2:
+        raise ValueError(
+            "accuracy_metrics must contain at least two metrics (multi-metric mode)."
+        )
+
+    wide = _pivot_raw_wide(raw_df, [score_metric, *metric_list])
+    needed = {score_metric, *metric_list}
     if wide.empty or not needed.issubset(wide.columns):
         log.warning(
             "Missing metrics for selective prediction (%s); skipping.",
@@ -216,16 +239,23 @@ def compute_selective_prediction(
         )
         return pd.DataFrame()
 
+    group_cols = [c for c in ("RunID", "Model") if c in wide.columns]
+    if not group_cols:
+        group_cols = ["Model"]
+
     rows: list[dict[str, object]] = []
-    for model in sorted(wide["Model"].unique()):
-        mdf = wide[wide["Model"] == model].dropna(
-            subset=[score_metric, accuracy_metric]
-        )
+    for group_key, group_df in wide.groupby(group_cols, dropna=False):
+        if isinstance(group_key, tuple):
+            key_map = {k: v for k, v in zip(group_cols, group_key)}
+        else:
+            key_map = {group_cols[0]: group_key}
+
+        model = str(key_map.get("Model", "unknown"))
+        mdf = group_df.dropna(subset=[score_metric, *metric_list])
         if mdf.empty:
             continue
 
         scores = mdf[score_metric].to_numpy(dtype=float)
-        accuracy = mdf[accuracy_metric].to_numpy(dtype=float)
         total = len(scores)
 
         lo, hi = float(scores.min()), float(scores.max())
@@ -234,23 +264,29 @@ def compute_selective_prediction(
         else:
             thresholds = np.linspace(lo, hi, n_thresholds)
 
-        for t in thresholds:
-            mask = scores <= t
-            n_accepted = int(mask.sum())
-            if n_accepted == 0:
-                continue
-            mean_acc = float(accuracy[mask].mean())
-            coverage = n_accepted / total
+        for accuracy_metric in metric_list:
+            accuracy = mdf[accuracy_metric].to_numpy(dtype=float)
+            for t in thresholds:
+                mask = scores <= t
+                n_accepted = int(mask.sum())
+                if n_accepted == 0:
+                    continue
+                mean_value = float(accuracy[mask].mean())
+                coverage = n_accepted / total
 
-            rows.append(
-                {
+                row: dict[str, object] = {
                     "Model": model,
+                    "ScoreMetric": score_metric,
+                    "AccuracyMetric": accuracy_metric,
                     "Threshold": round(float(t), 6),
                     "Coverage": round(coverage, 6),
-                    "MeanAccuracy": round(mean_acc, 6),
+                    "MeanValue": round(mean_value, 6),
+                    "MeanAccuracy": round(mean_value, 6),
                     "N_Accepted": n_accepted,
                 }
-            )
+                if "RunID" in key_map:
+                    row["RunID"] = str(key_map["RunID"])
+                rows.append(row)
 
     return pd.DataFrame(rows)
 
@@ -260,7 +296,7 @@ def compute_selective_prediction(
 
 def generate_ood_detection_table(
     detection_df: pd.DataFrame,
-    output_path: "str | __import__('pathlib').Path",
+    output_path: str | Path,
 ) -> None:
     """Write a LaTeX table summarising OOD detection AUROC/AUPRC per model.
 
@@ -268,8 +304,6 @@ def generate_ood_detection_table(
         detection_df: Output of :func:`compute_ood_detection_metrics`.
         output_path: Where to write the ``.tex`` file.
     """
-    from pathlib import Path
-
     output_path = Path(output_path)
 
     if detection_df.empty:
@@ -293,7 +327,11 @@ def generate_ood_detection_table(
     lines.append(r"\midrule")
 
     for _, row in detection_df.iterrows():
-        model_tex = str(row["Model"]).replace("_", r"\_")
+        model_label = str(row["Model"])
+        run_id = row.get("RunID")
+        if run_id is not None and str(run_id).strip() and str(run_id).lower() != "nan":
+            model_label = f"{model_label} [{run_id}]"
+        model_tex = model_label.replace("_", r"\_")
         lines.append(
             f"{model_tex} & {row['ScoreMetric']}"
             f" & {row['AUROC']:.3f} & {row['AUPRC']:.3f}"
