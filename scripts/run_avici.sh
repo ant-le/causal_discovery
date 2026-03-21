@@ -3,6 +3,7 @@
 #SBATCH --partition=GPU-a100
 #SBATCH --nodes=1
 #SBATCH --ntasks=4
+#SBATCH --gpus=4
 #SBATCH --gpus-per-task=1
 #SBATCH --time=72:00:00
 #SBATCH --output=/dev/null
