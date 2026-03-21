@@ -8,6 +8,7 @@ from omegaconf import DictConfig
 from causal_meta.analysis.utils import (
     EmptyAnalysisDataError,
     generate_all_artifacts_from_runs,
+    RawGranularityError,
     resolve_run_directories,
     RunSelectionError,
 )
@@ -30,6 +31,7 @@ def run(cfg: DictConfig, output_dir: Path) -> None:
 
     run_ids = [str(item) for item in analysis_cfg.get("run_ids", [])]
     run_dirs = [Path(str(item)) for item in analysis_cfg.get("run_dirs", [])]
+    strict = bool(analysis_cfg.get("strict", False))
 
     output_dir_raw = analysis_cfg.get("output_dir", None)
     graphics_dir = (
@@ -44,12 +46,21 @@ def run(cfg: DictConfig, output_dir: Path) -> None:
             run_dirs=run_dirs,
         )
         log.info("Selected %d runs for analysis.", len(selected_runs))
-        generate_all_artifacts_from_runs(selected_runs, graphics_dir)
+        generate_all_artifacts_from_runs(selected_runs, graphics_dir, strict=strict)
     except (FileNotFoundError, RunSelectionError) as exc:
+        if strict:
+            raise
         log.warning("Analysis input resolution failed: %s", exc)
         return
     except EmptyAnalysisDataError:
+        if strict:
+            raise
         log.warning("No rows available after loading selected run metrics.")
+        return
+    except RawGranularityError as exc:
+        if strict:
+            raise
+        log.warning("Raw granularity check failed: %s", exc)
         return
 
     log.info("Analysis artifacts saved to %s", graphics_dir)

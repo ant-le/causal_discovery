@@ -18,6 +18,10 @@ class RunSelectionError(ValueError):
     """Raised when run selection arguments are invalid."""
 
 
+class RawGranularityError(RuntimeError):
+    """Raised when per-task analysis is requested for non-per-task raw metrics."""
+
+
 # Run/model keys -> display names
 MODEL_NAME_MAP: dict[str, str] = {
     "avici": "AviCi",
@@ -186,6 +190,13 @@ def _infer_model_key(run_id: str) -> str:
     return run_id
 
 
+def _is_explicit_model_key(model_key: str) -> bool:
+    """Return True for explicit (non-amortized) model families."""
+    model_key_norm = model_key.lower()
+    explicit_tokens = ("dibs", "bayesdag", "random")
+    return any(token in model_key_norm for token in explicit_tokens)
+
+
 def load_runs_dataframe(
     run_dirs: Sequence[Path], *, translate_names: bool = True
 ) -> pd.DataFrame:
@@ -248,6 +259,7 @@ def load_runs_dataframe(
             ds_dist = _as_mapping(distances.get(dataset_key_str))
             spectral_dist = _to_float(ds_dist.get("spectral"), float("nan"))
             kl_degree_dist = _to_float(ds_dist.get("kl_degree"), float("nan"))
+            mechanism_dist = _to_float(ds_dist.get("mechanism"), float("nan"))
 
             for metric in sorted(_extract_base_metrics(dataset_metrics)):
                 mean_raw = dataset_metrics.get(f"{metric}_mean")
@@ -279,6 +291,7 @@ def load_runs_dataframe(
                         ),
                         "SpectralDist": spectral_dist,
                         "KLDegreeDist": kl_degree_dist,
+                        "MechanismDist": mechanism_dist,
                     }
                 )
 
@@ -290,6 +303,8 @@ def load_raw_task_dataframe(
     metrics: Sequence[str] | None = None,
     *,
     translate_names: bool = True,
+    require_per_task: bool = False,
+    skip_non_per_task: bool = False,
 ) -> pd.DataFrame:
     """Load per-task raw metric values into a long-format DataFrame.
 
@@ -300,6 +315,10 @@ def load_raw_task_dataframe(
         run_dirs: Run directories containing ``metrics.json``.
         metrics: If given, only load these metric keys.  ``None`` loads all.
         translate_names: Whether to map model/dataset keys to display names.
+        require_per_task: If ``True``, only accept runs whose
+            ``metadata.raw_granularity`` is ``"per_task"``.
+        skip_non_per_task: When ``require_per_task`` is enabled, skip
+            non-conforming runs instead of raising :class:`RawGranularityError`.
 
     Returns:
         DataFrame with columns ``RunID``, ``Model``, ``ModelKey``, ``DatasetKey``,
@@ -319,6 +338,7 @@ def load_raw_task_dataframe(
 
         metadata = _as_mapping(payload.get("metadata"))
         run_id = str(metadata.get("run_id", Path(run_dir).name))
+        run_name = str(metadata.get("run_name", run_id))
 
         model_key_raw = metadata.get("model_name")
         model_key = (
@@ -327,6 +347,30 @@ def load_raw_task_dataframe(
             else _infer_model_key(run_id)
         )
         model_name = map_model_name(model_key) if translate_names else model_key
+
+        raw_granularity = str(metadata.get("raw_granularity", "")).strip().lower()
+        if not raw_granularity:
+            if _is_explicit_model_key(model_key):
+                raw_granularity = "per_task"
+            else:
+                batch_size_test = metadata.get("batch_size_test", 1)
+                try:
+                    raw_granularity = (
+                        "per_batch" if int(batch_size_test) > 1 else "per_task"
+                    )
+                except (TypeError, ValueError):
+                    raw_granularity = "unknown"
+
+        if require_per_task and raw_granularity != "per_task":
+            message = (
+                "Raw metric granularity mismatch for run "
+                f"'{run_id}' ({run_dir}): expected per_task, found "
+                f"'{raw_granularity}'."
+            )
+            if skip_non_per_task:
+                log.warning("%s Skipping run.", message)
+                continue
+            raise RawGranularityError(message)
 
         raw = _as_mapping(payload.get("raw"))
         fam_meta = _as_mapping(payload.get("family_metadata"))
@@ -354,6 +398,7 @@ def load_raw_task_dataframe(
             ds_dist = _as_mapping(distances.get(dataset_key_str))
             spectral_dist = _to_float(ds_dist.get("spectral"), float("nan"))
             kl_degree_dist = _to_float(ds_dist.get("kl_degree"), float("nan"))
+            mechanism_dist = _to_float(ds_dist.get("mechanism"), float("nan"))
 
             for metric_name, values_any in raw_metrics.items():
                 if metrics is not None and metric_name not in metrics:
@@ -368,6 +413,7 @@ def load_raw_task_dataframe(
                     rows.append(
                         {
                             "RunID": run_id,
+                            "RunName": run_name,
                             "Model": model_name,
                             "ModelKey": model_key,
                             "DatasetKey": dataset_key_str,
@@ -385,6 +431,7 @@ def load_raw_task_dataframe(
                             ),
                             "SpectralDist": spectral_dist,
                             "KLDegreeDist": kl_degree_dist,
+                            "MechanismDist": mechanism_dist,
                         }
                     )
 
@@ -394,12 +441,16 @@ def load_raw_task_dataframe(
 def generate_all_artifacts_from_runs(
     run_dirs: Sequence[Path],
     output_dir: Path,
+    *,
+    strict: bool = False,
 ) -> pd.DataFrame:
     """Generate all standard plots/tables from selected run directories.
 
     Args:
         run_dirs: Selected run directories containing ``metrics.json``.
         output_dir: Directory where figures and tables are written.
+        strict: If ``True``, raise on analysis sub-step errors instead of
+            warning and continuing.
 
     Returns:
         The normalized DataFrame used to create outputs.
@@ -458,6 +509,8 @@ def generate_all_artifacts_from_runs(
     raw_df = load_raw_task_dataframe(
         run_dirs,
         metrics=["sparsity_ratio", "skeleton_f1", "orientation_accuracy"],
+        require_per_task=True,
+        skip_non_per_task=not strict,
     )
     if not raw_df.empty:
         classified = classify_failure_modes(raw_df)
@@ -468,7 +521,9 @@ def generate_all_artifacts_from_runs(
     # Phase G: OOD detection analysis (needs raw per-task data)
     ood_raw_df = load_raw_task_dataframe(
         run_dirs,
-        metrics=["edge_entropy", "graph_nll", "e-shd"],
+        metrics=["edge_entropy", "graph_nll", "e-shd", "e-sid"],
+        require_per_task=True,
+        skip_non_per_task=not strict,
     )
     if not ood_raw_df.empty:
         # Entropy histogram (E.3a)
@@ -503,6 +558,8 @@ def generate_all_artifacts_from_runs(
         else:
             log.info("No inference artifacts found; skipping posterior diagnostics.")
     except Exception:
+        if strict:
+            raise
         log.warning(
             "Posterior diagnostics failed; continuing with remaining artifacts.",
             exc_info=True,

@@ -3,9 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from causal_meta.analysis.utils import (
     generate_all_artifacts_from_runs,
+    load_raw_task_dataframe,
     load_runs_dataframe,
+    RawGranularityError,
     resolve_run_directories,
 )
 
@@ -18,15 +22,22 @@ def _write_metrics(
     model_name: str,
     dataset_key: str,
     mean_offset: float,
+    raw_granularity: str | None = None,
+    batch_size_test: int | None = None,
 ) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
+    metadata: dict[str, object] = {
+        "run_id": run_id,
+        "run_name": run_name,
+        "model_name": model_name,
+        "output_dir": str(run_dir),
+    }
+    if raw_granularity is not None:
+        metadata["raw_granularity"] = raw_granularity
+    if batch_size_test is not None:
+        metadata["batch_size_test"] = int(batch_size_test)
     payload = {
-        "metadata": {
-            "run_id": run_id,
-            "run_name": run_name,
-            "model_name": model_name,
-            "output_dir": str(run_dir),
-        },
+        "metadata": metadata,
         "summary": {
             dataset_key: {
                 "e-shd_mean": 10.0 + mean_offset,
@@ -167,6 +178,7 @@ def _write_metrics_with_enrichment(
             dataset_key: {
                 "spectral": 0.42,
                 "kl_degree": 1.73,
+                "mechanism": 0.31,
             }
         },
         "summary": {
@@ -215,6 +227,7 @@ def test_load_runs_dataframe_includes_distance_columns(tmp_path: Path) -> None:
     row = df.iloc[0]
     assert float(row["SpectralDist"]) == 0.42
     assert float(row["KLDegreeDist"]) == 1.73
+    assert float(row["MechanismDist"]) == 0.31
 
 
 def test_load_runs_dataframe_handles_missing_enrichment(tmp_path: Path) -> None:
@@ -242,3 +255,57 @@ def test_load_runs_dataframe_handles_missing_enrichment(tmp_path: Path) -> None:
 
     assert math.isnan(float(row["SpectralDist"]))
     assert math.isnan(float(row["KLDegreeDist"]))
+    assert math.isnan(float(row["MechanismDist"]))
+
+
+def test_load_raw_task_dataframe_rejects_non_per_task_runs(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "run_batch_raw"
+    _write_metrics(
+        run_dir,
+        run_id="run_batch_raw",
+        run_name="batch_raw",
+        model_name="bcnp",
+        dataset_key="id_linear_er20",
+        mean_offset=0.0,
+        raw_granularity="per_batch",
+    )
+
+    with pytest.raises(RawGranularityError):
+        load_raw_task_dataframe([run_dir], require_per_task=True)
+
+
+def test_generate_all_artifacts_strict_fails_on_non_per_task_raw(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "runs" / "run_batch_raw"
+    _write_metrics(
+        run_dir,
+        run_id="run_batch_raw",
+        run_name="batch_raw",
+        model_name="bcnp",
+        dataset_key="id_linear_er20",
+        mean_offset=0.0,
+        raw_granularity="per_batch",
+    )
+
+    with pytest.raises(RawGranularityError):
+        generate_all_artifacts_from_runs([run_dir], tmp_path / "graphics", strict=True)
+
+
+def test_load_raw_task_dataframe_legacy_explicit_defaults_to_per_task(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "runs" / "run_legacy_dibs"
+    _write_metrics(
+        run_dir,
+        run_id="run_legacy_dibs",
+        run_name="legacy_dibs",
+        model_name="dibs",
+        dataset_key="id_linear_er20",
+        mean_offset=0.0,
+        batch_size_test=8,
+    )
+
+    raw_df = load_raw_task_dataframe([run_dir], require_per_task=True)
+    assert not raw_df.empty
+    assert set(raw_df["ModelKey"]) == {"dibs"}
