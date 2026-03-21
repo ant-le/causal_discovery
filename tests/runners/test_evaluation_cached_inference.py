@@ -69,7 +69,7 @@ def test_evaluation_uses_cached_inference_artifact(tmp_path) -> None:
     artifact_path = out_dir / "seed_123.pt.gz"
 
     graph_samples = torch.zeros(
-        1, 3, dataset.n_nodes, dataset.n_nodes, dtype=torch.uint8
+        1, 5, dataset.n_nodes, dataset.n_nodes, dtype=torch.uint8
     )
     with gzip.open(artifact_path, "wb") as f:
         torch.save(

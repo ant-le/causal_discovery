@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Mapping, cast
 
 import numpy as np
 import torch
@@ -131,7 +131,8 @@ def _compute_distances(
 ) -> dict[str, dict[str, float]]:
     """Compute spectral and KL degree-distribution distances for each test family.
 
-    Returns a mapping ``dataset_key -> {"spectral": float, "kl_degree": float}``.
+    Returns a mapping
+    ``dataset_key -> {"spectral": float, "kl_degree": float, "mechanism": float}``.
     Falls back gracefully if the train family is unavailable.
     """
     distances: dict[str, dict[str, float]] = {}
@@ -154,9 +155,62 @@ def _compute_distances(
         except Exception:
             log.warning("KL degree distance failed for family %s", name, exc_info=True)
             entry["kl_degree"] = float("nan")
+        try:
+            entry["mechanism"] = compute_family_distance(
+                train_family,
+                test_family,
+                metric="mechanism",
+                n_samples=12,
+            )
+        except Exception:
+            log.warning("Mechanism distance failed for family %s", name, exc_info=True)
+            entry["mechanism"] = float("nan")
         distances[name] = entry
 
     return distances
+
+
+def _prepare_cached_samples_for_metrics(
+    artifact: Mapping[str, Any],
+    *,
+    requested_n_samples: int,
+) -> tuple[torch.Tensor | None, int | None]:
+    """Validate and reshape cached graph samples for metric computation.
+
+    Args:
+        artifact: Loaded artifact payload.
+        requested_n_samples: Number of posterior samples requested by config.
+
+    Returns:
+        Tuple ``(samples_for_metrics, cached_n_samples)`` where:
+        - ``samples_for_metrics`` has shape ``(S, 1, N, N)`` when compatible,
+          otherwise ``None``.
+        - ``cached_n_samples`` is the number of samples found in cache, when
+          extractable.
+    """
+    graph_samples = artifact.get("graph_samples")
+    if not isinstance(graph_samples, torch.Tensor):
+        return None, None
+
+    # Cached explicit-model artifacts are written as (B, K, N, N) with B=1.
+    if graph_samples.ndim == 4:
+        if int(graph_samples.shape[0]) != 1:
+            return None, int(graph_samples.shape[1])
+        cached_n_samples = int(graph_samples.shape[1])
+        if cached_n_samples < requested_n_samples:
+            return None, cached_n_samples
+        prepared = graph_samples[:, :requested_n_samples].permute(1, 0, 2, 3)
+        return prepared, cached_n_samples
+
+    # Backward-compatible fallback for artifacts saved as (K, N, N).
+    if graph_samples.ndim == 3:
+        cached_n_samples = int(graph_samples.shape[0])
+        if cached_n_samples < requested_n_samples:
+            return None, cached_n_samples
+        prepared = graph_samples[:requested_n_samples].unsqueeze(1)
+        return prepared, cached_n_samples
+
+    return None, None
 
 
 def run(
@@ -219,7 +273,18 @@ def run(
         inference_root = output_dir / "inference"
     use_cached_inference = bool(cfg.inference.get("use_cached_inference", True))
     cache_inference = bool(cfg.inference.get("cache_inference", True))
-    cache_compress, cache_dtype, cache_n_samples = cache_settings(cfg)
+    cache_compress, cache_dtype, cache_n_samples_cfg = cache_settings(cfg)
+    cache_n_samples = cache_n_samples_cfg
+    if cache_n_samples is not None and cache_n_samples < n_samples:
+        if rank == 0:
+            log.warning(
+                "cache_n_samples (%d) is smaller than inference.n_samples (%d); "
+                "overriding cache_n_samples to %d for idempotent cache hits.",
+                cache_n_samples,
+                n_samples,
+                n_samples,
+            )
+        cache_n_samples = n_samples
     suffix = cache_suffix(compress=cache_compress)
 
     def _shard_indices(n: int, rank: int, world_size: int) -> range:
@@ -278,20 +343,53 @@ def run(
                     input_data = input_data_norm.to(device).unsqueeze(0)
                     adjacency_matrix = adjacency_matrix_true.to(device).unsqueeze(0)
 
+                    cache_hit_usable = False
+                    cache_out_path = artifact_path
+                    samples_for_metrics = torch.empty(0, device=device)
+
                     if artifact_path is not None:
-                        if rank == 0 and not cached_context_logged:
-                            log.info(
-                                "Evaluation context: using cached inference for "
-                                "dataset=%s, device=%s, mode=%s",
-                                name,
-                                device,
-                                sampling_mode,
+                        try:
+                            artifact = torch_load(artifact_path)
+                        except Exception:
+                            if rank == 0:
+                                log.warning(
+                                    "Failed to load cached artifact %s; resampling.",
+                                    artifact_path,
+                                    exc_info=True,
+                                )
+                            artifact = None
+
+                        if artifact is not None:
+                            prepared_cached, cached_n_samples = (
+                                _prepare_cached_samples_for_metrics(
+                                    artifact,
+                                    requested_n_samples=n_samples,
+                                )
                             )
-                            cached_context_logged = True
-                        artifact = torch_load(artifact_path)
-                        graph_samples = artifact["graph_samples"].to(device)
-                        samples_for_metrics = graph_samples.permute(1, 0, 2, 3)
-                    else:
+                            if prepared_cached is not None:
+                                if rank == 0 and not cached_context_logged:
+                                    log.info(
+                                        "Evaluation context: using cached inference for "
+                                        "dataset=%s, device=%s, mode=%s",
+                                        name,
+                                        device,
+                                        sampling_mode,
+                                    )
+                                    cached_context_logged = True
+                                samples_for_metrics = prepared_cached.to(device)
+                                cache_hit_usable = True
+                            else:
+                                if rank == 0:
+                                    log.warning(
+                                        "Ignoring incompatible cached artifact %s "
+                                        "(cached_n_samples=%s, requested_n_samples=%d); "
+                                        "resampling and refreshing cache.",
+                                        artifact_path,
+                                        cached_n_samples,
+                                        n_samples,
+                                    )
+
+                    if not cache_hit_usable:
                         if rank == 0 and not sampling_context_logged:
                             log.info(
                                 "Evaluation sampling context: dataset=%s, device=%s, "
@@ -307,32 +405,24 @@ def run(
                         )
                         samples_for_metrics = samples.permute(1, 0, 2, 3)
 
-                        if (
-                            cache_inference
-                            and find_inference_artifact(
-                                inference_root,
-                                dataset_name=name,
-                                model_name=model_name,
-                                seed=seed,
-                                prefer_compress=cache_compress,
-                                use_model_subdir=bool(cache_dir),
+                        if cache_inference:
+                            if cache_out_path is None:
+                                cache_out_path = (
+                                    (inference_root / model_name / name)
+                                    if cache_dir
+                                    else (inference_root / name)
+                                ) / f"seed_{seed}{suffix}"
+
+                            cached_samples = prepare_graph_samples_for_cache(
+                                samples.detach(),
+                                dtype=cache_dtype,
+                                max_samples=cache_n_samples,
                             )
-                            is None
-                        ):
-                            out_path = (
-                                (inference_root / model_name / name)
-                                if cache_dir
-                                else (inference_root / name)
-                            ) / f"seed_{seed}{suffix}"
                             atomic_torch_save(
                                 {
                                     "seed": seed,
                                     "idx": int(idx),
-                                    "graph_samples": prepare_graph_samples_for_cache(
-                                        samples.detach(),
-                                        dtype=cache_dtype,
-                                        max_samples=cache_n_samples,
-                                    ).cpu(),
+                                    "graph_samples": cached_samples.cpu(),
                                     "true_adj": (adjacency_matrix_true.detach() > 0.5)
                                     .to(dtype=torch.uint8)
                                     .cpu(),
@@ -342,8 +432,10 @@ def run(
                                         if cache_n_samples is not None
                                         else None
                                     ),
+                                    "requested_n_samples": int(n_samples),
+                                    "num_samples_stored": int(cached_samples.shape[1]),
                                 },
-                                out_path,
+                                cache_out_path,
                             )
 
                     # Update handlers
@@ -415,11 +507,38 @@ def run(
 
     # Save
     if rank == 0:
+        dm_config = getattr(data_module, "config", None)
+        batch_size_test = (
+            int(getattr(dm_config, "batch_size_test", 1))
+            if dm_config is not None
+            else 1
+        )
+        batch_size_test_interventional = (
+            int(getattr(dm_config, "batch_size_test_interventional", 1))
+            if dm_config is not None
+            else 1
+        )
+
+        # Graph-metric raw values are appended per update call. For amortized
+        # models this equals per-batch unless batch_size_test=1.
+        raw_granularity = "per_task"
+        if model_unwrapped.needs_pretraining and batch_size_test > 1:
+            raw_granularity = "per_batch"
+
         metadata = {
             "run_id": output_dir.name,
             "run_name": str(cfg.get("name", "")),
             "model_name": str(model_name),
             "output_dir": str(output_dir),
+            "inference_root": str(inference_root.expanduser().resolve()),
+            "inference_layout": "model_dataset" if cache_dir else "dataset",
+            "inference_n_samples": int(n_samples),
+            "cache_n_samples": (
+                int(cache_n_samples) if cache_n_samples is not None else None
+            ),
+            "batch_size_test": batch_size_test,
+            "batch_size_test_interventional": batch_size_test_interventional,
+            "raw_granularity": raw_granularity,
         }
         model_results_path = output_dir / "metrics.json"
         with open(model_results_path, "w") as f:
