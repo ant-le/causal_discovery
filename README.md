@@ -25,7 +25,7 @@ Use `--no-editable` for robust cross-platform imports of `causal_meta`.
 For full multimodel runs including BayesDAG, use:
 
 ```bash
-./bootstrap_uv.sh
+scripts/bootstrap_uv.sh
 ```
 
 Cluster scripts auto-detect BayesDAG Python from `.bootstrap_env.sh` or
@@ -44,13 +44,19 @@ run in your environment.
 ### Running on a Cluster (Slurm)
 
 ```bash
-scripts/run_bcnp.sh
+sbatch scripts/run_bcnp.sh
 ```
 
 Run all models with:
 
 ```bash
-scripts/run_all_models.sh
+scripts/submit_all_models.sh full
+```
+
+Run the ablation suite (AviCi + BCNP across all ablation data configs):
+
+```bash
+scripts/submit_ablation_suite.sh ablation_multimodel
 ```
 
 ## Documentation

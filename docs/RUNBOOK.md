@@ -49,25 +49,43 @@ Each model has a dedicated launcher script with hardcoded GPU specs:
 Submit one model:
 
 ```bash
-scripts/run_bcnp.sh
+sbatch scripts/run_bcnp.sh
 ```
 
 Submit all four models:
 
 ```bash
-scripts/run_all_models.sh
+scripts/submit_all_models.sh full
 ```
 
-Submit a fast BCNP multi-GPU smoke test:
+Submit all four canary jobs:
 
 ```bash
-scripts/run_bcnp_smoke_multigpu.sh
+scripts/submit_all_models.sh canary
+```
+
+`scripts/run_all_models.sh` remains available for sequential execution from an
+existing allocation (it does not submit via `sbatch`).
+
+Submit ablations (AviCi + BCNP across all ablation data configs):
+
+```bash
+scripts/submit_ablation_suite.sh ablation_multimodel
+```
+
+Customize ablation fanout with environment variables:
+
+```bash
+CAUSAL_META_ABLATION_MODELS=avici,bcnp \
+CAUSAL_META_ABLATION_DATA_CONFIGS=ablation_linear_only,ablation_linear_mlp \
+scripts/submit_ablation_suite.sh ablation_multimodel my_ablation_prefix
 ```
 
 Optional arguments for each script:
 
 ```bash
 scripts/run_avici.sh <config_name> <run_name> [hydra_overrides...]
+scripts/submit_all_models.sh [canary|full] [run_prefix] [hydra_overrides...]
 ```
 
 For BayesDAG, `CAUSAL_META_BAYESDAG_PYTHON` defaults to
@@ -107,6 +125,11 @@ Generate tables/figures directly from selected run directories:
 uv run python -m causal_meta.analysis.run_analysis experiments/runs \
   --run-id canary_20260317_120000_avici \
   --run-id canary_20260317_120000_bcnp
+
+# Fail fast on missing/invalid analysis prerequisites.
+uv run python -m causal_meta.analysis.run_analysis experiments/runs \
+  --run-id rq1_full_20260319_120000_avici \
+  --strict
 ```
 
 If no `--run-id`/`--run-dir` is provided, analysis discovers all `metrics.json`
