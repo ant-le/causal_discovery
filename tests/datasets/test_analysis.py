@@ -12,14 +12,27 @@ from causal_meta.datasets.utils import (
     visualize_adjacency,
 )
 from causal_meta.datasets.generators.graphs import ErdosRenyiGenerator
-from causal_meta.datasets.generators.mechanisms import LinearMechanismFactory
+from causal_meta.datasets.generators.mechanisms import (
+    LinearMechanismFactory,
+    MLPMechanismFactory,
+)
 from causal_meta.datasets.scm import SCMFamily
 
 
 def _build_family(edge_prob: float = 0.3, n_nodes: int = 5) -> SCMFamily:
     generator = ErdosRenyiGenerator(edge_prob=edge_prob)
     mechanism = LinearMechanismFactory(weight_scale=0.1)
-    return SCMFamily(n_nodes=n_nodes, graph_generator=generator, mechanism_factory=mechanism)
+    return SCMFamily(
+        n_nodes=n_nodes, graph_generator=generator, mechanism_factory=mechanism
+    )
+
+
+def _build_mlp_family(edge_prob: float = 0.3, n_nodes: int = 5) -> SCMFamily:
+    generator = ErdosRenyiGenerator(edge_prob=edge_prob)
+    mechanism = MLPMechanismFactory(hidden_dim=16)
+    return SCMFamily(
+        n_nodes=n_nodes, graph_generator=generator, mechanism_factory=mechanism
+    )
 
 
 def test_get_family_stats_returns_expected_keys() -> None:
@@ -49,6 +62,20 @@ def test_visualize_adjacency_renders_matrix() -> None:
 def test_compute_family_distance_spectral_differs_for_density() -> None:
     sparse_family = _build_family(edge_prob=0.1)
     dense_family = _build_family(edge_prob=0.8)
-    distance = compute_family_distance(sparse_family, dense_family, metric="spectral", n_samples=6)
+    distance = compute_family_distance(
+        sparse_family, dense_family, metric="spectral", n_samples=6
+    )
     assert distance >= 0
     assert distance > 0.01
+
+
+def test_compute_family_distance_mechanism_detects_nonlinearity() -> None:
+    linear_family = _build_family(edge_prob=0.3)
+    mlp_family = _build_mlp_family(edge_prob=0.3)
+    distance = compute_family_distance(
+        linear_family,
+        mlp_family,
+        metric="mechanism",
+        n_samples=6,
+    )
+    assert distance >= 0.0

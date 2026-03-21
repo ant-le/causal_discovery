@@ -10,6 +10,73 @@ if TYPE_CHECKING:
     from causal_meta.datasets.scm import SCMFamily
 
 
+MECHANISM_DISTANCE_OBS_SAMPLES = 256
+"""Number of observational samples per task for mechanism distance."""
+
+
+def _linear_r2(y: np.ndarray, x: np.ndarray) -> float:
+    """Fit a linear model and return a clipped R^2 score in [0, 1]."""
+    if y.ndim != 1:
+        raise ValueError("y must be a 1D array")
+    if x.ndim != 2:
+        raise ValueError("x must be a 2D array")
+    if y.shape[0] != x.shape[0]:
+        raise ValueError("x and y must have the same number of rows")
+    if y.shape[0] < 2:
+        return 1.0
+
+    x_design = np.concatenate(
+        [np.ones((x.shape[0], 1), dtype=np.float64), x.astype(np.float64)],
+        axis=1,
+    )
+    y64 = y.astype(np.float64)
+
+    beta, *_ = np.linalg.lstsq(x_design, y64, rcond=None)
+    y_hat = x_design @ beta
+
+    ss_tot = float(np.sum((y64 - y64.mean()) ** 2))
+    if ss_tot <= 1e-12:
+        return 1.0
+
+    ss_res = float(np.sum((y64 - y_hat) ** 2))
+    r2 = 1.0 - (ss_res / ss_tot)
+    return float(np.clip(r2, 0.0, 1.0))
+
+
+def _task_nonlinearity_score(
+    family: "SCMFamily",
+    *,
+    seed: int,
+    obs_samples: int,
+) -> float:
+    """Estimate nonlinearity for one sampled task via linear-fit residual gap.
+
+    The score is the mean ``1 - R^2`` across nodes with at least one parent.
+    Higher values indicate stronger deviation from linear parent-child relations.
+    """
+    instance = family.sample_task(seed)
+    adjacency = instance.adjacency_matrix.detach().cpu()
+
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(seed + 13_579)
+        samples = instance.sample(obs_samples).detach().cpu().numpy()
+
+    node_scores: List[float] = []
+    n_nodes = int(adjacency.shape[0])
+    for node in range(n_nodes):
+        parents = torch.nonzero(adjacency[:, node] > 0.5, as_tuple=False).flatten()
+        if parents.numel() == 0:
+            continue
+        x = samples[:, parents.tolist()]
+        y = samples[:, node]
+        r2 = _linear_r2(y, x)
+        node_scores.append(float(1.0 - r2))
+
+    if not node_scores:
+        return 0.0
+    return float(np.mean(node_scores))
+
+
 def degree_sequence(adjacency: torch.Tensor) -> torch.Tensor:
     """Return total degree (in + out) for each node."""
     adj = adjacency.float()
@@ -72,7 +139,14 @@ def compute_family_distance(
     metric: str = "spectral",
     n_samples: int = 50,
 ) -> float:
-    """Compute a distance between two SCM families."""
+    """Compute a distance between two SCM families.
+
+    Supported metrics:
+    - ``"spectral"``: L1 gap in average graph spectral radius.
+    - ``"kl"``: KL divergence between degree distributions.
+    - ``"mechanism"``: Absolute gap in average nonlinearity score
+      (mean ``1-R^2`` of linear regressions over parent-child relations).
+    """
     if n_samples < 1:
         raise ValueError("n_samples must be positive.")
 
@@ -98,5 +172,24 @@ def compute_family_distance(
         elif q.shape[0] < p.shape[0]:
             q = np.pad(q, (0, p.shape[0] - q.shape[0]), constant_values=1e-12)
         return float(stats.entropy(p, q))
+    if metric == "mechanism":
+        scores_a: List[float] = []
+        scores_b: List[float] = []
+        for seed in range(n_samples):
+            scores_a.append(
+                _task_nonlinearity_score(
+                    family_a,
+                    seed=seed,
+                    obs_samples=MECHANISM_DISTANCE_OBS_SAMPLES,
+                )
+            )
+            scores_b.append(
+                _task_nonlinearity_score(
+                    family_b,
+                    seed=seed,
+                    obs_samples=MECHANISM_DISTANCE_OBS_SAMPLES,
+                )
+            )
+        return abs(float(np.mean(scores_a)) - float(np.mean(scores_b)))
 
     raise ValueError(f"Unsupported metric: {metric}")
