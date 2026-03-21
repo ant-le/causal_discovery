@@ -75,7 +75,7 @@ echo "Launching ${SLURM_NTASKS:-4} tasks via srun"
 unset SRUN_GRES SRUN_GPUS SRUN_GPUS_PER_TASK SRUN_GPUS_PER_NODE
 unset SBATCH_GRES SBATCH_GPUS SBATCH_GPUS_PER_TASK SBATCH_GPUS_PER_NODE
 
-srun --ntasks=4 --gpus-per-task=1 --cpus-per-task=8 "${MAIN_PYTHON}" -m causal_meta.main \
+srun --ntasks=4 --cpus-per-task=8 "${MAIN_PYTHON}" -m causal_meta.main \
   --config-name "${CONFIG_NAME}" \
   "model=avici" \
   "name=${RUN_NAME}" \
