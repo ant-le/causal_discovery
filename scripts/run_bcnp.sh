@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=cm_bcnp
 #SBATCH --partition=GPU-a100
+#SBATCH --exclusive
 #SBATCH --nodes=1
-#SBATCH --tasks-per-node=4
-#SBATCH --gres=gpu:a100:4
+#SBATCH --ntasks=2
+#SBATCH --gpus=2
+#SBATCH --gpus-per-task=1
 #SBATCH --time=72:00:00
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=250G
 
 set -euo pipefail
@@ -61,12 +63,47 @@ echo "SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-unset}"
 echo "SLURM_GPUS_ON_NODE=${SLURM_GPUS_ON_NODE:-unset}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 echo "GPU_DEVICE_ORDINAL=${GPU_DEVICE_ORDINAL:-unset}"
-echo "Launching ${SLURM_NTASKS:-4} tasks via srun"
+echo "=== scontrol show job ${SLURM_JOB_ID:-unset} ==="
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+  scontrol show job "${SLURM_JOB_ID}" || true
+fi
+echo "=== scontrol show node ${SLURMD_NODENAME:-${HOSTNAME:-unset}} ==="
+if [[ -n "${SLURMD_NODENAME:-}" ]]; then
+  scontrol show node "${SLURMD_NODENAME}" || true
+fi
+
+requested_gpus=2
+job_info=""
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+  job_info="$(scontrol show job "${SLURM_JOB_ID}" || true)"
+fi
+
+alloc_gpu_count=""
+if [[ -n "${job_info}" ]]; then
+  alloc_gpu_count="$(python3 - <<'PY' "${job_info}"
+import re
+import sys
+
+text = sys.argv[1]
+match = re.search(r"AllocTRES=.*?gres/gpu=(\d+)", text)
+print(match.group(1) if match else "")
+PY
+)"
+fi
+
+if [[ -n "${alloc_gpu_count}" && "${alloc_gpu_count}" -lt "${requested_gpus}" ]]; then
+  echo "Expected ${requested_gpus} allocated GPUs but Slurm reports ${alloc_gpu_count}. Aborting before srun."
+  exit 1
+fi
+
+echo "Launching ${SLURM_NTASKS:-2} tasks via srun"
 
 unset SRUN_GRES SRUN_GPUS SRUN_GPUS_PER_TASK SRUN_GPUS_PER_NODE
 unset SBATCH_GRES SBATCH_GPUS SBATCH_GPUS_PER_TASK SBATCH_GPUS_PER_NODE
+unset SLURM_GPUS_PER_TASK SLURM_TRES_PER_TASK
+unset SLURM_GPUS SLURM_JOB_GPUS SLURM_GPUS_ON_NODE
 
-srun "${MAIN_PYTHON}" -m causal_meta.main \
+srun --ntasks=2 --cpus-per-task=8 "${MAIN_PYTHON}" -m causal_meta.main \
   --config-name "${CONFIG_NAME}" \
   "model=bcnp" \
   "name=${RUN_NAME}" \
