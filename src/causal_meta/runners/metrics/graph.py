@@ -699,10 +699,15 @@ def edge_confusion_decomposition(
     # False negatives: target[i,j]=1 but pred[i,j]=0 and pred[j,i]=0
     fn = (t * (1 - p) * (1 - p_transposed)).sum(dim=(-1, -2))  # (S, B)
 
-    # False positives: pred[i,j]=1 but target[i,j]=0, excluding reversed
-    # (reversed edges have target[j,i]=1 so target_transposed removes them)
+    # False positives: pred[i,j]=1 but target[i,j]=0.
+    # Exclude only "pure reversed" cases (target[j,i]=1 and pred[j,i]=0),
+    # since those are already captured by `reversed_edges` and contribute 2
+    # units to SHD via the decomposition fp + fn + 2*reversed.
+    # If both directions are predicted while only one is true, the extra
+    # direction is a genuine FP and must be counted here.
     t_transposed = target.unsqueeze(0).float().transpose(-1, -2)
-    fp = (p * (1 - t) * (1 - t_transposed)).sum(dim=(-1, -2))  # (S, B)
+    pure_reversed_mask = t_transposed * (1 - p_transposed)
+    fp = (p * (1 - t) * (1 - pure_reversed_mask)).sum(dim=(-1, -2))  # (S, B)
 
     # Average over posterior samples → expected counts per graph
     return {

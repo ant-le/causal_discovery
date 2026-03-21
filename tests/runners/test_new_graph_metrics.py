@@ -8,6 +8,7 @@ import torch
 from causal_meta.runners.metrics.graph import (
     Metrics,
     edge_confusion_decomposition,
+    expected_shd,
     expected_calibration_error,
     skeleton_orientation_scores,
     sparsity_ratio,
@@ -103,6 +104,61 @@ class TestEdgeConfusionDecomposition:
         assert decomp["reversed"][0].item() == 1.0  # 2->1 is reversed 1->2
         assert decomp["fn"][0].item() == 0.0
         assert decomp["fp"][0].item() == 0.0
+
+    def test_bidirectional_overprediction_counts_extra_fp(self) -> None:
+        # Target: 0->1, Pred: 0->1 and 1->0
+        # Extra reverse edge should be counted as FP, not reversed.
+        target = torch.tensor([[[0, 1], [0, 0]]], dtype=torch.float32)
+        pred = torch.tensor([[[[0, 1], [1, 0]]]], dtype=torch.float32)
+
+        decomp = edge_confusion_decomposition(target, pred)
+        assert decomp["correct"][0].item() == 1.0
+        assert decomp["fp"][0].item() == 1.0
+        assert decomp["fn"][0].item() == 0.0
+        assert decomp["reversed"][0].item() == 0.0
+
+    def test_decomposition_matches_expected_shd_identity(self) -> None:
+        # For this decomposition, SHD identity should hold exactly:
+        #   SHD = FP + FN + 2 * Reversed
+        target = torch.tensor(
+            [
+                [
+                    [0, 1, 0],
+                    [0, 0, 1],
+                    [0, 0, 0],
+                ]
+            ],
+            dtype=torch.float32,
+        )
+        pred = torch.tensor(
+            [
+                [
+                    [
+                        [0, 1, 0],
+                        [1, 0, 0],
+                        [0, 1, 0],
+                    ]
+                ],
+                [
+                    [
+                        [0, 0, 0],
+                        [1, 0, 1],
+                        [0, 0, 0],
+                    ]
+                ],
+            ],
+            dtype=torch.float32,
+        )
+
+        decomp = edge_confusion_decomposition(target, pred)
+        shd = expected_shd(target, pred)
+        lhs = shd[0].item()
+        rhs = (
+            decomp["fp"][0].item()
+            + decomp["fn"][0].item()
+            + 2.0 * decomp["reversed"][0].item()
+        )
+        assert abs(lhs - rhs) < 1e-6
 
     def test_shape_validation(self) -> None:
         bad_target = torch.zeros(2, 3)
