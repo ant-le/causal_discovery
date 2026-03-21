@@ -74,6 +74,8 @@ echo "Launching ${SLURM_NTASKS:-4} tasks via srun"
 
 unset SRUN_GRES SRUN_GPUS SRUN_GPUS_PER_TASK SRUN_GPUS_PER_NODE
 unset SBATCH_GRES SBATCH_GPUS SBATCH_GPUS_PER_TASK SBATCH_GPUS_PER_NODE
+unset SLURM_GPUS_PER_TASK SLURM_TRES_PER_TASK
+unset SLURM_GPUS SLURM_JOB_GPUS SLURM_GPUS_ON_NODE
 
 srun --ntasks=4 --cpus-per-task=8 "${MAIN_PYTHON}" -m causal_meta.main \
   --config-name "${CONFIG_NAME}" \
