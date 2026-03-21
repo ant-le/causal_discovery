@@ -8,7 +8,7 @@
 #SBATCH --time=72:00:00
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=250G
 
 set -euo pipefail
@@ -62,12 +62,20 @@ echo "SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-unset}"
 echo "SLURM_GPUS_ON_NODE=${SLURM_GPUS_ON_NODE:-unset}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 echo "GPU_DEVICE_ORDINAL=${GPU_DEVICE_ORDINAL:-unset}"
+echo "=== scontrol show job ${SLURM_JOB_ID:-unset} ==="
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+  scontrol show job "${SLURM_JOB_ID}" || true
+fi
+echo "=== scontrol show node ${SLURMD_NODENAME:-${HOSTNAME:-unset}} ==="
+if [[ -n "${SLURMD_NODENAME:-}" ]]; then
+  scontrol show node "${SLURMD_NODENAME}" || true
+fi
 echo "Launching ${SLURM_NTASKS:-4} tasks via srun"
 
 unset SRUN_GRES SRUN_GPUS SRUN_GPUS_PER_TASK SRUN_GPUS_PER_NODE
 unset SBATCH_GRES SBATCH_GPUS SBATCH_GPUS_PER_TASK SBATCH_GPUS_PER_NODE
 
-srun "${MAIN_PYTHON}" -m causal_meta.main \
+srun --ntasks=4 --gpus-per-task=1 --cpus-per-task=8 "${MAIN_PYTHON}" -m causal_meta.main \
   --config-name "${CONFIG_NAME}" \
   "model=avici" \
   "name=${RUN_NAME}" \
