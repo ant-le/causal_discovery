@@ -5,8 +5,8 @@
 #SBATCH --tasks-per-node=1
 #SBATCH --gres=gpu:a100:1
 #SBATCH --time=72:00:00
-#SBATCH --output=slurm_%j.out
-#SBATCH --error=slurm_%j.err
+#SBATCH --output=/dev/null
+#SBATCH --error=/dev/null
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=80G
 
@@ -26,6 +26,9 @@ else
 fi
 
 mkdir -p "${ROOT_DIR}/experiments/runs/${RUN_NAME}"
+
+LOG_FILE="${ROOT_DIR}/experiments/runs/${RUN_NAME}/slurm_${SLURM_JOB_ID:-manual}.log"
+exec >>"${LOG_FILE}" 2>&1
 
 VENV_DIR="${VENV_DIR:-${UV_PROJECT_ENVIRONMENT:-.venv}}"
 if [[ "${VENV_DIR}" != /* ]]; then
@@ -64,7 +67,7 @@ echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 echo "GPU_DEVICE_ORDINAL=${GPU_DEVICE_ORDINAL:-unset}"
 echo "Launching ${SLURM_NTASKS:-1} tasks via srun"
 
-srun --gpu-bind=none "${MAIN_PYTHON}" -m causal_meta.main \
+srun "${MAIN_PYTHON}" -m causal_meta.main \
   --config-name "${CONFIG_NAME}" \
   "model=bayesdag" \
   "name=${RUN_NAME}" \

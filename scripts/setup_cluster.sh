@@ -6,7 +6,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${ROOT_DIR}"
 
-./bootstrap_uv.sh
+"${SCRIPT_DIR}/bootstrap_uv.sh"
 uv sync --extra cluster --extra wandb --frozen --no-editable
 uv pip install --python .venv-bayesdag/bin/python -r requirements-bayesdag.txt
 
