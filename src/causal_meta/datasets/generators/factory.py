@@ -220,6 +220,8 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
         "safety_checks",
         "num_workers",
         "pin_memory",
+        "persistent_workers",
+        "prefetch_factor",
         "normalize_data",
         "batch_size_train",
         "batch_size_val",

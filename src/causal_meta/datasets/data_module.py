@@ -146,6 +146,7 @@ class CausalMetaModule:
             num_workers=self.config.num_workers,
             pin_memory=self.config.pin_memory,
             collate_fn=collate_fn,
+            **self._dataloader_perf_kwargs(),
         )
 
     def test_dataloader(self) -> Dict[str, DataLoader]:
@@ -176,6 +177,7 @@ class CausalMetaModule:
                 pin_memory=self.config.pin_memory,
                 collate_fn=collate_fn,
                 sampler=sampler,
+                **self._dataloader_perf_kwargs(),
             )
         return loaders
 
@@ -209,6 +211,7 @@ class CausalMetaModule:
                 pin_memory=self.config.pin_memory,
                 collate_fn=collate_fn,
                 sampler=sampler,
+                **self._dataloader_perf_kwargs(),
             )
         return loaders
 
@@ -245,8 +248,26 @@ class CausalMetaModule:
                 pin_memory=self.config.pin_memory,
                 collate_fn=collate_fn,
                 sampler=sampler,
+                **self._dataloader_perf_kwargs(),
             )
         return loaders
+
+    def _dataloader_perf_kwargs(self) -> Dict[str, Any]:
+        """Return optional DataLoader kwargs that improve host-side throughput."""
+        num_workers = int(self.config.num_workers)
+        if num_workers <= 0:
+            return {}
+
+        prefetch_factor = int(getattr(self.config, "prefetch_factor", 2))
+        if prefetch_factor < 1:
+            raise ValueError("data.prefetch_factor must be >= 1 when num_workers > 0")
+
+        return {
+            "persistent_workers": bool(
+                getattr(self.config, "persistent_workers", True)
+            ),
+            "prefetch_factor": prefetch_factor,
+        }
 
     def _sample_hashes(self, family: SCMFamily, seeds: Sequence[int]) -> Set[str]:
         """

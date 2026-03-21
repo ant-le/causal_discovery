@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import inspect
 import logging
 import math
 import os
@@ -98,6 +99,8 @@ def run(
         optimizer_kwargs["betas"] = betas
     if optimizer_eps is not None:
         optimizer_kwargs["eps"] = optimizer_eps
+    if device.type == "cuda" and _adamw_supports_fused():
+        optimizer_kwargs["fused"] = bool(cfg.trainer.get("optimizer_fused", True))
     optimizer = optim.AdamW(model.parameters(), **optimizer_kwargs)
 
     scheduler = _build_scheduler(optimizer, cfg)
@@ -224,7 +227,7 @@ def run(
 
     while step < max_steps:
         model.train()
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
 
         # Loss is tracked as a scalar mean across micro-batches.
         loss_accum = torch.tensor(0.0, device=device)
@@ -585,6 +588,10 @@ def _build_scheduler(optimizer: optim.Optimizer, cfg: DictConfig) -> Any | None:
         schedulers=[warmup, cosine],
         milestones=[warmup_steps],
     )
+
+
+def _adamw_supports_fused() -> bool:
+    return "fused" in inspect.signature(optim.AdamW).parameters
 
 
 def _maybe_clip_grad_norm(

@@ -228,6 +228,10 @@ class DataModuleConfig:
 
     pin_memory: bool = True
 
+    persistent_workers: bool = True
+
+    prefetch_factor: int = 2
+
     normalize_data: bool = True
 
     # Batch sizes. Defaults preserve the existing "one task per batch" setup.
