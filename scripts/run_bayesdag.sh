@@ -67,6 +67,9 @@ echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 echo "GPU_DEVICE_ORDINAL=${GPU_DEVICE_ORDINAL:-unset}"
 echo "Launching ${SLURM_NTASKS:-1} tasks via srun"
 
+unset SRUN_GRES SRUN_GPUS SRUN_GPUS_PER_TASK SRUN_GPUS_PER_NODE
+unset SBATCH_GRES SBATCH_GPUS SBATCH_GPUS_PER_TASK SBATCH_GPUS_PER_NODE
+
 srun "${MAIN_PYTHON}" -m causal_meta.main \
   --config-name "${CONFIG_NAME}" \
   "model=bayesdag" \
