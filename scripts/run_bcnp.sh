@@ -3,9 +3,8 @@
 #SBATCH --partition=GPU-a100
 #SBATCH --exclusive
 #SBATCH --nodes=1
-#SBATCH --ntasks=2
-#SBATCH --gpus=2
-#SBATCH --gpus-per-task=1
+#SBATCH --tasks-per-node=4
+#SBATCH --gpus-per-node=4
 #SBATCH --time=72:00:00
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
@@ -103,7 +102,12 @@ unset SBATCH_GRES SBATCH_GPUS SBATCH_GPUS_PER_TASK SBATCH_GPUS_PER_NODE
 unset SLURM_GPUS_PER_TASK SLURM_TRES_PER_TASK
 unset SLURM_GPUS SLURM_JOB_GPUS SLURM_GPUS_ON_NODE
 
-srun --ntasks=2 --cpus-per-task=8 "${MAIN_PYTHON}" -m causal_meta.main \
+
+# Prevent login-node GPU visibility leakage (e.g. CUDA_VISIBLE_DEVICES=0,1)
+# from constraining per-task device ordinals in distributed runs.
+unset CUDA_VISIBLE_DEVICES GPU_DEVICE_ORDINAL 2>/dev/null || true
+
+srun "${MAIN_PYTHON}" -m causal_meta.main \
   --config-name "${CONFIG_NAME}" \
   "model=bcnp" \
   "name=${RUN_NAME}" \
