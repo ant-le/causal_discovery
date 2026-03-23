@@ -2,17 +2,32 @@ from __future__ import annotations
 
 import gzip
 import io
+import json
 import logging
 import os
 from pathlib import Path
 from typing import Any, Mapping
 
+import numpy as np
 import torch
 from hydra.core.hydra_config import HydraConfig
 
 from causal_meta.models.factory import MODEL_REGISTRY
 
 log = logging.getLogger(__name__)
+
+
+class NpEncoder(json.JSONEncoder):
+    """JSON encoder that handles numpy scalars and arrays."""
+
+    def default(self, o: Any) -> Any:
+        if isinstance(o, np.integer):
+            return int(o)
+        if isinstance(o, np.floating):
+            return float(o)
+        if isinstance(o, np.ndarray):
+            return o.tolist()
+        return super().default(o)
 
 
 def _cache_cfg(cfg: Any) -> Mapping[str, Any]:

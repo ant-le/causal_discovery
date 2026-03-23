@@ -7,12 +7,15 @@ import torch
 from causal_meta.runners.metrics.graph import Metrics
 
 
-def test_metrics_handler_compute() -> None:
+def test_metrics_handler_update_and_compute() -> None:
+    """Stateful update + compute (one-shot mode removed)."""
     metrics = Metrics(metrics=["e-shd", "e-edgef1"])
     target = torch.tensor([[[0, 1], [0, 0]]]).float()
     samples = torch.tensor([[[[0, 1], [0, 0]]], [[[0, 0], [0, 0]]]]).float()
 
-    results = metrics.compute(target, samples=samples)
+    metrics.update(target, samples)
+    results = metrics.compute(summary_stats=False)
+
     assert "e-shd" in results
     assert "e-edgef1" in results
     assert results["e-shd"] == 0.5
@@ -42,6 +45,8 @@ def test_metrics_gather_distributed(
     mock_all_gather.side_effect = side_effect
 
     metrics_handler = Metrics()
-    gathered = metrics_handler.gather(rank0_data)
+    # Manually set history so gather_raw_results has something
+    metrics_handler.history["e-shd"] = [0.5, 1.0]
+    gathered = metrics_handler.gather_raw_results()
 
     assert gathered["e-shd"] == [0.5, 1.0, 1.5, 2.0]

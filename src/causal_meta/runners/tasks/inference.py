@@ -12,6 +12,12 @@ from causal_meta.datasets.data_module import CausalMetaModule
 from causal_meta.datasets.torch_datasets import MetaFixedDataset
 from causal_meta.models.base import BaseModel
 from causal_meta.runners.logger.base import BaseLogger
+from causal_meta.runners.tasks.utils import (
+    infer_device,
+    resolve_inference_root,
+    sampling_mode,
+    shard_indices,
+)
 from causal_meta.runners.utils.artifacts import (
     atomic_torch_save,
     cache_settings,
@@ -29,11 +35,6 @@ from causal_meta.runners.utils.explicit_profiles import (
 log = logging.getLogger(__name__)
 
 
-def _shard_indices(n: int, rank: int, world_size: int) -> range:
-    # No padding, deterministic sharding: rank i handles i, i+world_size, ...
-    return range(rank, n, world_size)
-
-
 def _all_reduce_sum(value: int, device: torch.device) -> int:
     """Sum a scalar value across all ranks."""
     if not (dist.is_available() and dist.is_initialized()):
@@ -47,11 +48,6 @@ def _batch_indices(indices: range, batch_size: int) -> List[List[int]]:
     """Split indices into batches of at most batch_size."""
     idx_list = list(indices)
     return [idx_list[i : i + batch_size] for i in range(0, len(idx_list), batch_size)]
-
-
-def _sampling_mode(model: BaseModel) -> str:
-    external_python = getattr(model, "external_python", None)
-    return "external" if external_python else "in_process"
 
 
 def run(
@@ -96,21 +92,15 @@ def run(
         data_module.setup()
 
     # Determine inference root directory
-    # 1. Check for explicit 'cache_dir' in config (persistent cache)
-    # 2. Fallback to 'output_dir' (run-specific)
     cache_dir = cfg.get("inference", {}).get("cache_dir", None)
-    if cache_dir:
-        inference_root = Path(str(cache_dir))
-    else:
-        inference_root = resolve_output_dir(cfg, output_dir) / "inference"
+    inference_root = resolve_inference_root(cfg, resolve_output_dir(cfg, output_dir))
 
     model_name = get_model_name(cfg, model)
 
     inference_root.mkdir(parents=True, exist_ok=True)
 
     # Best-effort device inference (explicit models might have no parameters)
-    params = list(model.parameters())
-    device = params[0].device if params else dist_ctx.device
+    device = infer_device(model, dist_ctx)
 
     n_samples = int(cfg.get("inference", {}).get("n_samples", 100))
     inference_batch_size = int(cfg.get("inference", {}).get("batch_size", 1))
@@ -148,9 +138,9 @@ def run(
         log_interval = max(1, total // (world_size * 10))  # Log ~10 times per rank
 
         # Get sharded indices and split into batches
-        sharded_indices = _shard_indices(len(dataset), rank=rank, world_size=world_size)
+        sharded_indices = shard_indices(len(dataset), rank=rank, world_size=world_size)
         batches = _batch_indices(sharded_indices, inference_batch_size)
-        sampling_mode = _sampling_mode(model)
+        sampling_mode_ = sampling_mode(model)
         sampling_context_logged = False
 
         for batch_indices in batches:
@@ -180,7 +170,7 @@ def run(
                     device,
                     int(inputs.shape[0]),
                     n_samples,
-                    sampling_mode,
+                    sampling_mode_,
                 )
                 sampling_context_logged = True
 

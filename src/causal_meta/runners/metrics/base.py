@@ -8,83 +8,44 @@ import numpy as np
 import torch
 import torch.distributed as dist
 
-from causal_meta.datasets.scm import SCMFamily
-from causal_meta.datasets.utils.normalization import compute_scm_stats
-
 log = logging.getLogger(__name__)
 
 
 class BaseMetrics:
-    """
-    Shared base for metric trackers that:
-    - accumulate per-batch scalars into `history: Dict[str, List[float]]`
-    - support distributed gather (all_gather_object) for history
-    - support memory-efficient distributed aggregation via all_reduce (sum/count)
-    - provide helper for on-the-fly interventional data generation
+    """Base class for single-dataset metric trackers with DDP awareness.
+
+    Each instance tracks metrics for **one** dataset (SCM family).  Callers
+    must create a separate instance per family or call ``reset()`` between
+    families.
+
+    Public API
+    ----------
+    - ``reset()``              — clear accumulated history.
+    - ``gather_raw_results()`` — DDP-aware all-gather of raw per-batch values.
+    - ``summarize()``          — DDP-aware mean / std / sem via all-reduce.
     """
 
     def __init__(self) -> None:
         self.history: Dict[str, List[float]] = defaultdict(list)
 
     def reset(self) -> None:
+        """Clear accumulated history for reuse on a new dataset."""
         self.history = defaultdict(list)
 
-    def get_raw_results(self) -> Dict[str, List[float]]:
-        return self._gather_history()
+    # ── Raw results (gather across ranks) ──────────────────────────────
 
-    @staticmethod
-    def _generate_interventional_data(
-        family: SCMFamily,
-        seed: int,
-        n_samples: int,
-        intervention_value: float = 0.0,
-    ) -> List[Dict[str, Any]]:
-        """
-        Helper to generate a standard set of single-node interventions for an SCM instance.
-        Returns a list of dicts: {"target": int, "value": float, "data": normalized_tensor}.
-        """
-        instance = family.sample_task(seed)
-        n_nodes = family.n_nodes
+    def gather_raw_results(self) -> Dict[str, List[float]]:
+        """All-gather raw history lists from every rank and merge them.
 
-        # 1. Get Normalization Stats from observational data
-        with torch.random.fork_rng(devices=[]):
-            torch.manual_seed(seed)
-            x_obs_raw = instance.sample(n_samples)
+        After this call every rank holds the merged lists.  Useful for
+        saving per-task raw values on rank 0.
 
-        mean, std = compute_scm_stats(x_obs_raw)
-
-        # 2. Generate Interventions
-        interventional_data = []
-        for target_node in range(n_nodes):
-            mutilated = instance.do({target_node: intervention_value})
-            # Derived seed for reproducibility (consistent with datasets)
-            int_seed = seed + (target_node + 1) * 1000
-
-            with torch.random.fork_rng(devices=[]):
-                torch.manual_seed(int_seed)
-                x_int_raw = mutilated.sample(n_samples)
-
-            # Normalize using observational stats
-            x_int_norm = (x_int_raw - mean) / std
-
-            interventional_data.append(
-                {"target": target_node, "value": intervention_value, "data": x_int_norm}
-            )
-
-        return interventional_data
-
-    def _gather_history(self) -> Dict[str, List[float]]:
-        return self.gather(dict(self.history))
-
-    def gather(self, local_obj: Dict[str, List[float]]) -> Dict[str, List[float]]:
-        """
-        Generic gather helper for tests/utility code.
-
-        Args:
-            local_obj: dict of lists on the current rank.
         Returns:
-            merged dict of lists across all ranks (or local_obj if not distributed).
+            Merged ``{metric_key: [values_from_all_ranks]}`` dict.
+            Identity (copy of local history) when not distributed.
         """
+        local_obj = dict(self.history)
+
         if not (dist.is_available() and dist.is_initialized()):
             return dict(local_obj)
 
@@ -102,19 +63,40 @@ class BaseMetrics:
                 merged[k].extend(v)
         return dict(merged)
 
-    def _reduce_history_stats(self) -> Dict[str, Dict[str, float]]:
-        """
-        Memory-efficient distributed aggregation via all_reduce.
+    # ── Summary statistics (memory-efficient all_reduce) ───────────────
 
-        Instead of gathering all raw data to rank 0 (OOM risk on large datasets),
-        this computes local sum, sum-of-squares, and count, then reduces across
-        ranks to compute global mean/std/sem.
+    def summarize(self, *, summary_stats: bool = True) -> Dict[str, Any]:
+        """Compute DDP-safe summary statistics over accumulated history.
+
+        Uses ``all_reduce`` on (sum, sum_sq, count) per metric key — never
+        transfers raw data across ranks.
+
+        Args:
+            summary_stats: If ``True``, returns ``{metric}_mean/_sem/_std``.
+                Otherwise returns ``{metric}: mean`` only.
 
         Returns:
-            Dict mapping metric keys to {"mean", "std", "sem", "count"} dicts.
+            Dictionary of summarised metrics.
+        """
+        reduced = self._reduce_stats()
+        results: Dict[str, Any] = {}
+        for k, stats in reduced.items():
+            if summary_stats:
+                results[f"{k}_mean"] = stats["mean"]
+                results[f"{k}_sem"] = stats["sem"]
+                results[f"{k}_std"] = stats["std"]
+            else:
+                results[k] = stats["mean"]
+        return results
+
+    def _reduce_stats(self) -> Dict[str, Dict[str, float]]:
+        """Compute mean / std / sem, using ``all_reduce`` when distributed.
+
+        Returns:
+            ``{metric_key: {"mean", "std", "sem", "count"}}``
         """
         if not (dist.is_available() and dist.is_initialized()):
-            # Non-distributed: compute stats directly from local history
+            # ── Local fast path ────────────────────────────────────────
             results: Dict[str, Dict[str, float]] = {}
             for k, v in self.history.items():
                 if not v:
@@ -126,14 +108,16 @@ class BaseMetrics:
                 results[k] = {
                     "mean": float(arr.mean()),
                     "std": float(arr.std(ddof=1)) if arr.size > 1 else 0.0,
-                    "sem": float(arr.std(ddof=1) / np.sqrt(arr.size))
-                    if arr.size > 1
-                    else 0.0,
+                    "sem": (
+                        float(arr.std(ddof=1) / np.sqrt(arr.size))
+                        if arr.size > 1
+                        else 0.0
+                    ),
                     "count": float(arr.size),
                 }
             return results
 
-        # Distributed: use all_reduce for sum/sum_sq/count
+        # ── Distributed path ───────────────────────────────────────────
         try:
             backend = dist.get_backend()
         except Exception:
@@ -149,13 +133,17 @@ class BaseMetrics:
             None for _ in range(dist.get_world_size())
         ]
         dist.all_gather_object(all_keys_list, local_keys)
-        all_keys = set()
+        all_keys: set[str] = set()
         for ks in all_keys_list:
             if ks:
                 all_keys.update(ks)
 
         results = {}
-        for k in all_keys:
+        # CRITICAL: iterate in deterministic order so that every rank calls
+        # all_reduce for the same key at the same time.  Python sets have
+        # randomised iteration order across processes (due to PYTHONHASHSEED),
+        # which causes all_reduce to cross-contaminate values between ranks.
+        for k in sorted(all_keys):
             v = self.history.get(k, [])
             arr = np.asarray(v, dtype=float) if v else np.array([], dtype=float)
             arr = arr[np.isfinite(arr)]
@@ -164,26 +152,19 @@ class BaseMetrics:
             local_sum_sq = float((arr**2).sum()) if arr.size > 0 else 0.0
             local_count = float(arr.size)
 
-            # Create tensor with [sum, sum_sq, count]
             stats = torch.tensor([local_sum, local_sum_sq, local_count], device=device)
             dist.all_reduce(stats, op=dist.ReduceOp.SUM)
 
-            total_sum, total_sum_sq, total_count = (
-                float(stats[0].item()),
-                float(stats[1].item()),
-                float(stats[2].item()),
-            )
+            total_sum = float(stats[0].item())
+            total_sum_sq = float(stats[1].item())
+            total_count = float(stats[2].item())
 
             if total_count < 1:
                 continue
 
             mean = total_sum / total_count
-            # Variance via E[X^2] - E[X]^2 (population variance)
-            variance = (total_sum_sq / total_count) - (mean**2)
-            # Clamp numerical issues
-            variance = max(0.0, variance)
+            variance = max(0.0, (total_sum_sq / total_count) - (mean**2))
 
-            # Convert to sample std (Bessel's correction)
             if total_count > 1:
                 std = np.sqrt(variance * total_count / (total_count - 1))
                 sem = std / np.sqrt(total_count)
@@ -198,29 +179,4 @@ class BaseMetrics:
                 "count": total_count,
             }
 
-        return results
-
-    def summarize_distributed(self, *, summary_stats: bool = True) -> Dict[str, Any]:
-        """
-        Summarize history with distributed aggregation.
-
-        Uses memory-efficient all_reduce to compute global stats without
-        gathering all raw data to a single rank.
-
-        Args:
-            summary_stats: If True, returns {metric}_mean/sem/std. Else returns mean only.
-
-        Returns:
-            Dictionary of summarized metrics.
-        """
-        # Memory-efficient: compute stats via all_reduce
-        reduced = self._reduce_history_stats()
-        results: Dict[str, Any] = {}
-        for k, stats in reduced.items():
-            if summary_stats:
-                results[f"{k}_mean"] = stats["mean"]
-                results[f"{k}_sem"] = stats["sem"]
-                results[f"{k}_std"] = stats["std"]
-            else:
-                results[k] = stats["mean"]
         return results

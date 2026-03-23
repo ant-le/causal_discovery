@@ -5,7 +5,6 @@ import logging
 from pathlib import Path
 from typing import Any, Mapping, cast
 
-import numpy as np
 import torch
 import torch.nn as nn
 from omegaconf import DictConfig
@@ -14,12 +13,18 @@ from causal_meta.datasets.data_module import CausalMetaModule
 from causal_meta.datasets.generators.configs import FamilyConfig
 from causal_meta.datasets.torch_datasets import MetaFixedDataset
 from causal_meta.datasets.utils.normalization import normalize_scm_data
-from causal_meta.datasets.utils.stats import compute_family_distance
-from causal_meta.models.base import BaseModel
 from causal_meta.runners.logger.base import BaseLogger
 from causal_meta.runners.metrics.graph import Metrics
 from causal_meta.runners.metrics.scm import SCMMetrics
+from causal_meta.runners.tasks.utils import (
+    infer_device,
+    resolve_inference_root,
+    sampling_mode,
+    shard_indices,
+    unwrap_model,
+)
 from causal_meta.runners.utils.artifacts import (
+    NpEncoder,
     atomic_torch_save,
     cache_settings,
     cache_suffix,
@@ -36,22 +41,6 @@ from causal_meta.runners.utils.explicit_profiles import (
 )
 
 log = logging.getLogger(__name__)
-
-
-class NpEncoder(json.JSONEncoder):
-    def default(self, o: Any) -> Any:
-        if isinstance(o, np.integer):
-            return int(o)
-        if isinstance(o, np.floating):
-            return float(o)
-        if isinstance(o, np.ndarray):
-            return o.tolist()
-        return super().default(o)
-
-
-def _sampling_mode(model: BaseModel) -> str:
-    external_python = getattr(model, "external_python", None)
-    return "external" if external_python else "in_process"
 
 
 def _extract_graph_type(family_cfg: FamilyConfig) -> str:
@@ -126,50 +115,6 @@ def _build_family_metadata(
     return result
 
 
-def _compute_distances(
-    data_module: CausalMetaModule,
-) -> dict[str, dict[str, float]]:
-    """Compute spectral and KL degree-distribution distances for each test family.
-
-    Returns a mapping
-    ``dataset_key -> {"spectral": float, "kl_degree": float, "mechanism": float}``.
-    Falls back gracefully if the train family is unavailable.
-    """
-    distances: dict[str, dict[str, float]] = {}
-    train_family = getattr(data_module, "train_family", None)
-    if train_family is None:
-        return distances
-
-    # Use pre-computed spectral distances from setup() if available
-    spectral = getattr(data_module, "spectral_distances", None) or {}
-
-    test_families = getattr(data_module, "test_families", None) or {}
-    for name, test_family in test_families.items():
-        entry: dict[str, float] = {}
-        spectral_val = spectral.get(name)
-        entry["spectral"] = spectral_val if spectral_val is not None else float("nan")
-        try:
-            entry["kl_degree"] = compute_family_distance(
-                train_family, test_family, metric="kl", n_samples=25
-            )
-        except Exception:
-            log.warning("KL degree distance failed for family %s", name, exc_info=True)
-            entry["kl_degree"] = float("nan")
-        try:
-            entry["mechanism"] = compute_family_distance(
-                train_family,
-                test_family,
-                metric="mechanism",
-                n_samples=12,
-            )
-        except Exception:
-            log.warning("Mechanism distance failed for family %s", name, exc_info=True)
-            entry["mechanism"] = float("nan")
-        distances[name] = entry
-
-    return distances
-
-
 def _prepare_cached_samples_for_metrics(
     artifact: Mapping[str, Any],
     *,
@@ -223,30 +168,28 @@ def run(
 ) -> None:
     # DDP Setup
     dist_ctx = DistributedContext.current()
-    is_distributed = dist_ctx.is_distributed
     rank = dist_ctx.rank
 
     if rank == 0:
         log.info(f"Starting evaluation: {cfg.name}")
 
     # Device (explicit models may have no parameters)
-    params = list(model.parameters())
-    device = params[0].device if params else dist_ctx.device
+    device = infer_device(model, dist_ctx)
 
     # Data
     test_loaders = data_module.test_dataloader()
 
-    # Pre-compute family metadata and distributional distances (Phase C + D)
+    # Pre-compute family metadata; distances are pre-computed by data_module.setup()
     dm_config = getattr(data_module, "config", None)
     test_family_cfgs = getattr(dm_config, "test_families", None) or {}
     family_metadata = _build_family_metadata(test_family_cfgs)
-    family_distances = _compute_distances(data_module)
+    family_distances = getattr(data_module, "family_distances", {}) or {}
 
     model.eval()
 
     # Unwrap if DDP
-    model_unwrapped_raw = model.module if is_distributed else model
-    model_unwrapped = cast(BaseModel, model_unwrapped_raw)
+    model_unwrapped = unwrap_model(model)
+    model_unwrapped_raw = model.module if dist_ctx.is_distributed else model
 
     all_summary_metrics = {}
     all_raw_metrics = {}
@@ -267,10 +210,7 @@ def run(
     # Determine output directory (used for optional cached inference)
     output_dir = resolve_output_dir(cfg, output_dir)
     cache_dir = cfg.inference.get("cache_dir", None)
-    if cache_dir:
-        inference_root = Path(str(cache_dir))
-    else:
-        inference_root = output_dir / "inference"
+    inference_root = resolve_inference_root(cfg, output_dir)
     use_cached_inference = bool(cfg.inference.get("use_cached_inference", True))
     cache_inference = bool(cfg.inference.get("cache_inference", True))
     cache_compress, cache_dtype, cache_n_samples_cfg = cache_settings(cfg)
@@ -286,9 +226,6 @@ def run(
             )
         cache_n_samples = n_samples
     suffix = cache_suffix(compress=cache_compress)
-
-    def _shard_indices(n: int, rank: int, world_size: int) -> range:
-        return range(rank, n, world_size)
 
     model_name = get_model_name(cfg, model_unwrapped_raw)
 
@@ -307,7 +244,7 @@ def run(
         # Reset internal state for this dataset
         metrics_handler.reset()
         scm_metrics_handler.reset()
-        sampling_mode = _sampling_mode(model_unwrapped)
+        sampling_mode_ = sampling_mode(model_unwrapped)
         cached_context_logged = False
         sampling_context_logged = False
 
@@ -315,7 +252,7 @@ def run(
             # For explicit/non-amortized models, prefer cached inference artifacts and avoid DataLoader+DistributedSampler padding.
             if not model_unwrapped.needs_pretraining:
                 dataset = cast(MetaFixedDataset, loader.dataset)  # type: ignore[assignment]
-                for idx in _shard_indices(
+                for idx in shard_indices(
                     len(dataset), rank=rank, world_size=dist_ctx.world_size
                 ):
                     item = dataset[idx]
@@ -373,7 +310,7 @@ def run(
                                         "dataset=%s, device=%s, mode=%s",
                                         name,
                                         device,
-                                        sampling_mode,
+                                        sampling_mode_,
                                     )
                                     cached_context_logged = True
                                 samples_for_metrics = prepared_cached.to(device)
@@ -397,7 +334,7 @@ def run(
                                 name,
                                 device,
                                 n_samples,
-                                sampling_mode,
+                                sampling_mode_,
                             )
                             sampling_context_logged = True
                         samples = model_unwrapped.sample(
@@ -446,7 +383,6 @@ def run(
                             graph_samples=samples_for_metrics.squeeze(1),
                             family=family,
                             seeds=[seed],
-                            prefix=name,
                         )
 
             else:
@@ -480,12 +416,11 @@ def run(
                                     graph_samples=samples_for_metrics[:, b],
                                     family=family,
                                     seeds=[int(batch_seeds[b])],
-                                    prefix=name,
                                 )
 
         # Compute Summary Stats (Mean + SEM) and Gather Raw Data
         summary = metrics_handler.compute(summary_stats=True)
-        final_metrics = metrics_handler.get_raw_results()
+        final_metrics = metrics_handler.gather_raw_results()
 
         scm_summary = scm_metrics_handler.compute(summary_stats=True)
         scm_raw = scm_metrics_handler.get_raw_results()

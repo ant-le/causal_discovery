@@ -20,6 +20,7 @@ from causal_meta.datasets.data_module import CausalMetaModule
 from causal_meta.models.base import BaseModel
 from causal_meta.runners.logger.base import BaseLogger
 from causal_meta.runners.metrics.graph import Metrics
+from causal_meta.runners.tasks.utils import infer_device, unwrap_model
 from causal_meta.runners.utils.artifacts import get_model_name, resolve_output_dir
 from causal_meta.runners.utils.distributed import DistributedContext
 from causal_meta.runners.utils.seeding import get_experiment_seed
@@ -64,7 +65,7 @@ def run(
         log.info(f"Working directory: {os.getcwd()}")
 
     # Device is already set in pipe.py, but we can double check or get it from model
-    device = next(model.parameters()).device
+    device = infer_device(model, dist_ctx)
 
     # 2. Data
     # train_dataloader handles DDP seeding internally
@@ -79,10 +80,7 @@ def run(
         raise ValueError("trainer.accumulate_grad_batches must be >= 1")
 
     # Unwrap model for attribute access
-    unwrapped = model.module if isinstance(model, DDP) else model
-    model_unwrapped = cast(BaseModel, unwrapped)
-    if not isinstance(model_unwrapped, BaseModel):
-        raise TypeError("Expected model to be a BaseModel or DDP-wrapped BaseModel.")
+    model_unwrapped = unwrap_model(model)
 
     if not model_unwrapped.needs_pretraining:
         if rank == 0:
@@ -345,15 +343,19 @@ def run(
                 log.info(f"Validation at step {step}: {val_metrics}")
 
                 if logger:
-                    prefixed = {k: v for k, v in val_metrics.items() if "/" in k}
-                    log_payload = {f"val/{k}": v for k, v in prefixed.items()}
-                    aggregate = {
-                        k: v
+                    # ── Full Validations (per-family in-depth) ─────────
+                    full_payload = {
+                        f"val_full/{k}": v for k, v in val_metrics.items() if "/" in k
+                    }
+                    logger.log_metrics(full_payload, step=step)
+
+                    # ── Aggregated Validations (ID vs OOD overview) ────
+                    aggregate_payload = {
+                        f"val_aggregated/{k}": v
                         for k, v in val_metrics.items()
                         if k.startswith("mean_") and "/" not in k
                     }
-                    log_payload.update({f"val/{k}": v for k, v in aggregate.items()})
-                    logger.log_metrics(log_payload, step=step)
+                    logger.log_metrics(aggregate_payload, step=step)
 
                 # Save best model by ID validation E-F1 (fallback: global mean E-F1).
                 current_metric = val_metrics.get(
@@ -437,10 +439,12 @@ def validate(
     model.eval()
     val_loaders = data_module.val_dataloader()
 
-    metrics_handler = Metrics()
+    # One metrics handler per family (single-dataset assumption)
+    per_family_metrics: dict[str, dict[str, float]] = {}
 
     with torch.no_grad():
         for name, loader in val_loaders.items():
+            metrics_handler = Metrics()
             for batch in loader:
                 input_data = batch["data"].to(device)
                 adjacency_matrix = batch["adjacency"].to(device)
@@ -448,12 +452,26 @@ def validate(
                 samples = model.sample(input_data, num_samples=num_samples)
                 samples_for_metrics = samples.permute(1, 0, 2, 3)
 
-                metrics_handler.update(
-                    adjacency_matrix, samples_for_metrics, prefix=name
-                )
-    # summarize_distributed (called by compute) already performs count-weighted
-    # all_reduce across ranks, so no additional reduction is needed here.
-    avg_metrics = metrics_handler.compute(summary_stats=False)
+                metrics_handler.update(adjacency_matrix, samples_for_metrics)
+
+            family_results = metrics_handler.compute(summary_stats=False)
+            per_family_metrics[name] = family_results
+
+    # Build flat output: {family/metric: value} + {metric: global_mean}
+    avg_metrics: dict[str, float] = {}
+    all_metric_keys: set[str] = set()
+    for family_results in per_family_metrics.values():
+        all_metric_keys.update(family_results.keys())
+
+    for name, family_results in per_family_metrics.items():
+        for k, v in family_results.items():
+            avg_metrics[f"{name}/{k}"] = v
+
+    # Compute global means per metric key
+    for k in all_metric_keys:
+        values = [fm[k] for fm in per_family_metrics.values() if k in fm]
+        if values:
+            avg_metrics[k] = sum(values) / len(values)
 
     _augment_validation_group_metrics(avg_metrics)
 

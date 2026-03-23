@@ -12,7 +12,9 @@ from causal_meta.datasets.utils import collate_fn_scm, compute_graph_hash
 def _simple_family(n_nodes: int = 3) -> SCMFamily:
     generator = ErdosRenyiGenerator(edge_prob=0.4)
     mechanism = LinearMechanismFactory(weight_scale=0.1)
-    return SCMFamily(n_nodes=n_nodes, graph_generator=generator, mechanism_factory=mechanism)
+    return SCMFamily(
+        n_nodes=n_nodes, graph_generator=generator, mechanism_factory=mechanism
+    )
 
 
 def test_erdos_renyi_generator_supports_sparsity_alias() -> None:
@@ -24,8 +26,16 @@ def test_erdos_renyi_generator_supports_sparsity_alias() -> None:
 
 def test_collate_fn_normalizes_batch() -> None:
     batch = [
-        {"seed": 1, "data": torch.tensor([[1.0, 2.0], [3.0, 4.0]]), "adjacency": torch.zeros(2, 2)},
-        {"seed": 2, "data": torch.tensor([[5.0, 6.0], [7.0, 8.0]]), "adjacency": torch.ones(2, 2)},
+        {
+            "seed": 1,
+            "data": torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
+            "adjacency": torch.zeros(2, 2),
+        },
+        {
+            "seed": 2,
+            "data": torch.tensor([[5.0, 6.0], [7.0, 8.0]]),
+            "adjacency": torch.ones(2, 2),
+        },
     ]
     out = collate_fn_scm(batch)
     normalized, adjs = out["data"], out["adjacency"]
@@ -60,9 +70,12 @@ def test_meta_fixed_dataset_is_deterministic() -> None:
 def test_causal_meta_module_initializes_and_sets_datasets() -> None:
     # Using explicit configs (The "Best Way")
     from causal_meta.datasets.generators.configs import (
-        ErdosRenyiConfig, ScaleFreeConfig, LinearMechanismConfig, MLPMechanismConfig
+        ErdosRenyiConfig,
+        ScaleFreeConfig,
+        LinearMechanismConfig,
+        MLPMechanismConfig,
     )
-    
+
     train_cfg = FamilyConfig(
         name="train",
         n_nodes=4,
@@ -91,7 +104,11 @@ def test_causal_meta_module_initializes_and_sets_datasets() -> None:
     assert module.train_dataset is not None
     assert "test_set_1" in module.test_datasets
     assert module.test_datasets["test_set_1"] is not None
-    assert "test_set_1" in module.spectral_distances
+    assert "test_set_1" in module.family_distances
+    entry = module.family_distances["test_set_1"]
+    assert "spectral" in entry
+    assert "kl_degree" in entry
+    assert "mechanism" in entry
 
 
 def test_causal_meta_module_dataloaders() -> None:
@@ -126,11 +143,11 @@ def test_causal_meta_module_dataloaders() -> None:
 
     assert train_loader.num_workers == 2
     assert train_loader.pin_memory is True
-    
+
     assert "test" in test_loaders
     test_loader = test_loaders["test"]
     # We now expect test_loader to use configured workers, not 0
-    assert test_loader.num_workers == 2 
+    assert test_loader.num_workers == 2
     assert test_loader.pin_memory is True
 
 
@@ -201,7 +218,11 @@ def test_causal_meta_module_builds_validation_split_and_reserves_hashes() -> Non
     assert "id" in val_loaders
 
     assert module.train_dataset is not None
-    val_hash = compute_graph_hash(module.val_families["id"].sample_task(2).adjacency_matrix)
-    test_hash = compute_graph_hash(module.test_families["test"].sample_task(1).adjacency_matrix)
+    val_hash = compute_graph_hash(
+        module.val_families["id"].sample_task(2).adjacency_matrix
+    )
+    test_hash = compute_graph_hash(
+        module.test_families["test"].sample_task(1).adjacency_matrix
+    )
     assert val_hash in module.train_dataset.forbidden_hashes
     assert test_hash in module.train_dataset.forbidden_hashes

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List
 
 import torch
-
-from causal_meta.datasets.scm import SCMFamily
 
 from .base import BaseMetrics
 
@@ -42,15 +40,27 @@ def _auc_from_binary_labels(y_true: torch.Tensor, y_score: torch.Tensor) -> floa
     return float(torch.trapezoid(tpr, fpr).item())
 
 
-def _auc_graph_scores_impl(
+def auc_graph_scores_configurable(
     targets: torch.Tensor,
     preds: torch.Tensor,
     *,
-    num_shuffles: int,
-    balance_classes: bool,
-    seed: int,
+    num_shuffles: int = 1000,
+    balance_classes: bool = True,
+    seed: int = 0,
 ) -> torch.Tensor:
-    """Internal implementation used by both defaults and configurable mode."""
+    """Compute AUC with configurable class balancing options.
+
+    Args:
+        targets: Binary adjacency matrices ``(batch_size, n_nodes, n_nodes)``.
+        preds: Graph samples/probabilities
+            ``(num_samples, batch_size, n_nodes, n_nodes)``.
+        num_shuffles: Number of random balanced resamples. The paper uses 1000.
+        balance_classes: If ``True``, each shuffle uses equal positives/negatives.
+        seed: Seed for the deterministic shuffle generator.
+
+    Returns:
+        Tensor of shape ``(batch_size,)`` with AUC per graph.
+    """
     if targets.ndim != 3 or preds.ndim != 4:
         raise ValueError("targets must be 3D and preds must be 4D.")
 
@@ -91,36 +101,6 @@ def _auc_graph_scores_impl(
         auc_scores.append(float(sum(auc_samples) / len(auc_samples)))
 
     return torch.tensor(auc_scores, device=device)
-
-
-def auc_graph_scores_configurable(
-    targets: torch.Tensor,
-    preds: torch.Tensor,
-    *,
-    num_shuffles: int = 1000,
-    balance_classes: bool = True,
-    seed: int = 0,
-) -> torch.Tensor:
-    """Compute AUC with configurable class balancing options.
-
-    Args:
-        targets: Binary adjacency matrices with shape ``(batch_size, n_nodes, n_nodes)``.
-        preds: Graph samples/probabilities with shape
-            ``(num_samples, batch_size, n_nodes, n_nodes)``.
-        num_shuffles: Number of random balanced resamples. The paper uses 1000.
-        balance_classes: If ``True``, each shuffle uses equal positives/negatives.
-        seed: Seed for the deterministic shuffle generator.
-
-    Returns:
-        A tensor of shape ``(batch_size,)`` with AUC per graph.
-    """
-    return _auc_graph_scores_impl(
-        targets=targets,
-        preds=preds,
-        num_shuffles=num_shuffles,
-        balance_classes=balance_classes,
-        seed=seed,
-    )
 
 
 def expected_shd(target: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
@@ -191,45 +171,31 @@ def expected_f1_score(target: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
     return f1.mean(dim=0)
 
 
-def _bernoulli_log_prob(
-    targets: torch.Tensor, preds: torch.Tensor, eps: float = 1e-6
-) -> torch.Tensor:
-    """Per-graph Bernoulli log-probability of targets under mean(preds).
-
-    Uses the posterior mean ``preds.float().mean(dim=0)`` as the Bernoulli
-    parameter.  This is the Bayes-optimal probability estimate and is the
-    natural choice for evaluating log-probability calibration.
-
-    Args:
-        targets: (B, N, N) binary adjacency.
-        preds: (S, B, N, N) binary adjacency samples.
-        eps: clamp to avoid log(0).
-
-    Returns:
-        Tensor of shape (B,) with per-graph log-probabilities.
-    """
-    p = preds.float().mean(dim=0).clamp(eps, 1.0 - eps)
-    y = targets.float()
-    return (y * torch.log(p) + (1.0 - y) * torch.log(1.0 - p)).sum(dim=(-1, -2))
-
-
 def graph_nll_score(
     targets: torch.Tensor, preds: torch.Tensor, eps: float = 1e-6
 ) -> float:
-    """Negative Log-Probability of targets under Bernoulli parameterized by mean(preds).
+    """Negative log-probability of targets under Bernoulli(mean(preds)).
+
+    Uses the posterior mean as the Bernoulli parameter — the Bayes-optimal
+    probability estimate and natural choice for calibration evaluation.
 
     Args:
-        targets: (batch_size, num_nodes, num_nodes)
-        preds: (num_samples, batch_size, num_nodes, num_nodes)
+        targets: ``(batch_size, num_nodes, num_nodes)``
+        preds: ``(num_samples, batch_size, num_nodes, num_nodes)``
+        eps: Clamp to avoid log(0).
+
+    Returns:
+        Scalar mean NLL across the batch.
     """
     targets_t = (
         targets if isinstance(targets, torch.Tensor) else torch.as_tensor(targets)
     )
     preds_t = preds if isinstance(preds, torch.Tensor) else torch.as_tensor(preds)
 
-    log_prob = _bernoulli_log_prob(targets_t, preds_t, eps=eps)
+    p = preds_t.float().mean(dim=0).clamp(eps, 1.0 - eps)
+    y = targets_t.float()
+    log_prob = (y * torch.log(p) + (1.0 - y) * torch.log(1.0 - p)).sum(dim=(-1, -2))
 
-    # Return mean NLL across batch
     return -float(log_prob.mean().item())
 
 
@@ -472,11 +438,18 @@ def ancestor_f1_score(target: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
 
 
 class Metrics(BaseMetrics):
-    """
-    Unified Metrics handler for graph structure learning (Probabilistic only).
+    """Metrics handler for graph structure learning (probabilistic only).
 
-    Takes in different kinds of metrics and handles calculation, accumulation,
-    and distributed logic internally.
+    Tracks metrics for a **single** dataset (SCM family).  Callers must
+    create one instance per family or call ``reset()`` between families.
+
+    Workflow::
+
+        m = Metrics(metrics=["e-shd", "auc"])
+        for batch in loader:
+            m.update(targets, samples)
+        summary = m.compute(summary_stats=True)   # DDP-safe
+        raw     = m.gather_raw_results()           # for persistence
     """
 
     def __init__(
@@ -516,12 +489,11 @@ class Metrics(BaseMetrics):
     def _compute_batch_metrics(
         self, targets: torch.Tensor, samples: torch.Tensor
     ) -> Dict[str, float]:
-        """
-        Compute the configured metrics for a single batch.
+        """Compute the configured metrics for a single batch.
 
         Args:
-            targets: (B, N, N) ground truth adjacency.
-            samples: (S, B, N, N) sampled graphs.
+            targets: ``(B, N, N)`` ground truth adjacency.
+            samples: ``(S, B, N, N)`` sampled graphs.
         """
         batch_metrics: Dict[str, float] = {}
 
@@ -604,57 +576,27 @@ class Metrics(BaseMetrics):
         self,
         targets: torch.Tensor,
         samples: torch.Tensor,
-        prefix: str | None = None,
-        family: Optional[SCMFamily] = None,
-        seeds: Optional[Union[List[int], torch.Tensor]] = None,
-        obs_data: Optional[torch.Tensor] = None,
     ) -> None:
-        """
-        Compute metrics for a batch and update internal history.
+        """Compute metrics for a batch and append to internal history.
 
         Args:
-            targets: (B, N, N) ground truth adjacency.
-            samples: (S, B, N, N) binary graph samples.
-            prefix: Optional prefix for metric names.
-            family: Optional SCMFamily for on-the-fly generation (not used for structural metrics).
-            seeds: Optional seeds for the batch.
-            obs_data: Optional observational data.
+            targets: ``(B, N, N)`` ground truth adjacency.
+            samples: ``(S, B, N, N)`` binary graph samples.
         """
         batch_metrics = self._compute_batch_metrics(targets, samples)
-
-        # Store
         for k, v in batch_metrics.items():
             self.history[k].append(v)
-            if prefix:
-                self.history[f"{prefix}/{k}"].append(v)
 
-    def compute(
-        self,
-        targets: Optional[torch.Tensor] = None,
-        *,
-        samples: Optional[torch.Tensor] = None,
-        summary_stats: bool = True,
-    ) -> Dict[str, Any]:
-        """
-        Two usage modes:
-        1) Stateful aggregation:
-           - call `update(...)` repeatedly
-           - call `compute(summary_stats=...)` to summarize accumulated history
-        2) One-shot computation:
-           - call `compute(targets, samples=...)` to compute batch metrics
+    def compute(self, *, summary_stats: bool = True) -> Dict[str, Any]:
+        """Summarise accumulated history with DDP-safe aggregation.
+
+        Must be called after one or more ``update()`` calls.
 
         Args:
-            targets: (B, N, N) ground truth adjacency.
-            samples: (S, B, N, N) sampled graphs.
-            summary_stats: If True, returns `{metric}_mean/sem/std`. Else returns mean per metric key.
+            summary_stats: If ``True``, returns ``{metric}_mean/_sem/_std``.
+                Otherwise returns ``{metric}: mean`` only.
         """
-        if targets is not None and samples is not None:
-            # One-shot compute returns scalar metrics (not a history summary).
-            # Callers can sync separately if desired.
-            return self._compute_batch_metrics(targets, samples)
-
-        # Stateful mode: use memory-efficient distributed aggregation.
-        return self.summarize_distributed(summary_stats=summary_stats)
+        return self.summarize(summary_stats=summary_stats)
 
 
 def edge_confusion_decomposition(

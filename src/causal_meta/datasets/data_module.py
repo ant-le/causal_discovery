@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import warnings
 from functools import partial
 from typing import Any, Dict, Optional, Sequence, Set
@@ -21,6 +22,9 @@ from causal_meta.datasets.utils import (
     compute_graph_hash,
 )
 from causal_meta.datasets.utils.sampling import NoPaddingDistributedSampler
+from causal_meta.datasets.utils.stats import compute_family_distance
+
+log = logging.getLogger(__name__)
 
 
 class CausalMetaModule:
@@ -45,7 +49,7 @@ class CausalMetaModule:
         self.test_datasets: Dict[str, MetaFixedDataset] = {}
         self.test_interventional_datasets: Dict[str, MetaInterventionalDataset] = {}
 
-        self.spectral_distances: Dict[str, float] = {}
+        self.family_distances: Dict[str, Dict[str, float]] = {}
 
     def setup(self) -> None:
         """Instantiate datasets, enforce disjointness, and pre-compute stats."""
@@ -85,13 +89,10 @@ class CausalMetaModule:
                     RuntimeWarning,
                 )
 
-            # Compute distances for each test family
-            self.spectral_distances = {
-                name: self._compute_spectral_distance(self.train_family, family)
-                for name, family in self.test_families.items()
-            }
+            # Compute distributional distances for each test family
+            self.family_distances = self._compute_all_distances()
         else:
-            self.spectral_distances = {}
+            self.family_distances = {}
 
         self.train_dataset = MetaIterableDataset(
             self.train_family,
@@ -304,46 +305,42 @@ class CausalMetaModule:
             return list(seeds)[:count]
         return [self.config.base_seed + i for i in range(count)]
 
-    def _compute_spectral_distance(
-        self, train_family: SCMFamily, test_family: SCMFamily
-    ) -> float:
+    def _compute_all_distances(self) -> Dict[str, Dict[str, float]]:
+        """Pre-compute spectral, KL degree, and mechanism distances for each test family.
+
+        Returns:
+            Mapping of ``dataset_key -> {"spectral": float, "kl_degree": float,
+            "mechanism": float}``.  Falls back to ``NaN`` for any metric that
+            fails to compute.
         """
-        Compute the L1 distance between the average spectral profiles of two families.
-        """
-        train_profile = self._spectral_profile(train_family, [])
-        test_profile = self._spectral_profile(test_family, self.config.seeds_test)
+        if self.train_family is None:
+            return {}
 
-        # Ensure profiles are compatible in length (min length)
-        min_len = min(train_profile.numel(), test_profile.numel())
-        if min_len == 0:
-            return 0.0
-
-        distance = torch.mean(
-            torch.abs(train_profile[:min_len] - test_profile[:min_len])
-        )
-        return float(distance.item())
-
-    def _spectral_profile(
-        self, family: SCMFamily, seeds: Sequence[int], count: int = 3
-    ) -> torch.Tensor:
-        """
-        Compute the average sorted eigenvalues (spectral profile) of graphs sampled from a family.
-        """
-        seeds_to_probe = self._probe_seeds(seeds, count=count)
-        all_eigenvalues = []
-
-        for seed in seeds_to_probe:
-            adjacency_matrix = family.sample_graph(seed)
-            # Symmetrize to get real eigenvalues: A_sym = (A + A.T) / 2
-            symmetric_adj = (adjacency_matrix + adjacency_matrix.T) / 2.0
-            eigenvalues = torch.linalg.eigvalsh(symmetric_adj)
-            all_eigenvalues.append(eigenvalues)
-
-        if not all_eigenvalues:
-            return torch.tensor([])
-
-        # Stack and average across the sampled graphs
-        return torch.stack(all_eigenvalues, dim=0).mean(dim=0)
+        distances: Dict[str, Dict[str, float]] = {}
+        for name, test_family in self.test_families.items():
+            entry: Dict[str, float] = {}
+            for metric_name, metric_key, n_samples in [
+                ("spectral", "spectral", 25),
+                ("kl", "kl_degree", 25),
+                ("mechanism", "mechanism", 12),
+            ]:
+                try:
+                    entry[metric_key] = compute_family_distance(
+                        self.train_family,
+                        test_family,
+                        metric=metric_name,
+                        n_samples=n_samples,
+                    )
+                except Exception:
+                    log.warning(
+                        "%s distance failed for family %s",
+                        metric_key,
+                        name,
+                        exc_info=True,
+                    )
+                    entry[metric_key] = float("nan")
+            distances[name] = entry
+        return distances
 
     def _build_family(self, cfg: FamilyConfig) -> SCMFamily:
         graph_generator = cfg.graph_cfg.instantiate()

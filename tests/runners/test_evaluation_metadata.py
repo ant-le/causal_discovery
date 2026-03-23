@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import math
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
 
+from causal_meta.datasets.data_module import CausalMetaModule
 from causal_meta.datasets.generators.configs import (
     ErdosRenyiConfig,
     FamilyConfig,
@@ -21,7 +22,6 @@ from causal_meta.datasets.generators.configs import (
 )
 from causal_meta.runners.tasks.evaluation import (
     _build_family_metadata,
-    _compute_distances,
     _extract_graph_type,
     _extract_mech_type,
     _extract_sparsity_param,
@@ -201,48 +201,60 @@ class TestBuildFamilyMetadata:
         assert "sparsity_param" not in result["ood_graph_sbm_linear"]
 
 
-# ── _compute_distances ───────────────────────────────────────────────────
+# ── CausalMetaModule.family_distances (was _compute_distances) ───────────
 
 
-class TestComputeDistances:
+class TestFamilyDistances:
+    """Test that CausalMetaModule._compute_all_distances() produces the expected structure."""
+
+    def _make_module_with_families(
+        self,
+        train_family: Any,
+        test_families: dict[str, Any],
+    ) -> CausalMetaModule:
+        """Create a CausalMetaModule with mocked config and pre-set families."""
+        mock_config = MagicMock()
+        dm = CausalMetaModule(mock_config)
+        dm.train_family = train_family
+        dm.test_families = test_families
+        return dm
+
     def test_no_train_family_returns_empty(self) -> None:
-        dm = MagicMock()
-        dm.train_family = None
-        result = _compute_distances(dm)
+        dm = self._make_module_with_families(None, {"fam_a": MagicMock()})
+        result = dm._compute_all_distances()
         assert result == {}
 
-    def test_missing_train_family_attr_returns_empty(self) -> None:
-        """Data module with no train_family attribute at all."""
-        dm = MagicMock(spec=[])  # No attributes
-        result = _compute_distances(dm)
+    def test_no_test_families_returns_empty(self) -> None:
+        dm = self._make_module_with_families(MagicMock(), {})
+        result = dm._compute_all_distances()
         assert result == {}
 
-    def test_with_train_and_test_families(self) -> None:
-        dm = MagicMock()
-        dm.train_family = MagicMock()
-        dm.spectral_distances = {"id_linear_er20": 0.05, "ood_mech_periodic_er40": 1.2}
-        dm.test_families = {
-            "id_linear_er20": MagicMock(),
-            "ood_mech_periodic_er40": MagicMock(),
-        }
-
-        result = _compute_distances(dm)
+    @patch("causal_meta.datasets.data_module.compute_family_distance")
+    def test_with_train_and_test_families(self, mock_cfd: MagicMock) -> None:
+        mock_cfd.return_value = 0.42
+        dm = self._make_module_with_families(
+            MagicMock(),
+            {"id_linear_er20": MagicMock(), "ood_mech_periodic_er40": MagicMock()},
+        )
+        result = dm._compute_all_distances()
         assert "id_linear_er20" in result
         assert "ood_mech_periodic_er40" in result
-        assert result["id_linear_er20"]["spectral"] == pytest.approx(0.05)
-        assert result["ood_mech_periodic_er40"]["spectral"] == pytest.approx(1.2)
-        # kl_degree should be populated (either computed or NaN fallback)
-        assert "kl_degree" in result["id_linear_er20"]
-        assert "mechanism" in result["id_linear_er20"]
+        # Each entry should contain all 3 distance metrics
+        for name in ("id_linear_er20", "ood_mech_periodic_er40"):
+            assert "spectral" in result[name]
+            assert "kl_degree" in result[name]
+            assert "mechanism" in result[name]
+            assert result[name]["spectral"] == pytest.approx(0.42)
 
-    def test_spectral_distances_none_uses_nan(self) -> None:
-        dm = MagicMock()
-        dm.train_family = MagicMock()
-        dm.spectral_distances = None
-        dm.test_families = {"fam_a": MagicMock()}
-
-        result = _compute_distances(dm)
-        assert math.isnan(result["fam_a"]["spectral"])
+    @patch("causal_meta.datasets.data_module.compute_family_distance")
+    def test_graceful_fallback_on_failure(self, mock_cfd: MagicMock) -> None:
+        """If compute_family_distance raises, the metric falls back to NaN."""
+        mock_cfd.side_effect = RuntimeError("boom")
+        dm = self._make_module_with_families(MagicMock(), {"fam_a": MagicMock()})
+        result = dm._compute_all_distances()
+        assert "fam_a" in result
+        for key in ("spectral", "kl_degree", "mechanism"):
+            assert math.isnan(result["fam_a"][key])
 
 
 # ── _prepare_cached_samples_for_metrics ──────────────────────────────────

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=cm_bcnp
 #SBATCH --partition=GPU-a100
-#SBATCH --exclusive
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=4
 #SBATCH --gpus-per-node=4
@@ -49,7 +48,6 @@ fi
 export MASTER_ADDR
 
 job_id_for_port="${SLURM_JOB_ID:-0}"
-export MASTER_PORT
 MASTER_PORT="${MASTER_PORT:-$((10000 + (job_id_for_port % 50000)))}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export HYDRA_FULL_ERROR=1
@@ -71,37 +69,7 @@ if [[ -n "${SLURMD_NODENAME:-}" ]]; then
   scontrol show node "${SLURMD_NODENAME}" || true
 fi
 
-requested_gpus=2
-job_info=""
-if [[ -n "${SLURM_JOB_ID:-}" ]]; then
-  job_info="$(scontrol show job "${SLURM_JOB_ID}" || true)"
-fi
-
-alloc_gpu_count=""
-if [[ -n "${job_info}" ]]; then
-  alloc_gpu_count="$(python3 - <<'PY' "${job_info}"
-import re
-import sys
-
-text = sys.argv[1]
-match = re.search(r"AllocTRES=.*?gres/gpu=(\d+)", text)
-print(match.group(1) if match else "")
-PY
-)"
-fi
-
-if [[ -n "${alloc_gpu_count}" && "${alloc_gpu_count}" -lt "${requested_gpus}" ]]; then
-  echo "Expected ${requested_gpus} allocated GPUs but Slurm reports ${alloc_gpu_count}. Aborting before srun."
-  exit 1
-fi
-
 echo "Launching ${SLURM_NTASKS:-2} tasks via srun"
-
-unset SRUN_GRES SRUN_GPUS SRUN_GPUS_PER_TASK SRUN_GPUS_PER_NODE
-unset SBATCH_GRES SBATCH_GPUS SBATCH_GPUS_PER_TASK SBATCH_GPUS_PER_NODE
-unset SLURM_GPUS_PER_TASK SLURM_TRES_PER_TASK
-unset SLURM_GPUS SLURM_JOB_GPUS SLURM_GPUS_ON_NODE
-
 
 # Prevent login-node GPU visibility leakage (e.g. CUDA_VISIBLE_DEVICES=0,1)
 # from constraining per-task device ordinals in distributed runs.

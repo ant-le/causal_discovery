@@ -3,8 +3,7 @@ from __future__ import annotations
 import torch
 
 from causal_meta.datasets.generators.graphs.er import ErdosRenyiGenerator
-from causal_meta.datasets.generators.mechanisms.linear import \
-    LinearMechanismFactory
+from causal_meta.datasets.generators.mechanisms.linear import LinearMechanismFactory
 from causal_meta.datasets.scm import SCMFamily
 from causal_meta.runners.metrics.scm import SCMMetrics
 from causal_meta.runners.utils.scoring import LinearGaussianScorer
@@ -45,12 +44,10 @@ def test_scm_metrics_inil_with_family_generated_interventions() -> None:
         graph_samples=graph_samples,
         family=family,
         seeds=[seed],
-        prefix="toy",
     )
 
     summary = metrics.compute(summary_stats=False)
     assert "inil" in summary
-    assert "toy/inil" in summary
     assert torch.isfinite(torch.tensor(summary["inil"]))
 
 
@@ -76,7 +73,6 @@ def test_scm_metrics_inil_with_precomputed_interventional_data() -> None:
         obs_data=obs_data,
         graph_samples=graph_samples,
         interventional_data=interventional_data,
-        prefix="toy",
     )
 
     raw = metrics.get_raw_results()

@@ -7,6 +7,7 @@ import numpy as np
 import torch
 
 from causal_meta.datasets.scm import SCMFamily
+from causal_meta.datasets.utils.normalization import compute_scm_stats
 from causal_meta.runners.utils.scoring import LinearGaussianScorer
 
 from .base import BaseMetrics
@@ -16,41 +17,95 @@ log = logging.getLogger(__name__)
 
 class SCMMetrics(BaseMetrics):
     """
-    Metrics handler for SCM-based evaluation (Likelihoods, I-NIL).
-    Maintains state across batches and handles distributed synchronization.
+    Single-dataset metrics handler for SCM-based evaluation (I-NIL).
 
-    Supports two modes:
-    1. Pre-generated: Pass `interventional_data` list.
-    2. On-the-fly: Pass `family` and `seeds`.
+    Tracks metrics for **one** SCM family. Callers must create a separate
+    instance per family or call ``reset()`` between families.
+
+    Each rank accumulates I-NIL scores locally via ``update()``.  At the end
+    of the dataset, ``compute()`` / ``gather_raw_results()`` perform DDP-aware
+    aggregation so that rank 0 can compute / persist the final values.
+
+    Supports two data modes:
+    1. **Pre-generated**: Pass ``interventional_data`` list.
+    2. **On-the-fly**: Pass ``family`` and ``seeds``.
     """
 
-    def __init__(self, metrics: List[str] | None = None):
+    def __init__(self, metrics: List[str] | None = None) -> None:
         super().__init__()
         self.metrics_list = metrics if metrics is not None else ["inil"]
         self._warned_linear_gaussian = False
+
+    # ── Interventional data generation ────────────────────────────────
+
+    @staticmethod
+    def _generate_interventional_data(
+        family: SCMFamily,
+        seed: int,
+        n_samples: int,
+        intervention_value: float = 0.0,
+    ) -> List[Dict[str, Any]]:
+        """Generate single-node interventions for an SCM instance.
+
+        Returns:
+            List of ``{"target": int, "value": float, "data": normalised_tensor}``.
+        """
+        instance = family.sample_task(seed)
+        n_nodes = family.n_nodes
+
+        # 1. Normalisation stats from observational data
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(seed)
+            x_obs_raw = instance.sample(n_samples)
+
+        mean, std = compute_scm_stats(x_obs_raw)
+
+        # 2. Generate interventions
+        interventional_data: List[Dict[str, Any]] = []
+        for target_node in range(n_nodes):
+            mutilated = instance.do({target_node: intervention_value})
+            int_seed = seed + (target_node + 1) * 1000
+
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(int_seed)
+                x_int_raw = mutilated.sample(n_samples)
+
+            x_int_norm = (x_int_raw - mean) / std
+
+            interventional_data.append(
+                {"target": target_node, "value": intervention_value, "data": x_int_norm}
+            )
+
+        return interventional_data
+
+    # ── Public API ─────────────────────────────────────────────────────
 
     def update(
         self,
         obs_data: torch.Tensor,
         graph_samples: torch.Tensor,
         interventional_data: List[Dict[str, Any]] | None = None,
-        prefix: str | None = None,
         family: Optional[SCMFamily] = None,
         seeds: Optional[Union[List[int], torch.Tensor]] = None,
-    ):
-        """
-        Update metrics for a single task (batch of samples).
+    ) -> None:
+        """Accumulate I-NIL for a single task (one graph / set of samples).
+
+        Args:
+            obs_data: Observational data ``(n_obs, n_nodes)``.
+            graph_samples: Sampled graphs ``(n_samples, n_nodes, n_nodes)``.
+            interventional_data: Pre-generated interventions (optional).
+            family: SCMFamily used for on-the-fly generation (optional).
+            seeds: Dataset seed(s) for on-the-fly generation (optional).
         """
         if "inil" not in self.metrics_list:
             return
 
-        current_seeds = []
+        current_seeds: List[int] = []
         if seeds is not None:
             current_seeds = (
                 seeds.tolist() if isinstance(seeds, torch.Tensor) else list(seeds)
             )
 
-        # We assume update is called per-task (batch_size=1) in the current pipeline evaluation loop.
         # Case 1: On-the-fly generation
         if interventional_data is None and family is not None and current_seeds:
             if not self._warned_linear_gaussian:
@@ -60,31 +115,34 @@ class SCMMetrics(BaseMetrics):
                 self._warned_linear_gaussian = True
 
             seed = int(current_seeds[0])
-            # Use base class helper
-            interventional_data = self._generate_interventional_data(
+            int_data = self._generate_interventional_data(
                 family, seed, n_samples=obs_data.shape[0]
             )
-            self._compute_inil_score(
-                obs_data, graph_samples, interventional_data, prefix
-            )
+            self._compute_inil_score(obs_data, graph_samples, int_data)
 
         # Case 2: Pre-generated data
         elif interventional_data is not None:
             if not self._warned_linear_gaussian:
                 log.warning("I-NIL using Linear Gaussian scorer.")
                 self._warned_linear_gaussian = True
-            self._compute_inil_score(
-                obs_data, graph_samples, interventional_data, prefix
-            )
+            self._compute_inil_score(obs_data, graph_samples, interventional_data)
+
+    def compute(self, summary_stats: bool = True) -> Dict[str, Any]:
+        """Return DDP-aggregated summary statistics."""
+        return self.summarize(summary_stats=summary_stats)
+
+    def get_raw_results(self) -> Dict[str, List[float]]:
+        """Return gathered raw values across all ranks."""
+        return self.gather_raw_results()
+
+    # ── Internal helpers ───────────────────────────────────────────────
 
     def _compute_inil_score(
         self,
         obs_data: torch.Tensor,
         graph_samples: torch.Tensor,
         interventional_data: List[Dict[str, Any]],
-        prefix: str | None,
-    ):
-
+    ) -> None:
         n_graph_samples = int(graph_samples.shape[0])
         task_nlls: List[float] = []
 
@@ -140,11 +198,3 @@ class SCMMetrics(BaseMetrics):
                 inil_score = -(log_sum_exp - np.log(int(valid_nlls.numel())))
 
                 self.history["inil"].append(inil_score.item())
-                if prefix:
-                    self.history[f"{prefix}/inil"].append(inil_score.item())
-
-    def compute(self, summary_stats: bool = True) -> Dict[str, Any]:
-        return self.summarize_distributed(summary_stats=summary_stats)
-
-    def get_raw_results(self) -> Dict[str, List[float]]:
-        return super().get_raw_results()

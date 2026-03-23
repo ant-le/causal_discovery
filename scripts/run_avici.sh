@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=cm_avici
 #SBATCH --partition=GPU-a100
-#SBATCH --exclusive
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
 #SBATCH --gpus=2
