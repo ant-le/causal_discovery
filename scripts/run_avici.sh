@@ -2,9 +2,8 @@
 #SBATCH --job-name=cm_avici
 #SBATCH --partition=GPU-a100
 #SBATCH --nodes=1
-#SBATCH --ntasks=2
-#SBATCH --gpus=2
-#SBATCH --gpus-per-task=1
+#SBATCH --tasks-per-node=2
+#SBATCH --gpus-per-node=2
 #SBATCH --time=72:00:00
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
@@ -71,38 +70,11 @@ if [[ -n "${SLURMD_NODENAME:-}" ]]; then
   scontrol show node "${SLURMD_NODENAME}" || true
 fi
 
-requested_gpus=2
-job_info=""
-if [[ -n "${SLURM_JOB_ID:-}" ]]; then
-  job_info="$(scontrol show job "${SLURM_JOB_ID}" || true)"
-fi
-
-alloc_gpu_count=""
-if [[ -n "${job_info}" ]]; then
-  alloc_gpu_count="$(python3 - <<'PY' "${job_info}"
-import re
-import sys
-
-text = sys.argv[1]
-match = re.search(r"AllocTRES=.*?gres/gpu=(\d+)", text)
-print(match.group(1) if match else "")
-PY
-)"
-fi
-
-if [[ -n "${alloc_gpu_count}" && "${alloc_gpu_count}" -lt "${requested_gpus}" ]]; then
-  echo "Expected ${requested_gpus} allocated GPUs but Slurm reports ${alloc_gpu_count}. Aborting before srun."
-  exit 1
-fi
-
 echo "Launching ${SLURM_NTASKS:-2} tasks via srun"
 
-unset SRUN_GRES SRUN_GPUS SRUN_GPUS_PER_TASK SRUN_GPUS_PER_NODE
-unset SBATCH_GRES SBATCH_GPUS SBATCH_GPUS_PER_TASK SBATCH_GPUS_PER_NODE
-unset SLURM_GPUS_PER_TASK SLURM_TRES_PER_TASK
-unset SLURM_GPUS SLURM_JOB_GPUS SLURM_GPUS_ON_NODE
+unset CUDA_VISIBLE_DEVICES GPU_DEVICE_ORDINAL 2>/dev/null || true
 
-srun --ntasks=2 --cpus-per-task=8 "${MAIN_PYTHON}" -m causal_meta.main \
+srun "${MAIN_PYTHON}" -m causal_meta.main \
   --config-name "${CONFIG_NAME}" \
   "model=avici" \
   "name=${RUN_NAME}" \

@@ -71,8 +71,6 @@ fi
 
 echo "Launching ${SLURM_NTASKS:-2} tasks via srun"
 
-# Prevent login-node GPU visibility leakage (e.g. CUDA_VISIBLE_DEVICES=0,1)
-# from constraining per-task device ordinals in distributed runs.
 unset CUDA_VISIBLE_DEVICES GPU_DEVICE_ORDINAL 2>/dev/null || true
 
 srun "${MAIN_PYTHON}" -m causal_meta.main \
