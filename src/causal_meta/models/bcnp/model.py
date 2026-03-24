@@ -41,6 +41,7 @@ class BCNP(CausalTNPEncoder, BaseModel):
         dropout: float = 0.1,
         emb_depth: int = 1,
         use_positional_encoding: bool = False,
+        input_dim: int = 2,
         n_perm_samples: int = 10,
         sinkhorn_iter: int = 20,
         q_before_l: bool = True,
@@ -58,6 +59,7 @@ class BCNP(CausalTNPEncoder, BaseModel):
             use_positional_encoding=use_positional_encoding,
             num_nodes=num_nodes,
             dropout=dropout,
+            input_dim=input_dim,
             device=None,
             dtype=None,
             avici_summary=False,  # BCNP uses Attention Summary (default)
@@ -65,6 +67,7 @@ class BCNP(CausalTNPEncoder, BaseModel):
         self.d_model = d_model
 
         self.num_nodes = num_nodes
+        self.input_dim = int(input_dim)
         self.n_perm_samples = n_perm_samples
         self.sinkhorn_iter = sinkhorn_iter
         self.q_before_l = q_before_l
@@ -186,7 +189,31 @@ class BCNP(CausalTNPEncoder, BaseModel):
         """
         self._debug_forward_count += 1
         input_data = x
-        B, S, V = input_data.shape
+        if input_data.ndim == 3:
+            values = input_data
+            if self.input_dim > 1:
+                intervention_mask = torch.zeros_like(values)
+                input_data = torch.stack([values, intervention_mask], dim=-1)
+            else:
+                input_data = values.unsqueeze(-1)
+        elif input_data.ndim == 4:
+            if input_data.size(-1) >= self.input_dim:
+                input_data = input_data[..., : self.input_dim]
+            else:
+                pad = self.input_dim - int(input_data.size(-1))
+                input_data = torch.cat(
+                    [
+                        input_data,
+                        torch.zeros_like(input_data[..., :1]).repeat_interleave(
+                            pad, dim=-1
+                        ),
+                    ],
+                    dim=-1,
+                )
+        else:
+            raise ValueError("BCNP input must have shape (B, S, V) or (B, S, V, C).")
+
+        B, S, V, _ = input_data.shape
 
         if V > self.num_nodes:
             raise ValueError(
@@ -209,8 +236,7 @@ class BCNP(CausalTNPEncoder, BaseModel):
             else:
                 decoder_mask = mask.to(dtype=input_data.dtype)
 
-        target_data = input_data.unsqueeze(-1)
-        representation = self.encode(target_data=target_data, mask=mask)
+        representation = self.encode(target_data=input_data, mask=mask)
         representation = representation.squeeze(2)  # (B, V, D)
 
         L_param, Q_rep = self.decode(representation, mask=decoder_mask)
@@ -310,7 +336,13 @@ class BCNP(CausalTNPEncoder, BaseModel):
 
         return samples
 
-    def calculate_loss(self, output: Any, target: torch.Tensor, **kwargs):
+    def calculate_loss(
+        self,
+        output: Any,
+        target: torch.Tensor,
+        node_mask: Optional[torch.Tensor] = None,
+        **kwargs,
+    ) -> torch.Tensor:
         """
         Args:
         -----
@@ -321,16 +353,34 @@ class BCNP(CausalTNPEncoder, BaseModel):
         --------
             loss: torch.Tensor, shape [batch_size]
         """
+        del kwargs
         probs = output
-        # Reshape the last axis
-        probs = probs.contiguous().view(probs.size(0), probs.size(1), -1)
-        target_graph = target.reshape(target.size(0), -1)
-        # Calculate the loss
-        existence_dist = torch.distributions.Bernoulli(probs=probs)
-        log_prob = existence_dist.log_prob(target_graph[None])
-        # # Mean across pemutation samples
+        target_graph = target
+        existence_dist = torch.distributions.Bernoulli(
+            probs=probs.clamp(1e-6, 1 - 1e-6)
+        )
+        log_prob = existence_dist.log_prob(target_graph.unsqueeze(0))
         log_prob_sum = torch.logsumexp(log_prob, dim=0) - math.log(log_prob.size(0))
-        # # shape [batch, num_nodes**2]
         loss_per_edge = -log_prob_sum
-        loss = loss_per_edge.mean(dim=1)
+
+        batch_size, n_nodes, _ = target_graph.shape
+        edge_mask = torch.ones(
+            batch_size,
+            n_nodes,
+            n_nodes,
+            device=target_graph.device,
+            dtype=target_graph.dtype,
+        )
+        diag = torch.eye(
+            n_nodes, device=target_graph.device, dtype=torch.bool
+        ).unsqueeze(0)
+        edge_mask = edge_mask.masked_fill(diag, 0.0)
+
+        if node_mask is not None:
+            node_mask = node_mask.to(device=target_graph.device, dtype=torch.bool)
+            pad_edges = node_mask.unsqueeze(1) | node_mask.unsqueeze(2)
+            edge_mask = edge_mask.masked_fill(pad_edges, 0.0)
+
+        valid_edges = edge_mask.sum(dim=(-1, -2)).clamp_min(1.0)
+        loss = (loss_per_edge * edge_mask).sum(dim=(-1, -2)) / valid_edges
         return loss.mean()

@@ -43,6 +43,23 @@ from causal_meta.runners.utils.explicit_profiles import (
 log = logging.getLogger(__name__)
 
 
+def _prepare_amortized_model_input(
+    batch: Mapping[str, Any],
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """Prepare a model input tensor and optional node mask."""
+    input_data = batch["data"].to(device)
+    intervention_mask = batch.get("intervention_mask")
+    if intervention_mask is not None:
+        input_data = torch.stack([input_data, intervention_mask.to(device)], dim=-1)
+
+    node_mask = batch.get("node_mask")
+    if node_mask is not None:
+        node_mask = node_mask.to(device)
+
+    return input_data, node_mask
+
+
 def _extract_graph_type(family_cfg: FamilyConfig) -> str:
     """Infer the graph type string from a FamilyConfig's graph_cfg."""
     graph_cfg = family_cfg.graph_cfg
@@ -387,14 +404,18 @@ def run(
 
             else:
                 for batch_idx, batch in enumerate(loader):
-                    input_data = batch["data"].to(device)
+                    input_data, node_mask = _prepare_amortized_model_input(
+                        batch, device
+                    )
                     adjacency_matrix = batch["adjacency"].to(device)
                     seeds = batch.get("seed")
                     if seeds is not None and hasattr(seeds, "tolist"):
                         seeds = seeds.tolist()
 
                     samples = model_unwrapped.sample(
-                        input_data, num_samples=n_samples
+                        input_data,
+                        num_samples=n_samples,
+                        mask=node_mask,
                     )  # (Batch, n_samples, N, N)
                     samples_for_metrics = samples.permute(
                         1, 0, 2, 3

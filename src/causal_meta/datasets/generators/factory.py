@@ -199,6 +199,7 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
     test_families = {
         name: load_family_config(sub_cfg, default_n_nodes=default_n_nodes)
         for name, sub_cfg in test_families_raw.items()
+        if not str(name).startswith("_")
     }
 
     val_families_raw = cfg.get("val_families")
@@ -210,6 +211,7 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
         val_families = {
             name: load_family_config(sub_cfg, default_n_nodes=default_n_nodes)
             for name, sub_cfg in val_families_raw.items()
+            if not str(name).startswith("_")
         }
 
     allowed_keys = {
@@ -217,6 +219,12 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
         "seeds_val",
         "base_seed",
         "samples_per_task",
+        "samples_per_task_obs",
+        "samples_per_task_int",
+        "use_interventional_training",
+        "train_p_obs_only",
+        "intervention_value",
+        "train_n_nodes",
         "safety_checks",
         "num_workers",
         "pin_memory",

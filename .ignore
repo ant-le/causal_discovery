@@ -6,5 +6,8 @@
 # Be able do read paper
 !paper/
 
+# Venvs
+!.venv*
+
 # Be able to investigate experiments
 !experiments/runs/

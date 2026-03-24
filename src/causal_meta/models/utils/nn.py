@@ -115,11 +115,31 @@ class CausalTransformerEncoder(nn.Module):
                 # Extra zeros for the query
                 node_src_key_padding_mask = src_key_padding_mask
                 if node_src_key_padding_mask is not None:
-                    node_src_key_padding_mask = (
-                        node_src_key_padding_mask.contiguous().view(
-                            batch_size * num_samples, num_nodes
+                    if node_src_key_padding_mask.ndim != 2:
+                        raise ValueError(
+                            "src_key_padding_mask must be 2D with shape "
+                            "(batch, num_nodes) or (batch*num_samples, num_nodes)."
                         )
-                    )
+                    if node_src_key_padding_mask.shape == (batch_size, num_nodes):
+                        node_src_key_padding_mask = (
+                            node_src_key_padding_mask.repeat_interleave(
+                                num_samples,
+                                dim=0,
+                            )
+                        )
+                    elif node_src_key_padding_mask.shape == (
+                        batch_size * num_samples,
+                        num_nodes,
+                    ):
+                        node_src_key_padding_mask = (
+                            node_src_key_padding_mask.contiguous()
+                        )
+                    else:
+                        raise ValueError(
+                            "src_key_padding_mask has incompatible shape "
+                            f"{tuple(node_src_key_padding_mask.shape)} for batch_size={batch_size}, "
+                            f"num_samples={num_samples}, num_nodes={num_nodes}."
+                        )
                 src = mod(
                     src,
                     src_mask=src_mask,
@@ -363,12 +383,13 @@ class CausalTNPEncoder(nn.Module):
         device,
         dtype,
         emb_depth: int = 1,
+        input_dim: int = 1,
         avici_summary: bool = False,
         dropout: float = 0.0,
     ):
         super(CausalTNPEncoder, self).__init__()
         self.embedder = build_mlp(
-            dim_in=1,
+            dim_in=input_dim,
             dim_hid=d_model if not use_positional_encoding else d_model // 2,
             dim_out=d_model if not use_positional_encoding else d_model // 2,
             depth=emb_depth,

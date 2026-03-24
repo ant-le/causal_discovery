@@ -3,11 +3,13 @@
 type: "avici"
 id: "avici"
 
-# RQ1-sized transformer (section 4.2 scale).
-d_model: 512
-dim_feedforward: 1024
-nhead: 8
-num_layers: 4
+# Reference AVICI backbone defaults from the upstream repository.
+dim: 128
+layers: 8
+key_size: 32
+num_heads: 8
+widening_factor: 4
 dropout: 0.1
-emb_depth: 2
-use_positional_encoding: false
+logit_bias_init: -3.0
+cosine_temp_init: 0.0
+mask_diag: true

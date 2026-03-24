@@ -222,6 +222,18 @@ class DataModuleConfig:
 
     samples_per_task: int = 128
 
+    samples_per_task_obs: Optional[int] = None
+
+    samples_per_task_int: int = 0
+
+    use_interventional_training: bool = False
+
+    train_p_obs_only: float = 0.0
+
+    intervention_value: float = 0.0
+
+    train_n_nodes: List[int] = field(default_factory=list)
+
     safety_checks: bool = True
 
     num_workers: int = 0

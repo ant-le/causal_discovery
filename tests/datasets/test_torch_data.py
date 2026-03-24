@@ -149,6 +149,45 @@ def test_causal_meta_module_dataloaders() -> None:
     # We now expect test_loader to use configured workers, not 0
     assert test_loader.num_workers == 2
     assert test_loader.pin_memory is True
+    assert test_loader.persistent_workers is False
+
+
+def test_evaluation_dataloaders_are_cached_and_non_persistent() -> None:
+    train_cfg = {
+        "name": "train",
+        "n_nodes": 4,
+        "graph_cfg": {"type": "er", "sparsity": 0.3},
+        "mech_cfg": {"type": "linear"},
+    }
+    test_cfg = {
+        "name": "test",
+        "n_nodes": 4,
+        "graph_cfg": {"type": "er", "sparsity": 0.3},
+        "mech_cfg": {"type": "linear"},
+    }
+
+    cfg = {
+        "train_family": train_cfg,
+        "test_families": {"test": test_cfg},
+        "seeds_val": [0],
+        "seeds_test": [1],
+        "num_workers": 2,
+        "pin_memory": True,
+        "persistent_workers": True,
+    }
+
+    module = CausalMetaModule.from_config(cfg)
+    module.setup()
+
+    first_val_loaders = module.val_dataloader()
+    second_val_loaders = module.val_dataloader()
+    first_test_loaders = module.test_dataloader()
+    second_test_loaders = module.test_dataloader()
+
+    assert first_val_loaders is second_val_loaders
+    assert first_test_loaders is second_test_loaders
+    assert first_val_loaders["id"].persistent_workers is False
+    assert first_test_loaders["test"].persistent_workers is False
 
 
 def test_train_dataloader_iterates_with_collate_fn() -> None:
@@ -181,6 +220,9 @@ def test_train_dataloader_iterates_with_collate_fn() -> None:
     x, adj = batch["data"], batch["adjacency"]
     assert x.shape == (1, 8, 4)
     assert adj.shape == (1, 4, 4)
+    assert batch["intervention_mask"].shape == (1, 8, 4)
+    assert batch["node_mask"].shape == (1, 4)
+    assert batch["sample_mask"].shape == (1, 8)
 
     flat = x.reshape(-1, x.shape[-1])
     assert torch.allclose(flat.mean(dim=0), torch.zeros(4), atol=1e-6)
@@ -226,3 +268,98 @@ def test_causal_meta_module_builds_validation_split_and_reserves_hashes() -> Non
     )
     assert val_hash in module.train_dataset.forbidden_hashes
     assert test_hash in module.train_dataset.forbidden_hashes
+
+
+def test_collate_fn_scm_supports_padding_and_masks() -> None:
+    batch = [
+        {
+            "seed": 1,
+            "data": torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
+            "intervention_mask": torch.tensor([[0.0, 0.0], [0.0, 1.0]]),
+            "adjacency": torch.zeros(2, 2),
+        },
+        {
+            "seed": 2,
+            "data": torch.tensor([[1.0, 2.0, 3.0, 4.0]]),
+            "intervention_mask": torch.tensor([[0.0, 0.0, 1.0, 0.0]]),
+            "adjacency": torch.ones(4, 4),
+        },
+    ]
+    out = collate_fn_scm(batch, normalize=False)
+
+    assert out["data"].shape == (2, 2, 4)
+    assert out["intervention_mask"].shape == (2, 2, 4)
+    assert out["adjacency"].shape == (2, 4, 4)
+    assert out["node_mask"].shape == (2, 4)
+    assert out["sample_mask"].shape == (2, 2)
+    assert torch.equal(out["node_mask"][0], torch.tensor([False, False, True, True]))
+    assert torch.equal(out["node_mask"][1], torch.tensor([False, False, False, False]))
+    assert torch.equal(out["sample_mask"][0], torch.tensor([False, False]))
+    assert torch.equal(out["sample_mask"][1], torch.tensor([False, True]))
+
+
+def test_interventional_stream_produces_nonzero_intervention_mask() -> None:
+    train_cfg = {
+        "name": "train",
+        "n_nodes": 4,
+        "graph_cfg": {"type": "er", "sparsity": 0.3},
+        "mech_cfg": {"type": "linear"},
+    }
+    test_cfg = {
+        "name": "test",
+        "n_nodes": 4,
+        "graph_cfg": {"type": "er", "sparsity": 0.3},
+        "mech_cfg": {"type": "linear"},
+    }
+    cfg = {
+        "train_family": train_cfg,
+        "test_families": {"test": test_cfg},
+        "seeds_val": [0],
+        "seeds_test": [1],
+        "num_workers": 0,
+        "pin_memory": False,
+        "batch_size_train": 1,
+        "samples_per_task_obs": 5,
+        "samples_per_task_int": 3,
+        "use_interventional_training": True,
+        "train_p_obs_only": 0.0,
+    }
+    module = CausalMetaModule.from_config(cfg)
+    batch = next(iter(module.train_dataloader()))
+    assert batch["data"].shape == (1, 8, 4)
+    assert float(batch["intervention_mask"].sum().item()) > 0.0
+
+
+def test_train_n_nodes_bucket_batches() -> None:
+    train_cfg = {
+        "name": "train",
+        "n_nodes": 3,
+        "graph_cfg": {"type": "er", "sparsity": 0.3},
+        "mech_cfg": {"type": "linear"},
+    }
+    test_cfg = {
+        "name": "test",
+        "n_nodes": 3,
+        "graph_cfg": {"type": "er", "sparsity": 0.3},
+        "mech_cfg": {"type": "linear"},
+    }
+    cfg = {
+        "train_family": train_cfg,
+        "test_families": {"test": test_cfg},
+        "seeds_val": [0],
+        "seeds_test": [1],
+        "num_workers": 0,
+        "pin_memory": False,
+        "batch_size_train": 2,
+        "train_n_nodes": [3, 5],
+        "samples_per_task": 4,
+    }
+    module = CausalMetaModule.from_config(cfg)
+    iterator = iter(module.train_dataloader())
+
+    batch_1 = next(iterator)
+    batch_2 = next(iterator)
+
+    assert torch.unique(batch_1["n_nodes"]).numel() == 1
+    assert torch.unique(batch_2["n_nodes"]).numel() == 1
+    assert int(batch_1["n_nodes"][0].item()) != int(batch_2["n_nodes"][0].item())

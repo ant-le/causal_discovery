@@ -28,18 +28,131 @@ class MetaIterableDataset(IterableDataset):
 
     def __init__(
         self,
-        family: SCMFamily,
+        family: Optional[SCMFamily],
         base_seed: int,
         samples_per_task: int = 128,
         forbidden_hashes: Optional[Iterable[str]] = None,
         hash_mechanisms: bool = False,
+        families_by_n_nodes: Optional[Dict[int, SCMFamily]] = None,
+        batch_size_hint: int = 1,
+        samples_per_task_obs: Optional[int] = None,
+        samples_per_task_int: int = 0,
+        use_interventional_training: bool = False,
+        train_p_obs_only: float = 0.0,
+        intervention_value: float = 0.0,
     ) -> None:
         super().__init__()
+        if family is None and not families_by_n_nodes:
+            raise ValueError(
+                "Either `family` or `families_by_n_nodes` must be provided."
+            )
+
         self.family = family
+        self.families_by_n_nodes = {
+            int(k): v for k, v in (families_by_n_nodes or {}).items()
+        }
         self.base_seed = int(base_seed)
         self.samples_per_task = samples_per_task
+        self.samples_per_task_obs = (
+            int(samples_per_task_obs)
+            if samples_per_task_obs is not None
+            else int(samples_per_task)
+        )
+        self.samples_per_task_int = int(samples_per_task_int)
+        self.use_interventional_training = bool(use_interventional_training)
+        self.train_p_obs_only = float(train_p_obs_only)
+        self.intervention_value = float(intervention_value)
+        self.batch_size_hint = max(1, int(batch_size_hint))
         self.forbidden_hashes: Set[str] = set(forbidden_hashes or [])
         self.hash_mechanisms = hash_mechanisms
+
+        if self.samples_per_task_obs < 1:
+            raise ValueError("samples_per_task_obs must be >= 1")
+        if self.samples_per_task_int < 0:
+            raise ValueError("samples_per_task_int must be >= 0")
+        if not (0.0 <= self.train_p_obs_only <= 1.0):
+            raise ValueError("train_p_obs_only must be between 0 and 1")
+
+        if self.families_by_n_nodes:
+            self._n_nodes_schedule = sorted(self.families_by_n_nodes)
+        elif self.family is not None:
+            self._n_nodes_schedule = [int(self.family.n_nodes)]
+        else:
+            self._n_nodes_schedule = []
+
+    def _family_for_n_nodes(self, n_nodes: int) -> SCMFamily:
+        if self.families_by_n_nodes:
+            family = self.families_by_n_nodes.get(int(n_nodes))
+            if family is None:
+                raise KeyError(f"No train family configured for n_nodes={n_nodes}.")
+            return family
+        if self.family is None:
+            raise RuntimeError("MetaIterableDataset has no configured family.")
+        return self.family
+
+    def _sample_interventional_batch(
+        self,
+        instance: Any,
+        *,
+        seed: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        n_obs = int(self.samples_per_task_obs)
+        n_int = int(self.samples_per_task_int)
+
+        use_obs_only = n_int <= 0
+        if n_int > 0:
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(seed + 31)
+                use_obs_only = bool(
+                    torch.rand((), dtype=torch.float32).item() < self.train_p_obs_only
+                )
+
+        if use_obs_only:
+            total_obs = n_obs + n_int
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(seed + 41)
+                data = instance.sample(total_obs)
+            intervention_mask = torch.zeros_like(data)
+            return data, intervention_mask
+
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(seed + 43)
+            x_obs = instance.sample(n_obs)
+
+        n_nodes = int(instance.n_nodes)
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(seed + 47)
+            int_targets = torch.randint(0, n_nodes, (n_int,), dtype=torch.long)
+
+        x_int = torch.zeros(n_int, n_nodes, dtype=x_obs.dtype)
+        int_mask = torch.zeros(n_int, n_nodes, dtype=x_obs.dtype)
+
+        unique_targets = torch.unique(int_targets)
+        for target in unique_targets.tolist():
+            target_idx = int(target)
+            rows = torch.nonzero(int_targets == target_idx, as_tuple=False).flatten()
+            mutilated = instance.do({target_idx: self.intervention_value})
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(seed + 1000 + target_idx)
+                sampled = mutilated.sample(int(rows.numel()))
+            x_int[rows] = sampled
+            int_mask[rows, target_idx] = 1.0
+
+        data = torch.cat([x_obs, x_int], dim=0)
+        intervention_mask = torch.cat([torch.zeros_like(x_obs), int_mask], dim=0)
+        return data, intervention_mask
+
+    def _sample_observational_batch(
+        self,
+        instance: Any,
+        *,
+        seed: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(seed)
+            data = instance.sample(self.samples_per_task)
+        intervention_mask = torch.zeros_like(data)
+        return data, intervention_mask
 
     def __iter__(self):
         worker_info = get_worker_info()
@@ -49,8 +162,13 @@ class MetaIterableDataset(IterableDataset):
         stride = max(1, num_workers * world_size)
 
         seed = self.base_seed + rank * num_workers + worker_id
+        local_index = 0
         while True:
-            instance = self.family.sample_task(seed)
+            bucket = (local_index // self.batch_size_hint) % len(self._n_nodes_schedule)
+            n_nodes = self._n_nodes_schedule[bucket]
+            family = self._family_for_n_nodes(n_nodes)
+            instance = family.sample_task(seed)
+
             if self.forbidden_hashes:
                 graph_hash = compute_graph_hash(
                     instance.adjacency_matrix,
@@ -59,18 +177,29 @@ class MetaIterableDataset(IterableDataset):
                 )
                 if graph_hash in self.forbidden_hashes:
                     seed += stride
+                    local_index += 1
                     continue
 
-            with torch.random.fork_rng(devices=[]):
-                torch.manual_seed(seed)
-                data = instance.sample(self.samples_per_task)
+            if self.use_interventional_training:
+                data, intervention_mask = self._sample_interventional_batch(
+                    instance,
+                    seed=seed,
+                )
+            else:
+                data, intervention_mask = self._sample_observational_batch(
+                    instance,
+                    seed=seed,
+                )
 
             yield {
                 "seed": int(seed),
                 "data": data,
+                "intervention_mask": intervention_mask,
                 "adjacency": instance.adjacency_matrix,
+                "n_nodes": int(instance.n_nodes),
             }
             seed += stride
+            local_index += 1
 
 
 class MetaFixedDataset(Dataset):
@@ -114,8 +243,15 @@ class MetaFixedDataset(Dataset):
             data = instance.sample(self.samples_per_task)
 
         adjacency = instance.adjacency_matrix.to(dtype=torch.float32)
+        intervention_mask = torch.zeros_like(data)
 
-        return {"seed": seed, "data": data, "adjacency": adjacency}
+        return {
+            "seed": seed,
+            "data": data,
+            "intervention_mask": intervention_mask,
+            "adjacency": adjacency,
+            "n_nodes": int(instance.n_nodes),
+        }
 
 
 class MetaInterventionalDataset(Dataset):

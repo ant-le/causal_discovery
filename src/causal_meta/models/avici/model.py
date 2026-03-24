@@ -1,219 +1,374 @@
 from __future__ import annotations
 
-from typing import Optional
+import math
+from typing import Any, Optional
 
 import torch
-import torch.distributed as dist
 import torch.nn as nn
+import torch.nn.functional as F
 
 from causal_meta.models.base import BaseModel
 from causal_meta.models.factory import register_model
-from causal_meta.models.utils.nn import CausalAdjacencyMatrix, CausalTNPEncoder
 
 
-def cyclicity(adjacency: torch.Tensor) -> torch.Tensor:
-    """
-    Code adapted from DiBS:
-    Differentiable acyclicity constraint from Yu et al. (2019). If h = 0 then the graph is acyclic.
-    http://proceedings.mlr.press/v97/yu19a/yu19a.pdf
+def _set_diagonal(arr: torch.Tensor, value: float) -> torch.Tensor:
+    n_vars = arr.shape[-1]
+    diag_idx = torch.arange(n_vars, device=arr.device)
+    out = arr.clone()
+    out[..., diag_idx, diag_idx] = value
+    return out
 
-    Args:
-        mat (ndarray): graph adjacency matrix of shape ``[n_vars, n_vars]``
-        n_vars (int): number of variables, to allow for ``jax.jit``-compilation
 
-    Returns:
-        bool: True if the graph is cyclic, False otherwise
-    """
-    n_vars = adjacency.shape[-1]
+class _AviciAttention(nn.Module):
+    def __init__(
+        self,
+        *,
+        dim: int,
+        key_size: int,
+        num_heads: int,
+    ) -> None:
+        super().__init__()
+        inner_dim = num_heads * key_size
+        self.num_heads = num_heads
+        self.key_size = key_size
+        self.q_proj = nn.Linear(dim, inner_dim, bias=True)
+        self.k_proj = nn.Linear(dim, inner_dim, bias=True)
+        self.v_proj = nn.Linear(dim, inner_dim, bias=True)
+        self.out_proj = nn.Linear(inner_dim, dim, bias=True)
 
-    if adjacency.device.type == "mps":
-        adjacency_cpu = adjacency.to("cpu")
-        M_mult = torch.linalg.matrix_exp(adjacency_cpu).to(adjacency.device)
-    else:
-        M_mult = torch.linalg.matrix_exp(adjacency)
-    h = torch.einsum("...ii", M_mult) - n_vars
+    def forward(
+        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
+    ) -> torch.Tensor:
+        q_shape = q.shape
+        seq_len = q_shape[-2]
+        flat_batch = int(math.prod(q_shape[:-2]))
+        q_flat = q.reshape(flat_batch, seq_len, q_shape[-1])
+        k_flat = k.reshape(flat_batch, seq_len, k.shape[-1])
+        v_flat = v.reshape(flat_batch, seq_len, v.shape[-1])
 
-    return h
+        q_proj = self.q_proj(q_flat).view(
+            flat_batch, seq_len, self.num_heads, self.key_size
+        )
+        k_proj = self.k_proj(k_flat).view(
+            flat_batch, seq_len, self.num_heads, self.key_size
+        )
+        v_proj = self.v_proj(v_flat).view(
+            flat_batch, seq_len, self.num_heads, self.key_size
+        )
+
+        q_proj = q_proj.transpose(1, 2)
+        k_proj = k_proj.transpose(1, 2)
+        v_proj = v_proj.transpose(1, 2)
+
+        scale = 1.0 / math.sqrt(self.key_size)
+        attn_scores = torch.matmul(q_proj, k_proj.transpose(-1, -2)) * scale
+        attn_probs = torch.softmax(attn_scores, dim=-1)
+        attn_out = torch.matmul(attn_probs, v_proj)
+
+        attn_out = (
+            attn_out.transpose(1, 2)
+            .contiguous()
+            .view(flat_batch, seq_len, self.num_heads * self.key_size)
+        )
+        out = self.out_proj(attn_out)
+        return out.reshape(*q_shape[:-2], seq_len, out.shape[-1])
+
+
+class _AviciBlock(nn.Module):
+    def __init__(
+        self,
+        *,
+        dim: int,
+        key_size: int,
+        num_heads: int,
+        widening_factor: int,
+    ) -> None:
+        super().__init__()
+        self.ln_q = nn.LayerNorm(dim)
+        self.ln_k = nn.LayerNorm(dim)
+        self.ln_v = nn.LayerNorm(dim)
+        self.attn = _AviciAttention(dim=dim, key_size=key_size, num_heads=num_heads)
+        self.ffn_ln = nn.LayerNorm(dim)
+        self.ffn = nn.Sequential(
+            nn.Linear(dim, widening_factor * dim),
+            nn.ReLU(),
+            nn.Linear(widening_factor * dim, dim),
+        )
+
+    def forward(self, z: torch.Tensor, dropout_rate: float) -> torch.Tensor:
+        q_in = self.ln_q(z)
+        k_in = self.ln_k(z)
+        v_in = self.ln_v(z)
+        z_attn = self.attn(q_in, k_in, v_in)
+        z = z + F.dropout(z_attn, p=dropout_rate, training=self.training)
+
+        z_in = self.ffn_ln(z)
+        z_ffn = self.ffn(z_in)
+        z = z + F.dropout(z_ffn, p=dropout_rate, training=self.training)
+        return z
 
 
 @register_model("avici")
-class AviciModel(CausalTNPEncoder, BaseModel):
-    """
-    Avici-style Amortized Causal Discovery Model.
-    Replicates the AviciDecoder architecture from the reference.
-    """
-
+class AviciModel(BaseModel):
     def __init__(
         self,
         num_nodes: int,
-        d_model: int = 64,
-        nhead: int = 4,
-        num_layers: int = 2,  # num_layers_encoder
-        dim_feedforward: int = 128,
+        dim: int = 128,
+        layers: int = 8,
+        key_size: int = 32,
+        num_heads: int = 8,
+        widening_factor: int = 4,
         dropout: float = 0.1,
-        emb_depth: int = 1,
-        use_positional_encoding: bool = False,
-        **kwargs,
+        out_dim: int | None = None,
+        logit_bias_init: float = -3.0,
+        cosine_temp_init: float = 0.0,
+        mask_diag: bool = True,
+        acyclicity_weight: float | None = 0.0,
+        acyclicity_pow_iters: int = 10,
+        regulariser_lr: float = 1e-4,
+        experimental_chunk_size: int | None = None,
+        d_model: int | None = None,
+        nhead: int | None = None,
+        num_layers: int | None = None,
+        dim_feedforward: int | None = None,
+        emb_depth: int | None = None,
+        use_positional_encoding: bool | None = None,
+        **_: Any,
     ) -> None:
-        CausalTNPEncoder.__init__(
-            self,
-            d_model=d_model,
-            dim_feedforward=dim_feedforward,
-            nhead=nhead,
-            num_layers=num_layers,
-            emb_depth=emb_depth,
-            use_positional_encoding=use_positional_encoding,
-            num_nodes=num_nodes,
-            dropout=dropout,
-            device=None,
-            dtype=None,
-            avici_summary=True,  # Max pooling
-        )
-        self.d_model = d_model
+        super().__init__()
 
-        # Decoder is a linear layer (Identity in reference)
-        self.decoder = nn.Identity()
+        if d_model is not None:
+            dim = d_model
+        if nhead is not None:
+            num_heads = nhead
+        if num_layers is not None:
+            layers = num_layers
+        if dim_feedforward is not None and dim > 0:
+            widening_factor = max(1, int(dim_feedforward // dim))
 
-        # Predictor: Attention-based adjacency matrix
-        self.predictor = CausalAdjacencyMatrix(
-            nhead=1,  # Single head for final prediction
-            d_model=d_model,
-            device=None,
-            dtype=None,
-        )
+        del emb_depth
+        del use_positional_encoding
 
-        self.regulariser_weight = torch.nn.Parameter(
-            torch.tensor(0.0), requires_grad=False
+        self.num_nodes = num_nodes
+        self.dim = dim
+        self.d_model = dim
+        self.out_dim = out_dim or dim
+        self.layers = 2 * layers
+        self.dropout = dropout
+        self.key_size = key_size
+        self.num_heads = num_heads
+        self.widening_factor = widening_factor
+        self.logit_bias_init = logit_bias_init
+        self.cosine_temp_init = cosine_temp_init
+        self.mask_diag = mask_diag
+        self.acyclicity_weight = acyclicity_weight
+        self.acyclicity_pow_iters = acyclicity_pow_iters
+        self.regulariser_lr = regulariser_lr
+        self.experimental_chunk_size = experimental_chunk_size
+
+        self.input_proj = nn.Linear(2, dim)
+        self.blocks = nn.ModuleList(
+            [
+                _AviciBlock(
+                    dim=dim,
+                    key_size=key_size,
+                    num_heads=num_heads,
+                    widening_factor=widening_factor,
+                )
+                for _ in range(self.layers)
+            ]
         )
-        self.regulariser_lr = 1e-4  # hard coded from avici paper
-        self.cyclicity_value_avg = None
+        self.final_ln = nn.LayerNorm(dim)
+        self.u_proj = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, self.out_dim))
+        self.v_proj = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, self.out_dim))
+        self.learned_temp = nn.Parameter(
+            torch.tensor(float(cosine_temp_init), dtype=torch.float32)
+        )
+        self.final_matrix_bias = nn.Parameter(
+            torch.tensor(float(logit_bias_init), dtype=torch.float32)
+        )
+        self.register_buffer(
+            "regulariser_weight",
+            torch.tensor(float(acyclicity_weight or 0.0), dtype=torch.float32),
+        )
+        self.regulariser_weight: torch.Tensor
 
     @property
     def needs_pretraining(self) -> bool:
         return True
 
-    def decode(self, representation: torch.Tensor) -> torch.Tensor:
-        return self.decoder(representation)
+    def _prepare_input(self, input_data: torch.Tensor) -> torch.Tensor:
+        if input_data.ndim == 3:
+            zeros = torch.zeros_like(input_data)
+            return torch.stack([input_data, zeros], dim=-1)
+        if input_data.ndim == 4:
+            if input_data.size(-1) == 1:
+                zeros = torch.zeros_like(input_data)
+                return torch.cat([input_data, zeros], dim=-1)
+            if input_data.size(-1) >= 2:
+                return input_data[..., :2]
+        raise ValueError("AVICI input must have shape (B, N, d) or (B, N, d, c).")
+
+    def _all_blocks_and_max(
+        self, z: torch.Tensor, *, dropout_rate: float
+    ) -> torch.Tensor:
+        if self.layers % 2 != 0:
+            raise RuntimeError("Number of AVICI layers must be even.")
+        for block in self.blocks:
+            z = block(z, dropout_rate)
+            z = z.swapaxes(-3, -2)
+        z = self.final_ln(z)
+        return z.max(dim=-3).values
+
+    def _forward_embedded(
+        self, z: torch.Tensor, *, dropout_rate: float
+    ) -> torch.Tensor:
+        n_obs = z.shape[-3]
+        chunk_size = self.experimental_chunk_size
+        if chunk_size is not None and 0 < chunk_size < n_obs:
+            if n_obs % chunk_size != 0:
+                raise ValueError(
+                    "observations axis must be divisible by experimental_chunk_size"
+                )
+            chunks = n_obs // chunk_size
+            z = z.reshape(*z.shape[:-3], chunk_size, chunks, *z.shape[-2:])
+            z = z.swapaxes(-3, 0)
+            z = torch.stack(
+                [
+                    self._all_blocks_and_max(chunk, dropout_rate=dropout_rate)
+                    for chunk in z
+                ],
+                dim=0,
+            )
+            return z.max(dim=0).values
+        return self._all_blocks_and_max(z, dropout_rate=dropout_rate)
 
     def forward(
         self,
-        input_data: torch.Tensor,
+        x: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """
-        Forward pass of the Avici model.
+        node_mask = (
+            mask.to(device=x.device, dtype=torch.bool) if mask is not None else None
+        )
+        x_prepared = self._prepare_input(x)
+        if node_mask is not None:
+            x_prepared = x_prepared.masked_fill(
+                node_mask.unsqueeze(1).unsqueeze(-1),
+                0.0,
+            )
 
-        Args:
-            input_data: Input tensor of shape (Batch, Samples, Variables).
-            mask: Optional padding mask for variable-size graphs (currently
-                unused — reserved for future padding support).
+        dropout_rate = self.dropout if self.training else 0.0
+        z = self.input_proj(x_prepared)
+        z = self._forward_embedded(z, dropout_rate=dropout_rate)
 
-        Returns:
-            logits: Predicted adjacency logits of shape (Batch, Variables, Variables).
-        """
-        # input_data is [Batch, Samples, Variables] -> [Batch, Samples, Variables, 1]
-        target_data = input_data.unsqueeze(-1)
+        u = self.u_proj(z)
+        v = self.v_proj(z)
+        u = F.normalize(u, p=2, dim=-1, eps=1e-12)
+        v = F.normalize(v, p=2, dim=-1, eps=1e-12)
 
-        # Encode
-        # representation: [Batch, Nodes, 1, d_model]
-        representation = self.encode(target_data=target_data, mask=None)
-
-        # Decode
-        representation = representation.squeeze(2)  # [Batch, Nodes, d_model]
-        decoded_output = self.decode(representation)
-
-        # Predict Adjacency
-        # adj_matrix: [Batch, Nodes, Nodes]
-        adj_matrix = self.predictor(decoded_output, padding_mask=None)
-
-        return adj_matrix
+        logits = torch.einsum("...id,...jd->...ij", u, v)
+        logits = logits * self.learned_temp.exp()
+        logits = logits + self.final_matrix_bias
+        if node_mask is not None:
+            pad_edges = node_mask.unsqueeze(1) | node_mask.unsqueeze(2)
+            logits = logits.masked_fill(pad_edges, -20.0)
+        return logits
 
     def sample(
         self,
-        input_data: torch.Tensor,
+        x: torch.Tensor,
         num_samples: int = 1,
         mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """
-        Bernoulli sampling from edge probabilities.
-
-        Args:
-            input_data: Input tensor of shape (Batch, Samples, Variables).
-            num_samples: Number of graph samples to generate.
-            mask: Optional padding mask (see :meth:`forward`).
-
-        Returns:
-            torch.Tensor: Sampled adjacency matrices (Batch, num_samples, Variables, Variables).
-        """
-        logits = self.forward(input_data, mask=mask)
+        logits = self.forward(x, mask=mask)
         probs = torch.sigmoid(logits)
-        probs = probs * (
-            1 - torch.eye(probs.size(-1), device=probs.device, dtype=probs.dtype)
-        )
+        if mask is not None:
+            node_mask = mask.to(device=probs.device, dtype=torch.bool)
+            pad_edges = node_mask.unsqueeze(1) | node_mask.unsqueeze(2)
+            probs = probs.masked_fill(pad_edges, 0.0)
+        samples = torch.bernoulli(
+            probs.unsqueeze(1).expand(-1, num_samples, -1, -1)
+        ).to(dtype=torch.int32)
+        if self.mask_diag:
+            samples = _set_diagonal(samples, 0.0)
+        return samples.to(dtype=probs.dtype)
 
-        # Expand for num_samples
-        probs = probs.unsqueeze(1).expand(-1, num_samples, -1, -1)
+    def _exp_matmul(
+        self, logmat: torch.Tensor, vec: torch.Tensor, axis: int
+    ) -> torch.Tensor:
+        mat = torch.exp(logmat)
+        if axis == -1:
+            return torch.einsum("...ij,...j->...i", mat, vec)
+        if axis == -2:
+            return torch.einsum("...i,...ij->...j", vec, mat)
+        raise ValueError("axis must be -1 or -2")
 
-        # Sample
-        return torch.bernoulli(probs)
+    def _acyclicity_spectral_log(self, logmat: torch.Tensor) -> torch.Tensor:
+        u = torch.randn(logmat.shape[:-1], device=logmat.device, dtype=logmat.dtype)
+        v = torch.randn(logmat.shape[:-1], device=logmat.device, dtype=logmat.dtype)
 
-    def update_regulariser_weight(self, acyclic_loss):
-        """
-        Should update every 250 steps.
-        """
-        self.regulariser_weight.data = (
-            self.regulariser_weight.data + self.regulariser_lr * acyclic_loss
-        )
+        for _ in range(self.acyclicity_pow_iters):
+            u_new = self._exp_matmul(logmat, u, -2)
+            v_new = self._exp_matmul(logmat, v, -1)
+            u = u_new / u_new.norm(p=2, dim=-1, keepdim=True).clamp_min(1e-12)
+            v = v_new / v_new.norm(p=2, dim=-1, keepdim=True).clamp_min(1e-12)
 
-    def calculate_loss(self, logits, target, update_regulariser=False, **kwargs):
-        """
-        Args:
-        -----
-            logits: torch.Tensor, shape [batch_size, num_nodes, num_nodes]
-            target: torch.Tensor, shape [batch_size, num_nodes, num_nodes]
+        u = u.detach()
+        v = v.detach()
+        numerator = torch.einsum("...j,...j->...", u, self._exp_matmul(logmat, v, -1))
+        denominator = torch.einsum("...j,...j->...", u, v).clamp_min(1e-12)
+        return numerator / denominator
 
-        Returns:
-        --------
-            loss: torch.Tensor, shape [batch_size]
-        """
-        probs = torch.sigmoid(logits)
-        # set diagonal to 0
-        probs = probs * (1 - torch.eye(probs.size(-1), device=probs.device))
+    def update_regulariser_weight(self, acyclic_penalty: torch.Tensor) -> None:
+        with torch.no_grad():
+            self.regulariser_weight.add_(self.regulariser_lr * acyclic_penalty.detach())
 
-        # Differentiable acyclicity constraint (per batch element)
-        # NOTE: keep this as a tensor to preserve gradients.
-        cyclicity_per_example = cyclicity(probs)  # (B,)
-        cyclicity_mean = cyclicity_per_example.mean()
+    def calculate_loss(
+        self,
+        output: torch.Tensor,
+        target: torch.Tensor,
+        node_mask: Optional[torch.Tensor] = None,
+        update_regulariser: bool = False,
+        **_: Any,
+    ) -> torch.Tensor:
+        logits = output
+        target = target.float()
+        n_vars = target.shape[-1]
 
-        # Sync a detached scalar for logging/EMA so all ranks update the dual weight identically.
-        cyclicity_logged = cyclicity_mean.detach()
-        if dist.is_available() and dist.is_initialized():
-            cyclicity_logged = cyclicity_logged.clone()
-            dist.all_reduce(cyclicity_logged, op=dist.ReduceOp.AVG)
+        logp1 = F.logsigmoid(logits)
+        logp0 = F.logsigmoid(-logits)
+        loss_eltwise = -(target * logp1 + (1.0 - target) * logp0)
 
-        cyclicity_value = float(cyclicity_logged.item())
+        edge_mask = torch.ones_like(loss_eltwise)
+        if self.mask_diag:
+            edge_mask = _set_diagonal(edge_mask, 0.0)
+        if node_mask is not None:
+            node_mask = node_mask.to(device=logits.device, dtype=torch.bool)
+            pad_edges = node_mask.unsqueeze(1) | node_mask.unsqueeze(2)
+            edge_mask = edge_mask.masked_fill(pad_edges, 0.0)
 
-        logits = logits.contiguous().view(logits.size(0), -1)
-        target = target.contiguous().view(target.size(0), -1)
-        # Classification loss
-        loss_func = torch.nn.BCEWithLogitsLoss(reduction="none")
-        loss = loss_func(logits, target)
-        loss = loss.mean(dim=1)
+        valid_edges = edge_mask.sum(dim=(-1, -2)).clamp_min(1.0)
+        batch_loss = (loss_eltwise * edge_mask).sum(dim=(-1, -2)) / valid_edges
+        loss_raw = batch_loss.mean()
 
-        # Update EMA of cyclicity_value
-        alpha = 0.1  # Smoothing factor between 0 and 1
-        if self.cyclicity_value_avg is None:
-            self.cyclicity_value_avg = cyclicity_value
+        if self.acyclicity_weight is None:
+            return loss_raw
+
+        if self.mask_diag:
+            logp_edges = _set_diagonal(logp1, float("-inf"))
         else:
-            self.cyclicity_value_avg = (
-                alpha * cyclicity_value + (1 - alpha) * self.cyclicity_value_avg
-            )
+            logp_edges = logp1
+        if node_mask is not None:
+            pad_edges = node_mask.unsqueeze(1) | node_mask.unsqueeze(2)
+            logp_edges = logp_edges.masked_fill(pad_edges, float("-inf"))
+        spectral_radii = self._acyclicity_spectral_log(logp_edges)
+        ave_acyc_penalty = spectral_radii.mean()
+        wgt_acyc_penalty = (
+            self.regulariser_weight.to(dtype=logits.dtype) * ave_acyc_penalty
+        )
 
-        acyclic_loss = self.regulariser_weight * cyclicity_per_example
-
-        # Update dual weight with EMA
         if update_regulariser:
-            self.update_regulariser_weight(self.cyclicity_value_avg)
+            self.update_regulariser_weight(ave_acyc_penalty)
 
-        total_loss = loss + acyclic_loss
-        return total_loss.mean()
+        return loss_raw + wgt_acyc_penalty

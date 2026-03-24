@@ -23,11 +23,20 @@ class _DummyModel(torch.nn.Module):
         super().__init__()
         self.n_nodes = n_nodes
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        del mask
         batch_size = x.shape[0]
         return torch.zeros(batch_size, self.n_nodes, self.n_nodes)
 
-    def sample(self, x: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
+    def sample(
+        self,
+        x: torch.Tensor,
+        num_samples: int = 1,
+        mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        del mask
         batch_size = x.shape[0]
         return torch.zeros(batch_size, num_samples, self.n_nodes, self.n_nodes)
 

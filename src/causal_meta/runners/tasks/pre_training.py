@@ -244,7 +244,7 @@ def run(
                 train_iter = iter(train_loader)
                 batch = next(train_iter)
 
-            input_data = batch["data"].to(device)
+            input_data, node_mask = _prepare_model_batch(batch, device)
             adjacency_matrix = batch["adjacency"].to(device)
 
             # Skip redundant DDP gradient sync on non-final micro-batches.
@@ -260,10 +260,11 @@ def run(
                     with torch.autocast(
                         device_type="cuda", dtype=amp_dtype, enabled=True
                     ):
-                        output = model(input_data)
+                        output = model(input_data, mask=node_mask)
                         loss_vec = model_unwrapped.calculate_loss(
                             output,
                             adjacency_matrix,
+                            node_mask=node_mask,
                             update_regulariser=update_regulariser and is_last_micro,
                         )
                         loss = loss_vec.mean() / float(accumulate_grad_batches)
@@ -272,10 +273,11 @@ def run(
                     else:
                         loss.backward()
                 else:
-                    output = model(input_data)
+                    output = model(input_data, mask=node_mask)
                     loss_vec = model_unwrapped.calculate_loss(
                         output,
                         adjacency_matrix,
+                        node_mask=node_mask,
                         update_regulariser=update_regulariser and is_last_micro,
                     )
                     loss = loss_vec.mean() / float(accumulate_grad_batches)
@@ -446,10 +448,12 @@ def validate(
         for name, loader in val_loaders.items():
             metrics_handler = Metrics()
             for batch in loader:
-                input_data = batch["data"].to(device)
+                input_data, node_mask = _prepare_model_batch(batch, device)
                 adjacency_matrix = batch["adjacency"].to(device)
 
-                samples = model.sample(input_data, num_samples=num_samples)
+                samples = model.sample(
+                    input_data, num_samples=num_samples, mask=node_mask
+                )
                 samples_for_metrics = samples.permute(1, 0, 2, 3)
 
                 metrics_handler.update(adjacency_matrix, samples_for_metrics)
@@ -511,6 +515,25 @@ def _augment_validation_group_metrics(metrics: dict[str, float]) -> None:
             metrics[f"mean_ood_{metric_name}"] = float(
                 sum(ood_values) / len(ood_values)
             )
+
+
+def _prepare_model_batch(
+    batch: dict[str, Any], device: torch.device
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """Prepare a model-ready batch tensor and optional node mask."""
+    input_data = batch["data"].to(device)
+    intervention_mask = batch.get("intervention_mask")
+    if intervention_mask is not None:
+        input_data = torch.stack(
+            [input_data, intervention_mask.to(device)],
+            dim=-1,
+        )
+
+    node_mask = batch.get("node_mask")
+    if node_mask is not None:
+        node_mask = node_mask.to(device)
+
+    return input_data, node_mask
 
 
 def save_checkpoint(

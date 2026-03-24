@@ -27,7 +27,9 @@ def _make_dataset_batch(n_nodes: int = 5, samples_per_task: int = 32, seed: int 
 
 
 def _is_dag(adjacency: torch.Tensor) -> bool:
-    graph = nx.from_numpy_array(adjacency.detach().cpu().numpy(), create_using=nx.DiGraph)
+    graph = nx.from_numpy_array(
+        adjacency.detach().cpu().numpy(), create_using=nx.DiGraph
+    )
     return nx.is_directed_acyclic_graph(graph)
 
 
@@ -73,7 +75,9 @@ def test_bcnp_model_runs_on_dataset_batch_and_samples_dags() -> None:
     diag_probs = torch.diagonal(all_probs, dim1=-2, dim2=-1)
     assert torch.all(diag_probs == 0)
 
-    probs_flat = all_probs.reshape(all_probs.size(0), all_probs.size(1), -1).clamp(1e-6, 1 - 1e-6)
+    probs_flat = all_probs.reshape(all_probs.size(0), all_probs.size(1), -1).clamp(
+        1e-6, 1 - 1e-6
+    )
     target_flat = adj.reshape(adj.size(0), -1)
     dist = torch.distributions.Bernoulli(probs=probs_flat)
     log_prob = dist.log_prob(target_flat.unsqueeze(0))
@@ -89,3 +93,33 @@ def test_bcnp_model_runs_on_dataset_batch_and_samples_dags() -> None:
 
     for sample in samples[0]:
         assert _is_dag(sample)
+
+
+def test_avici_and_bcnp_accept_two_channel_inputs() -> None:
+    x, _ = _make_dataset_batch(n_nodes=5, samples_per_task=12, seed=7)
+    intervention_mask = torch.zeros_like(x)
+    intervention_mask[:, -4:, 2] = 1.0
+    x_two_channel = torch.stack([x, intervention_mask], dim=-1)
+
+    avici = ModelFactory.create(
+        {"type": "avici", "num_nodes": 5, "d_model": 16, "nhead": 2, "num_layers": 2}
+    )
+    bcnp = ModelFactory.create(
+        {
+            "type": "bcnp",
+            "num_nodes": 5,
+            "d_model": 16,
+            "nhead": 2,
+            "num_layers": 2,
+            "n_perm_samples": 3,
+            "sinkhorn_iter": 10,
+        }
+    )
+
+    avici_logits = avici(x_two_channel)
+    bcnp_probs = bcnp(x_two_channel)
+
+    assert avici_logits.shape == (1, 5, 5)
+    assert bcnp_probs.shape == (3, 1, 5, 5)
+    assert torch.isfinite(avici_logits).all()
+    assert torch.isfinite(bcnp_probs).all()

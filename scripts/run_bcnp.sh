@@ -3,7 +3,7 @@
 #SBATCH --partition=GPU-a100
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=4
-#SBATCH --gpus-per-node=4
+#SBATCH --gres=gpu:a100:4
 #SBATCH --time=72:00:00
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
@@ -70,8 +70,6 @@ if [[ -n "${SLURMD_NODENAME:-}" ]]; then
 fi
 
 echo "Launching ${SLURM_NTASKS:-2} tasks via srun"
-
-unset CUDA_VISIBLE_DEVICES GPU_DEVICE_ORDINAL 2>/dev/null || true
 
 srun "${MAIN_PYTHON}" -m causal_meta.main \
   --config-name "${CONFIG_NAME}" \

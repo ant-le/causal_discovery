@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import warnings
+from dataclasses import replace
 from functools import partial
 from typing import Any, Dict, Optional, Sequence, Set
 
@@ -41,6 +42,7 @@ class CausalMetaModule:
         self.config = config
 
         self.train_family: Optional[SCMFamily] = None
+        self.train_families_by_n_nodes: Dict[int, SCMFamily] = {}
         self.val_families: Dict[str, SCMFamily] = {}
         self.test_families: Dict[str, SCMFamily] = {}
 
@@ -48,12 +50,27 @@ class CausalMetaModule:
         self.val_datasets: Dict[str, MetaFixedDataset] = {}
         self.test_datasets: Dict[str, MetaFixedDataset] = {}
         self.test_interventional_datasets: Dict[str, MetaInterventionalDataset] = {}
+        self._val_loaders: Optional[Dict[str, DataLoader]] = None
+        self._test_loaders: Optional[Dict[str, DataLoader]] = None
+        self._test_interventional_loaders: Optional[Dict[str, DataLoader]] = None
 
         self.family_distances: Dict[str, Dict[str, float]] = {}
 
     def setup(self) -> None:
         """Instantiate datasets, enforce disjointness, and pre-compute stats."""
         self.train_family = self._build_family(self.config.train_family)
+        configured_train_nodes = [
+            int(n) for n in getattr(self.config, "train_n_nodes", []) if int(n) > 0
+        ]
+        if not configured_train_nodes:
+            configured_train_nodes = [int(self.config.train_family.n_nodes)]
+        configured_train_nodes = sorted(set(configured_train_nodes))
+        self.train_families_by_n_nodes = {
+            n_nodes: self._build_family(
+                replace(self.config.train_family, n_nodes=int(n_nodes))
+            )
+            for n_nodes in configured_train_nodes
+        }
 
         val_family_cfgs = self.config.val_families or {"id": self.config.train_family}
         self.val_families = {
@@ -100,6 +117,19 @@ class CausalMetaModule:
             samples_per_task=self.config.samples_per_task,
             forbidden_hashes=all_reserved_hashes,
             hash_mechanisms=getattr(self.config, "hash_mechanisms", False),
+            families_by_n_nodes=(
+                self.train_families_by_n_nodes
+                if len(self.train_families_by_n_nodes) > 1
+                else None
+            ),
+            batch_size_hint=int(getattr(self.config, "batch_size_train", 1)),
+            samples_per_task_obs=getattr(self.config, "samples_per_task_obs", None),
+            samples_per_task_int=int(getattr(self.config, "samples_per_task_int", 0)),
+            use_interventional_training=bool(
+                getattr(self.config, "use_interventional_training", False)
+            ),
+            train_p_obs_only=float(getattr(self.config, "train_p_obs_only", 0.0)),
+            intervention_value=float(getattr(self.config, "intervention_value", 0.0)),
         )
 
         self.val_datasets = {
@@ -129,6 +159,9 @@ class CausalMetaModule:
             )
             for name, family in self.test_families.items()
         }
+        self._val_loaders = None
+        self._test_loaders = None
+        self._test_interventional_loaders = None
 
     def train_dataloader(self) -> DataLoader:
         """Return the training DataLoader with GPU optimizations."""
@@ -152,13 +185,13 @@ class CausalMetaModule:
 
     def test_dataloader(self) -> Dict[str, DataLoader]:
         """Return a dictionary of test DataLoaders."""
+        if self._test_loaders is not None:
+            return self._test_loaders
+
         if not self.test_datasets:
             self.setup()
 
         loaders = {}
-        is_distributed = (
-            torch.distributed.is_available() and torch.distributed.is_initialized()
-        )
 
         collate_fn = partial(collate_fn_scm, normalize=self.config.normalize_data)
 
@@ -167,30 +200,27 @@ class CausalMetaModule:
             raise ValueError("data.batch_size_test must be >= 1")
 
         for name, dataset in self.test_datasets.items():
-            sampler = None
-            if is_distributed:
-                sampler = NoPaddingDistributedSampler(dataset, shuffle=False)
-
             loaders[name] = DataLoader(
                 dataset,
                 batch_size=batch_size,
                 num_workers=self.config.num_workers,  # Use configured workers
                 pin_memory=self.config.pin_memory,
                 collate_fn=collate_fn,
-                sampler=sampler,
-                **self._dataloader_perf_kwargs(),
+                sampler=self._evaluation_sampler(dataset),
+                **self._dataloader_perf_kwargs(for_evaluation=True),
             )
-        return loaders
+        self._test_loaders = loaders
+        return self._test_loaders
 
     def test_interventional_dataloader(self) -> Dict[str, DataLoader]:
         """Return a dictionary of interventional test DataLoaders."""
+        if self._test_interventional_loaders is not None:
+            return self._test_interventional_loaders
+
         if not self.test_interventional_datasets:
             self.setup()
 
         loaders = {}
-        is_distributed = (
-            torch.distributed.is_available() and torch.distributed.is_initialized()
-        )
 
         collate_fn = partial(
             collate_fn_interventional, normalize=self.config.normalize_data
@@ -201,23 +231,23 @@ class CausalMetaModule:
             raise ValueError("data.batch_size_test_interventional must be >= 1")
 
         for name, dataset in self.test_interventional_datasets.items():
-            sampler = None
-            if is_distributed:
-                sampler = NoPaddingDistributedSampler(dataset, shuffle=False)
-
             loaders[name] = DataLoader(
                 dataset,
                 batch_size=batch_size,
                 num_workers=self.config.num_workers,
                 pin_memory=self.config.pin_memory,
                 collate_fn=collate_fn,
-                sampler=sampler,
-                **self._dataloader_perf_kwargs(),
+                sampler=self._evaluation_sampler(dataset),
+                **self._dataloader_perf_kwargs(for_evaluation=True),
             )
-        return loaders
+        self._test_interventional_loaders = loaders
+        return self._test_interventional_loaders
 
     def val_dataloader(self) -> Dict[str, DataLoader]:
         """Return a dictionary of validation DataLoaders."""
+        if self._val_loaders is not None:
+            return self._val_loaders
+
         if not self.val_datasets:
             self.setup()
 
@@ -227,9 +257,6 @@ class CausalMetaModule:
             )
 
         loaders = {}
-        is_distributed = (
-            torch.distributed.is_available() and torch.distributed.is_initialized()
-        )
 
         collate_fn = partial(collate_fn_scm, normalize=self.config.normalize_data)
 
@@ -238,22 +265,21 @@ class CausalMetaModule:
             raise ValueError("data.batch_size_val must be >= 1")
 
         for name, dataset in self.val_datasets.items():
-            sampler = None
-            if is_distributed:
-                sampler = NoPaddingDistributedSampler(dataset, shuffle=False)
-
             loaders[name] = DataLoader(
                 dataset,
                 batch_size=batch_size,
                 num_workers=self.config.num_workers,  # Use configured workers
                 pin_memory=self.config.pin_memory,
                 collate_fn=collate_fn,
-                sampler=sampler,
-                **self._dataloader_perf_kwargs(),
+                sampler=self._evaluation_sampler(dataset),
+                **self._dataloader_perf_kwargs(for_evaluation=True),
             )
-        return loaders
+        self._val_loaders = loaders
+        return self._val_loaders
 
-    def _dataloader_perf_kwargs(self) -> Dict[str, Any]:
+    def _dataloader_perf_kwargs(
+        self, *, for_evaluation: bool = False
+    ) -> Dict[str, Any]:
         """Return optional DataLoader kwargs that improve host-side throughput."""
         num_workers = int(self.config.num_workers)
         if num_workers <= 0:
@@ -263,12 +289,23 @@ class CausalMetaModule:
         if prefetch_factor < 1:
             raise ValueError("data.prefetch_factor must be >= 1 when num_workers > 0")
 
+        persistent_workers = bool(getattr(self.config, "persistent_workers", True))
+        if for_evaluation:
+            persistent_workers = False
+
         return {
-            "persistent_workers": bool(
-                getattr(self.config, "persistent_workers", True)
-            ),
+            "persistent_workers": persistent_workers,
             "prefetch_factor": prefetch_factor,
         }
+
+    def _evaluation_sampler(self, dataset: Any) -> Any:
+        """Build the distributed sampler used for validation and test datasets."""
+        is_distributed = (
+            torch.distributed.is_available() and torch.distributed.is_initialized()
+        )
+        if not is_distributed:
+            return None
+        return NoPaddingDistributedSampler(dataset, shuffle=False)
 
     def _sample_hashes(self, family: SCMFamily, seeds: Sequence[int]) -> Set[str]:
         """
