@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import torch
 import pytest
 from causal_meta.models.base import BaseModel
@@ -137,3 +139,58 @@ def test_avici_acyclicity_regularizer_is_differentiable() -> None:
 
     assert logits.grad is not None
     assert float(logits.grad.abs().sum().item()) > 0.0
+
+
+def test_avici_regulariser_update_uses_warmup() -> None:
+    model = causal_meta.models.AviciModel(
+        num_nodes=5,
+        d_model=8,
+        nhead=2,
+        num_layers=2,
+        regulariser_lr=1.0,
+        regulariser_ema_alpha=1.0,
+        regulariser_warmup_updates=4,
+    )
+    logits = torch.full((2, 5, 5), 0.1)
+    target = torch.zeros(2, 5, 5)
+
+    _ = model.calculate_loss(logits, target, update_regulariser=True)
+    first_weight = float(model.regulariser_weight.item())
+    _ = model.calculate_loss(logits, target, update_regulariser=True)
+    second_weight = float(model.regulariser_weight.item())
+
+    assert first_weight > 0.0
+    assert second_weight > first_weight
+    assert int(model.regulariser_update_count.item()) == 2
+
+
+@patch("torch.distributed.is_available")
+@patch("torch.distributed.is_initialized")
+@patch("torch.distributed.get_world_size")
+@patch("torch.distributed.all_reduce")
+def test_avici_regulariser_update_reduces_across_ranks(
+    mock_all_reduce, mock_world_size, mock_init, mock_avail
+) -> None:
+    mock_avail.return_value = True
+    mock_init.return_value = True
+    mock_world_size.return_value = 2
+
+    def side_effect(tensor: torch.Tensor, op=None) -> None:
+        _ = op
+        tensor.fill_(6.0)
+
+    mock_all_reduce.side_effect = side_effect
+
+    model = causal_meta.models.AviciModel(
+        num_nodes=5,
+        d_model=8,
+        nhead=2,
+        num_layers=2,
+        regulariser_lr=1.0,
+        regulariser_ema_alpha=1.0,
+        regulariser_warmup_updates=1,
+    )
+
+    model.update_regulariser_weight(torch.tensor(1.0))
+
+    assert float(model.regulariser_weight.item()) == pytest.approx(3.0)

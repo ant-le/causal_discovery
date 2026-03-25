@@ -4,6 +4,7 @@ import math
 from typing import Any, Optional
 
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -126,6 +127,9 @@ class AviciModel(BaseModel):
         acyclicity_weight: float | None = 0.0,
         acyclicity_pow_iters: int = 10,
         regulariser_lr: float = 1e-4,
+        regulariser_ema_alpha: float = 0.05,
+        regulariser_warmup_updates: int = 100,
+        regulariser_max_weight: float | None = None,
         experimental_chunk_size: int | None = None,
         d_model: int | None = None,
         nhead: int | None = None,
@@ -164,6 +168,9 @@ class AviciModel(BaseModel):
         self.acyclicity_weight = acyclicity_weight
         self.acyclicity_pow_iters = acyclicity_pow_iters
         self.regulariser_lr = regulariser_lr
+        self.regulariser_ema_alpha = regulariser_ema_alpha
+        self.regulariser_warmup_updates = regulariser_warmup_updates
+        self.regulariser_max_weight = regulariser_max_weight
         self.experimental_chunk_size = experimental_chunk_size
 
         self.input_proj = nn.Linear(2, dim)
@@ -191,7 +198,14 @@ class AviciModel(BaseModel):
             "regulariser_weight",
             torch.tensor(float(acyclicity_weight or 0.0), dtype=torch.float32),
         )
+        self.register_buffer("regulariser_ema", torch.tensor(0.0, dtype=torch.float32))
+        self.register_buffer(
+            "regulariser_update_count",
+            torch.tensor(0, dtype=torch.long),
+        )
         self.regulariser_weight: torch.Tensor
+        self.regulariser_ema: torch.Tensor
+        self.regulariser_update_count: torch.Tensor
 
     @property
     def needs_pretraining(self) -> bool:
@@ -320,9 +334,42 @@ class AviciModel(BaseModel):
         denominator = torch.einsum("...j,...j->...", u, v).clamp_min(1e-12)
         return numerator / denominator
 
+    def _reduce_regulariser_signal(self, penalty: torch.Tensor) -> torch.Tensor:
+        reduced = penalty.detach().to(dtype=torch.float32)
+        if dist.is_available() and dist.is_initialized():
+            dist.all_reduce(reduced, op=dist.ReduceOp.SUM)
+            reduced = reduced / float(dist.get_world_size())
+        return reduced
+
     def update_regulariser_weight(self, acyclic_penalty: torch.Tensor) -> None:
+        alpha = min(max(float(self.regulariser_ema_alpha), 0.0), 1.0)
+        warmup_updates = max(0, int(self.regulariser_warmup_updates))
+        max_weight = self.regulariser_max_weight
+
         with torch.no_grad():
-            self.regulariser_weight.add_(self.regulariser_lr * acyclic_penalty.detach())
+            penalty = self._reduce_regulariser_signal(acyclic_penalty)
+            if not torch.isfinite(penalty):
+                return
+
+            if alpha >= 1.0 or int(self.regulariser_update_count.item()) == 0:
+                self.regulariser_ema.copy_(penalty)
+            else:
+                self.regulariser_ema.mul_(1.0 - alpha).add_(alpha * penalty)
+
+            next_count = int(self.regulariser_update_count.item()) + 1
+            if warmup_updates <= 0:
+                warmup_scale = 1.0
+            else:
+                warmup_scale = min(1.0, next_count / float(warmup_updates))
+
+            self.regulariser_weight.add_(
+                float(self.regulariser_lr) * warmup_scale * self.regulariser_ema
+            )
+            if max_weight is None:
+                self.regulariser_weight.clamp_(min=0.0)
+            else:
+                self.regulariser_weight.clamp_(min=0.0, max=float(max_weight))
+            self.regulariser_update_count.fill_(next_count)
 
     def calculate_loss(
         self,
@@ -332,9 +379,8 @@ class AviciModel(BaseModel):
         update_regulariser: bool = False,
         **_: Any,
     ) -> torch.Tensor:
-        logits = output
-        target = target.float()
-        n_vars = target.shape[-1]
+        logits = output.to(dtype=torch.float32)
+        target = target.to(dtype=torch.float32)
 
         logp1 = F.logsigmoid(logits)
         logp0 = F.logsigmoid(-logits)

@@ -13,3 +13,11 @@ dropout: 0.1
 logit_bias_init: -3.0
 cosine_temp_init: 0.0
 mask_diag: true
+
+# Stabilized acyclicity updates for long benchmark runs.
+acyclicity_weight: 0.0
+acyclicity_pow_iters: 10
+regulariser_lr: 1.0e-4
+regulariser_ema_alpha: 0.05
+regulariser_warmup_updates: 100
+regulariser_max_weight: null
