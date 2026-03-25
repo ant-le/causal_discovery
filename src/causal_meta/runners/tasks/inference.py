@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import torch
 import torch.distributed as dist
@@ -48,6 +48,32 @@ def _batch_indices(indices: range, batch_size: int) -> List[List[int]]:
     """Split indices into batches of at most batch_size."""
     idx_list = list(indices)
     return [idx_list[i : i + batch_size] for i in range(0, len(idx_list), batch_size)]
+
+
+def _resolve_dataset_num_nodes(
+    dataset: MetaFixedDataset, family: Any | None
+) -> int | None:
+    """Infer the node count for a fixed evaluation dataset."""
+    if family is not None and hasattr(family, "n_nodes"):
+        return int(getattr(family, "n_nodes"))
+    if len(dataset) < 1:
+        return None
+    sample = dataset[0]
+    data = sample.get("data")
+    if isinstance(data, torch.Tensor) and data.ndim >= 2:
+        return int(data.shape[-1])
+    return None
+
+
+def _maybe_set_model_num_nodes(model: BaseModel, num_nodes: int | None) -> bool:
+    """Update explicit models that support dynamic node-count overrides."""
+    if num_nodes is None:
+        return False
+    setter = getattr(model, "set_num_nodes", None)
+    if not callable(setter):
+        return False
+    setter(int(num_nodes))
+    return True
 
 
 def run(
@@ -115,12 +141,21 @@ def run(
     test_datasets: Dict[str, MetaFixedDataset] = getattr(data_module, "test_datasets")
     test_families = getattr(data_module, "test_families", {}) or {}
     for name, dataset in test_datasets.items():
+        family = test_families.get(name)
         profile = infer_explicit_profile(name, test_families.get(name))
         profile_applied = apply_explicit_profile(model, profile)
+        dataset_num_nodes = _resolve_dataset_num_nodes(dataset, family)
+        num_nodes_applied = _maybe_set_model_num_nodes(model, dataset_num_nodes)
         if rank == 0:
             log.info(f"Running inference cache for dataset '{name}'...")
             if profile_applied and profile is not None:
                 log.info(f"Applying explicit profile '{profile}' for dataset '{name}'.")
+            if num_nodes_applied and dataset_num_nodes is not None:
+                log.info(
+                    "Applying explicit num_nodes=%d for dataset '%s'.",
+                    dataset_num_nodes,
+                    name,
+                )
             if inference_batch_size > 1:
                 log.info(f"Using inference batch_size={inference_batch_size}")
 

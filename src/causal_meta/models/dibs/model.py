@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import logging
 import os
+from typing import cast
 from typing import Any, Callable, Mapping, Optional, Tuple
 
 import numpy as np
@@ -108,6 +109,15 @@ class DiBSModel(BaseModel):
         if next_state != prev_state:
             self._target_cache = None
         self._active_profile = profile_key
+
+    def set_num_nodes(self, num_nodes: int) -> None:
+        """Update the active node count for the next explicit inference call."""
+        resolved = int(num_nodes)
+        if resolved <= 0:
+            raise ValueError("num_nodes must be positive.")
+        if resolved != self.num_nodes:
+            self.num_nodes = resolved
+            self._target_cache = None
 
     @property
     def needs_pretraining(self) -> bool:
@@ -248,16 +258,17 @@ class DiBSModel(BaseModel):
                 n_vars=self.num_nodes,
                 **self._build_target_kwargs(make_target),
             )
-            if isinstance(result, tuple) and len(result) == 3:
-                _, graph_model, likelihood_model = result
+            result_tuple = cast(tuple[Any, ...], result)
+            if len(result_tuple) == 3:
+                _, graph_model, likelihood_model = result_tuple
             else:
-                graph_model, likelihood_model = result
+                graph_model, likelihood_model = result_tuple
             self._target_cache = (graph_model, likelihood_model)
         return self._target_cache
 
     def _build_target_kwargs(
         self,
-        make_target: Callable[..., Tuple[Any, Any]],
+        make_target: Callable[..., Any],
     ) -> dict[str, float]:
         """Build optional target kwargs supported by the installed DiBS version."""
         params = set(inspect.signature(make_target).parameters.keys())
@@ -347,7 +358,7 @@ class DiBSModel(BaseModel):
             return None
         return int(value)
 
-    def _require_dibs(self) -> Tuple[Any, Any, Any, Callable[..., Tuple[Any, Any]]]:
+    def _require_dibs(self) -> Tuple[Any, Any, Any, Callable[..., Any]]:
         if not self.xla_preallocate:
             os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 

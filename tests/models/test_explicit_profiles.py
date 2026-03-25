@@ -65,6 +65,16 @@ def test_dibs_profile_override_updates_hyperparameters() -> None:
     assert model.n_particles == 64
 
 
+def test_dibs_set_num_nodes_updates_cache_sensitive_state() -> None:
+    model = DiBSModel(num_nodes=5)
+    model._target_cache = object()
+
+    model.set_num_nodes(20)
+
+    assert model.num_nodes == 20
+    assert model._target_cache is None
+
+
 def test_bayesdag_profile_override_updates_hyperparameters() -> None:
     model = BayesDAGModel(
         num_nodes=5,
@@ -91,3 +101,11 @@ def test_bayesdag_profile_override_updates_hyperparameters() -> None:
     assert model.num_chains == 10
     assert model.scale_noise == 0.1
     assert model.scale_noise_p == 0.001
+
+
+def test_bayesdag_set_num_nodes_updates_active_shape() -> None:
+    model = BayesDAGModel(num_nodes=5)
+
+    model.set_num_nodes(20)
+
+    assert model.num_nodes == 20

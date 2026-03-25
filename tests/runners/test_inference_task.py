@@ -24,6 +24,7 @@ class _DummyFixedDataset:
 class _DummyDataModule:
     def __init__(self) -> None:
         self.test_datasets = {"dummy": _DummyFixedDataset()}
+        self.test_families = {"dummy": type("Family", (), {"n_nodes": 3})()}
 
     def setup(self) -> None:
         return None
@@ -64,6 +65,29 @@ class _DummyExplicitModelOnes(torch.nn.Module):
     def sample(self, x: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
         b, _, n = x.shape
         return torch.ones(b, num_samples, n, n)
+
+
+class _DummyResizableExplicitModel(torch.nn.Module):
+    def __init__(self, num_nodes: int) -> None:
+        super().__init__()
+        self.num_nodes = num_nodes
+        self.num_node_updates: list[int] = []
+
+    @property
+    def needs_pretraining(self) -> bool:
+        return False
+
+    def set_num_nodes(self, num_nodes: int) -> None:
+        self.num_nodes = num_nodes
+        self.num_node_updates.append(num_nodes)
+
+    def sample(self, x: torch.Tensor, num_samples: int = 1) -> torch.Tensor:
+        b, _, n = x.shape
+        if n != self.num_nodes:
+            raise ValueError(
+                "Input data node count does not match configured num_nodes."
+            )
+        return torch.zeros(b, num_samples, n, n)
 
 
 def test_inference_can_compress_and_limit_samples(tmp_path) -> None:
@@ -148,3 +172,19 @@ def test_inference_batched_produces_same_results(tmp_path) -> None:
     batched_dir = tmp_path / "batched" / "inference" / "dummy"
     assert len(list(unbatched_dir.glob("*.pt"))) == 2
     assert len(list(batched_dir.glob("*.pt"))) == 2
+
+
+def test_inference_updates_model_num_nodes_per_dataset(tmp_path) -> None:
+    cfg = OmegaConf.create(
+        {
+            "inference": {"n_samples": 2, "output_dir": str(tmp_path)},
+        }
+    )
+    model = _DummyResizableExplicitModel(num_nodes=60)
+    data_module = _DummyDataModule()
+
+    written = inference_run(cfg, model, data_module)
+
+    assert written["dummy"] == 2
+    assert model.num_nodes == 3
+    assert model.num_node_updates == [3]

@@ -114,6 +114,13 @@ class BayesDAGModel(BaseModel):
         )
         self._active_profile = profile_key
 
+    def set_num_nodes(self, num_nodes: int) -> None:
+        """Update the active node count for the next explicit inference call."""
+        resolved = int(num_nodes)
+        if resolved <= 0:
+            raise ValueError("num_nodes must be positive.")
+        self.num_nodes = resolved
+
     @property
     def needs_pretraining(self) -> bool:
         return False
@@ -412,10 +419,10 @@ class BayesDAGModel(BaseModel):
             raise ValueError("BayesDAG variant must be 'linear' or 'nonlinear'.")
 
         try:
-            from causica.datasets.dataset import CausalDataset
-            from causica.datasets.variables import Variables
-            from causica.models.bayesdag.bayesdag_linear import BayesDAGLinear
-            from causica.models.bayesdag.bayesdag_nonlinear import BayesDAGNonLinear
+            from causica.datasets.dataset import CausalDataset  # type: ignore[import-not-found]
+            from causica.datasets.variables import Variables  # type: ignore[import-not-found]
+            from causica.models.bayesdag.bayesdag_linear import BayesDAGLinear  # type: ignore[import-not-found]
+            from causica.models.bayesdag.bayesdag_nonlinear import BayesDAGNonLinear  # type: ignore[import-not-found]
         except Exception as exc:  # pragma: no cover - exercised via tests
             raise RuntimeError(
                 "BayesDAG requires the 'causica' package from Project-BayesDAG. "
