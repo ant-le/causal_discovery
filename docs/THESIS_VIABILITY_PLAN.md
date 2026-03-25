@@ -93,7 +93,7 @@ observation into an explanation.
   mechanisms.
 - The config/factory system makes it trivial to create new data configs via
   YAML alone (`configs/data/`). No code changes needed.
-- The full sweep config (`full_multimodel.yaml`) uses `data: full`.
+- The current main sweep config (`dg_2pretrain_multimodel.yaml`) defines the benchmark matrix directly.
 
 ### What needs to be implemented
 

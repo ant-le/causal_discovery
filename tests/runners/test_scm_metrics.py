@@ -28,6 +28,7 @@ def test_linear_gaussian_scorer_fit_and_score_nll() -> None:
 
 def test_scm_metrics_inil_with_family_generated_interventions() -> None:
     family = SCMFamily(
+        name="test_family",
         n_nodes=3,
         graph_generator=ErdosRenyiGenerator(edge_prob=0.4),
         mechanism_factory=LinearMechanismFactory(weight_scale=0.5),
@@ -53,6 +54,7 @@ def test_scm_metrics_inil_with_family_generated_interventions() -> None:
 
 def test_scm_metrics_inil_with_precomputed_interventional_data() -> None:
     family = SCMFamily(
+        name="test_family",
         n_nodes=3,
         graph_generator=ErdosRenyiGenerator(edge_prob=0.3),
         mechanism_factory=LinearMechanismFactory(weight_scale=0.4),

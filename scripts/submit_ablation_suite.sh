@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-CONFIG_NAME="${1:-ablation_multimodel}"
+CONFIG_NAME="${1:-dg_2pretrain_multimodel}"
 if [[ "$#" -ge 1 ]]; then
   shift 1
 fi
@@ -54,7 +54,7 @@ for data_cfg in "${DATA_CONFIGS[@]}"; do
         "${SCRIPT_DIR}/${script_name}" \
         "${CONFIG_NAME}" \
         "${run_name}" \
-        "data=${data_cfg}" \
+        "+data=${data_cfg}" \
         "${EXTRA_OVERRIDES[@]}"
     )"
     echo "Submitted model=${model} data=${data_cfg} job_id=${job_id} run_name=${run_name}"

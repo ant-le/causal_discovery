@@ -72,15 +72,24 @@ class CausalMetaModule:
             for n_nodes in configured_train_nodes
         }
 
-        val_family_cfgs = self.config.val_families or {"id": self.config.train_family}
+        val_family_cfgs = self.config.val_families or {
+            self.config.train_family.name: self.config.train_family
+        }
+        # Re-key by cfg.name so downstream lookups are consistent.
+        self._resolved_val_cfgs: Dict[str, FamilyConfig] = {
+            cfg.name: cfg for cfg in val_family_cfgs.values()
+        }
         self.val_families = {
-            name: self._build_family(cfg) for name, cfg in val_family_cfgs.items()
+            cfg.name: self._build_family(cfg) for cfg in val_family_cfgs.values()
         }
 
-        # Build all test families
+        # Build all test families, keyed by cfg.name for consistency.
+        self._resolved_test_cfgs: Dict[str, FamilyConfig] = {
+            cfg.name: cfg for cfg in self.config.test_families.values()
+        }
         self.test_families = {
-            name: self._build_family(cfg)
-            for name, cfg in self.config.test_families.items()
+            cfg.name: self._build_family(cfg)
+            for cfg in self.config.test_families.values()
         }
 
         # Collect hashes from validation and test sets for disjointness check
@@ -136,7 +145,9 @@ class CausalMetaModule:
             name: MetaFixedDataset(
                 family,
                 seeds=self.config.seeds_val,
-                samples_per_task=self.config.samples_per_task,
+                samples_per_task=self._family_samples_per_task(
+                    self._resolved_val_cfgs[name]
+                ),
             )
             for name, family in self.val_families.items()
         }
@@ -145,7 +156,9 @@ class CausalMetaModule:
             name: MetaFixedDataset(
                 family,
                 seeds=self.config.seeds_test,
-                samples_per_task=self.config.samples_per_task,
+                samples_per_task=self._family_samples_per_task(
+                    self._resolved_test_cfgs[name]
+                ),
             )
             for name, family in self.test_families.items()
         }
@@ -155,7 +168,9 @@ class CausalMetaModule:
                 family,
                 seeds=self.config.seeds_test,
                 intervention_value=0.0,
-                samples_per_task=self.config.samples_per_task,
+                samples_per_task=self._family_samples_per_task(
+                    self._resolved_test_cfgs[name]
+                ),
             )
             for name, family in self.test_families.items()
         }
@@ -167,15 +182,18 @@ class CausalMetaModule:
         """Return the training DataLoader with GPU optimizations."""
         if self.train_dataset is None:
             self.setup()
+        if self.train_dataset is None:
+            raise RuntimeError("Training dataset was not initialized.")
 
         collate_fn = partial(collate_fn_scm, normalize=self.config.normalize_data)
 
         batch_size = int(getattr(self.config, "batch_size_train", 1))
         if batch_size < 1:
             raise ValueError("data.batch_size_train must be >= 1")
+        train_dataset = self.train_dataset
 
         return DataLoader(
-            self.train_dataset,  # type: ignore
+            train_dataset,
             batch_size=batch_size,
             num_workers=self.config.num_workers,
             pin_memory=self.config.pin_memory,
@@ -184,7 +202,10 @@ class CausalMetaModule:
         )
 
     def test_dataloader(self) -> Dict[str, DataLoader]:
-        """Return a dictionary of test DataLoaders."""
+        """Return a dictionary of test DataLoaders.
+
+        Batch size is always 1 to ensure per-task metric granularity.
+        """
         if self._test_loaders is not None:
             return self._test_loaders
 
@@ -195,9 +216,14 @@ class CausalMetaModule:
 
         collate_fn = partial(collate_fn_scm, normalize=self.config.normalize_data)
 
-        batch_size = int(getattr(self.config, "batch_size_test", 1))
-        if batch_size < 1:
-            raise ValueError("data.batch_size_test must be >= 1")
+        configured_bs = int(getattr(self.config, "batch_size_test", 1))
+        if configured_bs != 1:
+            log.warning(
+                "data.batch_size_test=%d overridden to 1 for per-task metric "
+                "granularity.",
+                configured_bs,
+            )
+        batch_size = 1
 
         for name, dataset in self.test_datasets.items():
             loaders[name] = DataLoader(
@@ -213,7 +239,10 @@ class CausalMetaModule:
         return self._test_loaders
 
     def test_interventional_dataloader(self) -> Dict[str, DataLoader]:
-        """Return a dictionary of interventional test DataLoaders."""
+        """Return a dictionary of interventional test DataLoaders.
+
+        Batch size is always 1 to ensure per-task metric granularity.
+        """
         if self._test_interventional_loaders is not None:
             return self._test_interventional_loaders
 
@@ -226,9 +255,14 @@ class CausalMetaModule:
             collate_fn_interventional, normalize=self.config.normalize_data
         )
 
-        batch_size = int(getattr(self.config, "batch_size_test_interventional", 1))
-        if batch_size < 1:
-            raise ValueError("data.batch_size_test_interventional must be >= 1")
+        configured_bs = int(getattr(self.config, "batch_size_test_interventional", 1))
+        if configured_bs != 1:
+            log.warning(
+                "data.batch_size_test_interventional=%d overridden to 1 for "
+                "per-task metric granularity.",
+                configured_bs,
+            )
+        batch_size = 1
 
         for name, dataset in self.test_interventional_datasets.items():
             loaders[name] = DataLoader(
@@ -244,7 +278,10 @@ class CausalMetaModule:
         return self._test_interventional_loaders
 
     def val_dataloader(self) -> Dict[str, DataLoader]:
-        """Return a dictionary of validation DataLoaders."""
+        """Return a dictionary of validation DataLoaders.
+
+        Batch size is always 1 to ensure per-task metric granularity.
+        """
         if self._val_loaders is not None:
             return self._val_loaders
 
@@ -260,9 +297,14 @@ class CausalMetaModule:
 
         collate_fn = partial(collate_fn_scm, normalize=self.config.normalize_data)
 
-        batch_size = int(getattr(self.config, "batch_size_val", 1))
-        if batch_size < 1:
-            raise ValueError("data.batch_size_val must be >= 1")
+        configured_bs = int(getattr(self.config, "batch_size_val", 1))
+        if configured_bs != 1:
+            log.warning(
+                "data.batch_size_val=%d overridden to 1 for per-task metric "
+                "granularity.",
+                configured_bs,
+            )
+        batch_size = 1
 
         for name, dataset in self.val_datasets.items():
             loaders[name] = DataLoader(
@@ -383,7 +425,13 @@ class CausalMetaModule:
         graph_generator = cfg.graph_cfg.instantiate()
         mechanism_factory = cfg.mech_cfg.instantiate()
         return SCMFamily(
+            name=cfg.name,
             n_nodes=cfg.n_nodes,
             graph_generator=graph_generator,
             mechanism_factory=mechanism_factory,
         )
+
+    def _family_samples_per_task(self, cfg: FamilyConfig) -> int:
+        if cfg.samples_per_task is not None:
+            return int(cfg.samples_per_task)
+        return int(self.config.samples_per_task)

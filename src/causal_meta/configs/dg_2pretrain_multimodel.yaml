@@ -1,0 +1,340 @@
+# @package _global_
+
+defaults:
+  - logger: wandb
+  - model: bcnp
+  - trainer: default
+  - inference: default
+  - _self_
+
+name: "dg_2pretrain_multimodel"
+
+data:
+  # Maximum node budget seen anywhere in the benchmark.
+  n_nodes: 60
+
+  # Mixed-size source training domain for amortized models.
+  train_n_nodes: [10, 20, 30, 40]
+
+  # Global default; individual validation/test families can override this.
+  samples_per_task: 500
+
+  seeds_val: [1000, 1001, 1002]
+  seeds_test:
+    [
+      2000,
+      2001,
+      2002,
+      2003,
+      2004,
+      2005,
+      2006,
+      2007,
+      2008,
+      2009,
+      2010,
+      2011,
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024,
+    ]
+
+  base_seed: 42
+  safety_checks: true
+  normalize_data: true
+
+  num_workers: 4
+  pin_memory: true
+  batch_size_train: 8
+  batch_size_val: 1
+  batch_size_test: 1
+  batch_size_test_interventional: 1
+
+  use_interventional_training: false
+  samples_per_task_int: 0
+  train_p_obs_only: 1.0
+
+  _graphs:
+    er20: &graph_er20
+      type: er
+      sparsity: 0.0526
+    er40: &graph_er40
+      type: er
+      sparsity: 0.1053
+    er60: &graph_er60
+      type: er
+      sparsity: 0.1579
+    sf1: &graph_sf1
+      type: sf
+      m: 1
+    sf2: &graph_sf2
+      type: sf
+      m: 2
+    sf3: &graph_sf3
+      type: sf
+      m: 3
+    sbm: &graph_sbm
+      type: sbm
+      n_blocks: 4
+      p_intra: 0.6
+      p_inter: 0.01
+
+  _mechanisms:
+    linear: &mech_linear
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+    neuralnet: &mech_neuralnet
+      type: mlp
+      hidden_dim: 32
+    gpcde: &mech_gpcde
+      type: gp
+      mode: approximate
+      rff_dim: 512
+      num_kernels: 4
+      length_scale_range: [0.1, 10.0]
+      variance_range: [0.1, 10.0]
+    periodic: &mech_periodic
+      type: periodic
+      weight_scale: 1.0
+    square: &mech_square
+      type: square
+      weight_scale: 1.0
+      noise_scale: 0.1
+    logistic_map: &mech_logistic_map
+      type: logistic_map
+      weight_scale: 1.0
+    pnl_tanh: &mech_pnl_tanh
+      type: pnl
+      nonlinearity_type: tanh
+      inner_config:
+        type: linear
+
+  train_family:
+    name: source_mixed_all_d10_40_n500
+    graph_cfg:
+      type: mixture
+      weights: [0.1667, 0.1667, 0.1667, 0.1667, 0.1667, 0.1665]
+      generators:
+        - *graph_er20
+        - *graph_er40
+        - *graph_er60
+        - *graph_sf1
+        - *graph_sf2
+        - *graph_sf3
+    mech_cfg:
+      type: mixture
+      weights: [0.3333, 0.3333, 0.3334]
+      factories:
+        - *mech_linear
+        - *mech_neuralnet
+        - *mech_gpcde
+
+  val_families:
+    id_linear_er20_d20_n500:
+      name: id_linear_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+    id_neuralnet_sf2_d30_n500:
+      name: id_neuralnet_sf2_d30_n500
+      n_nodes: 30
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    ood_graph_sbm_linear_d20_n500:
+      name: ood_graph_sbm_linear_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sbm
+      mech_cfg: *mech_linear
+
+    ood_mech_periodic_er40_d20_n500:
+      name: ood_mech_periodic_er40_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_periodic
+
+    ood_nodes_linear_sf2_d60_n500:
+      name: ood_nodes_linear_sf2_d60_n500
+      n_nodes: 60
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_linear
+
+    ood_samples_linear_er40_d20_n1000:
+      name: ood_samples_linear_er40_d20_n1000
+      n_nodes: 20
+      samples_per_task: 1000
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_linear
+
+  test_families:
+    id_linear_er20_d20_n500:
+      name: id_linear_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+    id_neuralnet_sf2_d20_n500:
+      name: id_neuralnet_sf2_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    id_gpcde_er60_d20_n500:
+      name: id_gpcde_er60_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er60
+      mech_cfg: *mech_gpcde
+
+    ood_graph_sbm_linear_d20_n500:
+      name: ood_graph_sbm_linear_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sbm
+      mech_cfg: *mech_linear
+
+    ood_graph_sbm_neuralnet_d20_n500:
+      name: ood_graph_sbm_neuralnet_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sbm
+      mech_cfg: *mech_neuralnet
+
+    ood_graph_sbm_gpcde_d20_n500:
+      name: ood_graph_sbm_gpcde_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sbm
+      mech_cfg: *mech_gpcde
+
+    ood_mech_periodic_er40_d20_n500:
+      name: ood_mech_periodic_er40_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_periodic
+
+    ood_mech_square_er40_d20_n500:
+      name: ood_mech_square_er40_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_square
+
+    ood_mech_logistic_map_er40_d20_n500:
+      name: ood_mech_logistic_map_er40_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_logistic_map
+
+    ood_mech_pnl_tanh_er40_d20_n500:
+      name: ood_mech_pnl_tanh_er40_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_pnl_tanh
+
+    ood_both_sbm_periodic_d20_n500:
+      name: ood_both_sbm_periodic_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sbm
+      mech_cfg: *mech_periodic
+
+    ood_both_sbm_pnl_tanh_d20_n500:
+      name: ood_both_sbm_pnl_tanh_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sbm
+      mech_cfg: *mech_pnl_tanh
+
+    ood_nodes_linear_sf2_d50_n500:
+      name: ood_nodes_linear_sf2_d50_n500
+      n_nodes: 50
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_linear
+
+    ood_nodes_linear_sf2_d60_n500:
+      name: ood_nodes_linear_sf2_d60_n500
+      n_nodes: 60
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_linear
+
+    ood_nodes_neuralnet_sf2_d60_n500:
+      name: ood_nodes_neuralnet_sf2_d60_n500
+      n_nodes: 60
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    ood_samples_linear_er40_d20_n100:
+      name: ood_samples_linear_er40_d20_n100
+      n_nodes: 20
+      samples_per_task: 100
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_linear
+
+    ood_samples_linear_er40_d20_n200:
+      name: ood_samples_linear_er40_d20_n200
+      n_nodes: 20
+      samples_per_task: 200
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_linear
+
+    ood_samples_linear_er40_d20_n1000:
+      name: ood_samples_linear_er40_d20_n1000
+      n_nodes: 20
+      samples_per_task: 1000
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_linear
+
+    ood_both_sbm_periodic_d60_n100:
+      name: ood_both_sbm_periodic_d60_n100
+      n_nodes: 60
+      samples_per_task: 100
+      graph_cfg: *graph_sbm
+      mech_cfg: *mech_periodic
+
+trainer:
+  accumulate_grad_batches: 4
+  validation_n_samples: 16
+  validation_metrics: [e-edgef1, e-sid, graph_nll]
+  validation_log_per_family: false
+  validation_selection_metric: mean_id_e-edgef1
+
+inference:
+  n_samples: 100
+
+hydra:
+  run:
+    dir: ${oc.env:CAUSAL_META_RUN_DIR,experiments/runs/${name}}
+  sweep:
+    dir: ${oc.env:CAUSAL_META_SWEEP_DIR,experiments/runs/${name}}
+    subdir: "${model.id}"
+  output_subdir: null
+  sweeper:
+    params:
+      model: avici,bcnp,dibs,bayesdag

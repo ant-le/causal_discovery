@@ -3,14 +3,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-STAGE="${1:-canary}"
+STAGE="${1:-smoke}"
 
-if [[ "${STAGE}" == "canary" ]]; then
-  CONFIG_NAME="canary_multimodel"
-elif [[ "${STAGE}" == "full" ]]; then
-  CONFIG_NAME="full_multimodel"
+if [[ "${STAGE}" == "smoke" || "${STAGE}" == "canary" ]]; then
+  CONFIG_NAME="dg_2pretrain_smoke"
+elif [[ "${STAGE}" == "main" || "${STAGE}" == "full" ]]; then
+  CONFIG_NAME="dg_2pretrain_multimodel"
 else
-  echo "Usage: $0 [canary|full]" >&2
+  echo "Usage: $0 [smoke|main]" >&2
   exit 1
 fi
 

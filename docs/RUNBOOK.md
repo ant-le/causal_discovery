@@ -34,7 +34,7 @@ GPU-only default notes:
 
 ```bash
 uv run causal-meta --config-name default
-uv run causal-meta --config-name canary_multimodel model=avici
+uv run causal-meta --config-name dg_2pretrain_smoke model=avici
 ```
 
 ## 5. Cluster Runs (No Submitit)
@@ -55,13 +55,13 @@ sbatch scripts/run_bcnp.sh
 Submit all four models:
 
 ```bash
-scripts/submit_all_models.sh full
+scripts/submit_all_models.sh main
 ```
 
-Submit all four canary jobs:
+Submit all four smoke jobs:
 
 ```bash
-scripts/submit_all_models.sh canary
+scripts/submit_all_models.sh smoke
 ```
 
 `scripts/run_all_models.sh` remains available for sequential execution from an
@@ -70,7 +70,7 @@ existing allocation (it does not submit via `sbatch`).
 Submit ablations (AviCi + BCNP across all ablation data configs):
 
 ```bash
-scripts/submit_ablation_suite.sh ablation_multimodel
+scripts/submit_ablation_suite.sh
 ```
 
 Customize ablation fanout with environment variables:
@@ -78,14 +78,14 @@ Customize ablation fanout with environment variables:
 ```bash
 CAUSAL_META_ABLATION_MODELS=avici,bcnp \
 CAUSAL_META_ABLATION_DATA_CONFIGS=ablation_linear_only,ablation_linear_mlp \
-scripts/submit_ablation_suite.sh ablation_multimodel my_ablation_prefix
+scripts/submit_ablation_suite.sh dg_2pretrain_multimodel my_ablation_prefix
 ```
 
 Optional arguments for each script:
 
 ```bash
 scripts/run_avici.sh <config_name> <run_name> [hydra_overrides...]
-scripts/submit_all_models.sh [canary|full] [run_prefix] [hydra_overrides...]
+scripts/submit_all_models.sh [smoke|main] [run_prefix] [hydra_overrides...]
 ```
 
 For BayesDAG, `CAUSAL_META_BAYESDAG_PYTHON` defaults to
@@ -95,7 +95,7 @@ For BayesDAG, `CAUSAL_META_BAYESDAG_PYTHON` defaults to
 
 Keep these fixed across models:
 
-- `--config-name full_multimodel`
+- `--config-name dg_2pretrain_multimodel`
 - same lockfile (`uv.lock`) + frozen sync
 - same seeds (`data.base_seed`, evaluation seeds)
 - same inference settings (`inference.n_samples`, AUC controls)

@@ -120,12 +120,16 @@ class SCMFamily:
 
     def __init__(
         self,
+        name: str,
         n_nodes: int,
         graph_generator: GraphGenerator,
         mechanism_factory: MechanismFactory,
     ) -> None:
+        if not name:
+            raise ValueError("name must be a non-empty string.")
         if n_nodes < 1:
             raise ValueError("n_nodes must be positive.")
+        self.name = name
         self.n_nodes = n_nodes
         self.graph_generator = graph_generator
         self.mechanism_factory = mechanism_factory

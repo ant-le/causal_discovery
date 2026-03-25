@@ -17,7 +17,9 @@ from causal_meta.datasets.scm import SCMFamily
 def test_scm_instance_sampling_shape() -> None:
     generator = SBMGenerator(n_blocks=2, p_intra=0.8, p_inter=0.1)
     factory = MLPMechanismFactory(hidden_dim=8)
-    family = SCMFamily(n_nodes=6, graph_generator=generator, mechanism_factory=factory)
+    family = SCMFamily(
+        name="test_sbm", n_nodes=6, graph_generator=generator, mechanism_factory=factory
+    )
 
     instance = family.sample_task(seed=7)
     samples = instance.sample(num_samples=5)
@@ -29,7 +31,9 @@ def test_scm_instance_sampling_shape() -> None:
 def test_sample_task_seed_reproducibility() -> None:
     generator = ErdosRenyiGenerator(edge_prob=0.3)
     factory = LinearMechanismFactory(weight_scale=0.5)
-    family = SCMFamily(n_nodes=5, graph_generator=generator, mechanism_factory=factory)
+    family = SCMFamily(
+        name="test_er", n_nodes=5, graph_generator=generator, mechanism_factory=factory
+    )
 
     instance_a = family.sample_task(seed=123)
     instance_b = family.sample_task(seed=123)
@@ -51,7 +55,9 @@ def test_gp_mechanism_task_seed_reproducibility() -> None:
         length_scale_range=(0.5, 1.0),
         variance=1.0,
     )
-    family = SCMFamily(n_nodes=5, graph_generator=generator, mechanism_factory=factory)
+    family = SCMFamily(
+        name="test_gp", n_nodes=5, graph_generator=generator, mechanism_factory=factory
+    )
 
     instance_a = family.sample_task(seed=123)
     instance_b = family.sample_task(seed=123)
@@ -76,7 +82,12 @@ def test_exact_gp_mechanism_task_seed_reproducibility() -> None:
         exact_noise_concentration=1.0,
         exact_noise_rate=10.0,
     )
-    family = SCMFamily(n_nodes=5, graph_generator=generator, mechanism_factory=factory)
+    family = SCMFamily(
+        name="test_exact_gp",
+        n_nodes=5,
+        graph_generator=generator,
+        mechanism_factory=factory,
+    )
 
     instance_a = family.sample_task(seed=42)
     instance_b = family.sample_task(seed=42)
@@ -98,7 +109,12 @@ def test_exact_gp_mechanism_produces_finite_samples() -> None:
         alpha_range=(0.2, 0.9),
         gamma_range=(0.2, 0.9),
     )
-    family = SCMFamily(n_nodes=4, graph_generator=generator, mechanism_factory=factory)
+    family = SCMFamily(
+        name="test_exact_gp_finite",
+        n_nodes=4,
+        graph_generator=generator,
+        mechanism_factory=factory,
+    )
     instance = family.sample_task(seed=17)
     samples = instance.sample(num_samples=12)
 

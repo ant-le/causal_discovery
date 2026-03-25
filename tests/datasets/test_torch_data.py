@@ -13,7 +13,10 @@ def _simple_family(n_nodes: int = 3) -> SCMFamily:
     generator = ErdosRenyiGenerator(edge_prob=0.4)
     mechanism = LinearMechanismFactory(weight_scale=0.1)
     return SCMFamily(
-        n_nodes=n_nodes, graph_generator=generator, mechanism_factory=mechanism
+        name="test_simple",
+        n_nodes=n_nodes,
+        graph_generator=generator,
+        mechanism_factory=mechanism,
     )
 
 
@@ -92,7 +95,7 @@ def test_causal_meta_module_initializes_and_sets_datasets() -> None:
     # Use the new explicit config structure
     config = DataModuleConfig(
         train_family=train_cfg,
-        test_families={"test_set_1": test_cfg},
+        test_families={"test": test_cfg},
         seeds_val=[0, 1, 2],
         seeds_test=[10, 11, 12],
         base_seed=0,
@@ -102,10 +105,10 @@ def test_causal_meta_module_initializes_and_sets_datasets() -> None:
     module.setup()
 
     assert module.train_dataset is not None
-    assert "test_set_1" in module.test_datasets
-    assert module.test_datasets["test_set_1"] is not None
-    assert "test_set_1" in module.family_distances
-    entry = module.family_distances["test_set_1"]
+    assert "test" in module.test_datasets
+    assert module.test_datasets["test"] is not None
+    assert "test" in module.family_distances
+    entry = module.family_distances["test"]
     assert "spectral" in entry
     assert "kl_degree" in entry
     assert "mechanism" in entry
@@ -186,7 +189,7 @@ def test_evaluation_dataloaders_are_cached_and_non_persistent() -> None:
 
     assert first_val_loaders is second_val_loaders
     assert first_test_loaders is second_test_loaders
-    assert first_val_loaders["id"].persistent_workers is False
+    assert first_val_loaders["train"].persistent_workers is False
     assert first_test_loaders["test"].persistent_workers is False
 
 
@@ -257,11 +260,11 @@ def test_causal_meta_module_builds_validation_split_and_reserves_hashes() -> Non
     module.setup()
 
     val_loaders = module.val_dataloader()
-    assert "id" in val_loaders
+    assert "train" in val_loaders
 
     assert module.train_dataset is not None
     val_hash = compute_graph_hash(
-        module.val_families["id"].sample_task(2).adjacency_matrix
+        module.val_families["train"].sample_task(2).adjacency_matrix
     )
     test_hash = compute_graph_hash(
         module.test_families["test"].sample_task(1).adjacency_matrix

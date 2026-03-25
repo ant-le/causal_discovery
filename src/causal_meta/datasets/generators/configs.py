@@ -195,10 +195,15 @@ class FamilyConfig:
     n_nodes: int
     graph_cfg: GraphConfig
     mech_cfg: MechanismConfig
+    samples_per_task: Optional[int] = None
 
     def validate(self) -> None:
+        if not self.name:
+            raise ValueError("name must be a non-empty string.")
         if self.n_nodes < 1:
             raise ValueError("n_nodes must be positive.")
+        if self.samples_per_task is not None and self.samples_per_task < 1:
+            raise ValueError("samples_per_task must be positive when provided.")
 
 
 @dataclass

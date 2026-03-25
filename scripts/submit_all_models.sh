@@ -4,17 +4,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-STAGE="${1:-canary}"
+STAGE="${1:-smoke}"
 if [[ "$#" -ge 1 ]]; then
   shift 1
 fi
 
-if [[ "${STAGE}" == "canary" ]]; then
-  CONFIG_NAME="canary_multimodel"
-elif [[ "${STAGE}" == "full" ]]; then
-  CONFIG_NAME="full_multimodel"
+if [[ "${STAGE}" == "smoke" || "${STAGE}" == "canary" ]]; then
+  CONFIG_NAME="dg_2pretrain_smoke"
+elif [[ "${STAGE}" == "main" || "${STAGE}" == "full" ]]; then
+  CONFIG_NAME="dg_2pretrain_multimodel"
 else
-  echo "Usage: $0 [canary|full] [run_prefix] [hydra_overrides...]" >&2
+  echo "Usage: $0 [smoke|main] [run_prefix] [hydra_overrides...]" >&2
   exit 1
 fi
 

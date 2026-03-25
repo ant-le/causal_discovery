@@ -17,7 +17,7 @@ ROOT_DIR_FROM_SCRIPT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ROOT_DIR="${CAUSAL_META_ROOT_DIR:-${SLURM_SUBMIT_DIR:-${ROOT_DIR_FROM_SCRIPT}}}"
 cd "${ROOT_DIR}"
 
-CONFIG_NAME="${1:-full_multimodel}"
+CONFIG_NAME="${1:-dg_2pretrain_multimodel}"
 RUN_NAME="${2:-avici_${SLURM_JOB_ID:-manual}}"
 if [[ "$#" -ge 2 ]]; then
   shift 2
@@ -48,8 +48,8 @@ fi
 export MASTER_ADDR
 
 job_id_for_port="${SLURM_JOB_ID:-0}"
-export MASTER_PORT
 MASTER_PORT="${MASTER_PORT:-$((10000 + (job_id_for_port % 50000)))}"
+export MASTER_PORT
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export HYDRA_FULL_ERROR=1
 export PYTHONFAULTHANDLER=1

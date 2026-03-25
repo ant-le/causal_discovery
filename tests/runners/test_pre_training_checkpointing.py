@@ -225,7 +225,10 @@ def test_augment_validation_group_metrics_adds_id_and_ood_means() -> None:
         "ood_val_mechanism_periodic_er40/auc": 0.50,
     }
 
-    _augment_validation_group_metrics(metrics)
+    _augment_validation_group_metrics(
+        metrics,
+        group_prefixes={"id": ["id_"], "ood": ["ood_"]},
+    )
 
     assert metrics["mean_id_e-edgef1"] == pytest.approx(0.30)
     assert metrics["mean_ood_e-edgef1"] == pytest.approx(0.10)

@@ -24,12 +24,22 @@ def collate_fn_scm(batch: Iterable[ScmItem], normalize: bool = True) -> Dict[str
     adjacency_matrices: List[torch.Tensor] = []
     node_counts: List[int] = []
     seeds: List[int | None] = []
+    family_names: List[str | None] = []
+    samples_per_task: List[int | None] = []
 
     for item in batch:
         if not isinstance(item, Mapping):
             raise TypeError(f"Expected dict item in collate_fn_scm, got {type(item)}")
 
         seeds.append(int(item["seed"]) if "seed" in item else None)
+        family_names.append(
+            str(item["family_name"]) if item.get("family_name") is not None else None
+        )
+        samples_per_task.append(
+            int(item["samples_per_task"])
+            if item.get("samples_per_task") is not None
+            else None
+        )
         data = item["data"].float()
         intervention_mask = item.get(
             "intervention_mask", torch.zeros_like(data)
@@ -90,12 +100,20 @@ def collate_fn_scm(batch: Iterable[ScmItem], normalize: bool = True) -> Dict[str
 
     return {
         "seed": seeds if any(s is not None for s in seeds) else None,
+        "family_name": (
+            family_names if any(name is not None for name in family_names) else None
+        ),
         "data": data_tensor,
         "intervention_mask": intervention_tensor,
         "adjacency": adjacency_tensor,
         "node_mask": node_mask,
         "sample_mask": sample_mask,
         "n_nodes": torch.tensor(node_counts, dtype=torch.long),
+        "samples_per_task": (
+            samples_per_task
+            if any(sample_count is not None for sample_count in samples_per_task)
+            else None
+        ),
     }
 
 
@@ -111,6 +129,8 @@ def collate_fn_interventional(
         raise ValueError("collate_fn_interventional received an empty batch.")
 
     seeds: List[int] = []
+    family_names: List[str | None] = []
+    samples_per_task: List[int | None] = []
     obs_data_list: List[torch.Tensor] = []
     obs_adj_list: List[torch.Tensor] = []
 
@@ -123,6 +143,14 @@ def collate_fn_interventional(
 
     for item in items:
         seeds.append(int(item["seed"]))
+        family_names.append(
+            str(item["family_name"]) if item.get("family_name") is not None else None
+        )
+        samples_per_task.append(
+            int(item["samples_per_task"])
+            if item.get("samples_per_task") is not None
+            else None
+        )
 
         obs = item["observational"]
         obs_data = obs["data"].float()
@@ -169,6 +197,9 @@ def collate_fn_interventional(
 
     return {
         "seed": torch.tensor(seeds, dtype=torch.long),
+        "family_name": (
+            family_names if any(name is not None for name in family_names) else None
+        ),
         "observational": {
             "data": torch.stack(obs_data_list, dim=0),
             "adjacency": torch.stack(obs_adj_list, dim=0),
@@ -179,4 +210,9 @@ def collate_fn_interventional(
             "data": torch.stack(int_data_list, dim=0),
             "adjacency": torch.stack(int_adj_list, dim=0),
         },
+        "samples_per_task": (
+            samples_per_task
+            if any(sample_count is not None for sample_count in samples_per_task)
+            else None
+        ),
     }

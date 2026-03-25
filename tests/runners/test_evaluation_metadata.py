@@ -197,8 +197,9 @@ class TestBuildFamilyMetadata:
         }
         result = _build_family_metadata(cfgs)
         assert len(result) == 2
-        assert result["id_linear_sf2"]["sparsity_param"] == pytest.approx(2.0)
-        assert "sparsity_param" not in result["ood_graph_sbm_linear"]
+        # Keys are now cfg.name, not the original dict keys.
+        assert result["sf"]["sparsity_param"] == pytest.approx(2.0)
+        assert "sparsity_param" not in result["sbm"]
 
 
 # ── CausalMetaModule.family_distances (was _compute_distances) ───────────

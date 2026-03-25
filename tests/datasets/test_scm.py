@@ -8,6 +8,7 @@ from causal_meta.datasets.generators.mechanisms import LinearMechanismFactory
 
 def test_scm_family_generates_dag() -> None:
     family = SCMFamily(
+        name="test_dag",
         n_nodes=4,
         graph_generator=ErdosRenyiGenerator(edge_prob=0.5),
         mechanism_factory=LinearMechanismFactory(),
@@ -23,6 +24,7 @@ def test_scm_family_generates_dag() -> None:
 
 def test_ancestral_sampling_returns_finite_values() -> None:
     family = SCMFamily(
+        name="test_sampling",
         n_nodes=3,
         graph_generator=ErdosRenyiGenerator(edge_prob=0.6),
         mechanism_factory=LinearMechanismFactory(weight_scale=0.1),
@@ -37,6 +39,7 @@ def test_ancestral_sampling_returns_finite_values() -> None:
 
 def test_scm_family_sample_graph_matches_sample_task_adjacency() -> None:
     family = SCMFamily(
+        name="test_graph_match",
         n_nodes=4,
         graph_generator=ErdosRenyiGenerator(edge_prob=0.5),
         mechanism_factory=LinearMechanismFactory(weight_scale=0.1),

@@ -17,7 +17,7 @@ ROOT_DIR_FROM_SCRIPT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ROOT_DIR="${CAUSAL_META_ROOT_DIR:-${SLURM_SUBMIT_DIR:-${ROOT_DIR_FROM_SCRIPT}}}"
 cd "${ROOT_DIR}"
 
-CONFIG_NAME="${1:-full_multimodel}"
+CONFIG_NAME="${1:-dg_2pretrain_multimodel}"
 RUN_NAME="${2:-bayesdag_${SLURM_JOB_ID:-manual}}"
 if [[ "$#" -ge 2 ]]; then
   shift 2

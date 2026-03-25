@@ -145,7 +145,10 @@ def load_mechanism_config(cfg: Any) -> configs.MechanismConfig:
 
 
 def load_family_config(
-    cfg: Any, *, default_n_nodes: int | None = None
+    cfg: Any,
+    *,
+    default_n_nodes: int | None = None,
+    expected_name: str | None = None,
 ) -> configs.FamilyConfig:
     cfg = _coerce_dict(cfg)
 
@@ -167,12 +170,26 @@ def load_family_config(
             "Family config must provide 'n_nodes' or a top-level data.n_nodes must be set."
         )
 
-    return configs.FamilyConfig(
-        name=str(cfg.get("name", "")),
+    name = str(cfg.get("name", "")).strip()
+    if not name:
+        raise ValueError("Family config must provide a non-empty 'name'.")
+    if expected_name is not None and name != expected_name:
+        raise ValueError(
+            f"Family config name mismatch: expected '{expected_name}', got '{name}'."
+        )
+
+    samples_per_task_raw = cfg.get("samples_per_task")
+    family_cfg = configs.FamilyConfig(
+        name=name,
         n_nodes=int(n_nodes_raw),
         graph_cfg=load_graph_config(graph_cfg),
         mech_cfg=load_mechanism_config(mech_cfg),
+        samples_per_task=(
+            int(samples_per_task_raw) if samples_per_task_raw is not None else None
+        ),
     )
+    family_cfg.validate()
+    return family_cfg
 
 
 def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
@@ -196,11 +213,18 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
     if not isinstance(test_families_raw, Mapping):
         raise TypeError("'test_families' must be a dictionary of configs.")
 
-    test_families = {
-        name: load_family_config(sub_cfg, default_n_nodes=default_n_nodes)
-        for name, sub_cfg in test_families_raw.items()
-        if not str(name).startswith("_")
-    }
+    test_families: Dict[str, configs.FamilyConfig] = {}
+    for name, sub_cfg in test_families_raw.items():
+        if str(name).startswith("_"):
+            continue
+        family_cfg = load_family_config(
+            sub_cfg,
+            default_n_nodes=default_n_nodes,
+            expected_name=str(name),
+        )
+        if family_cfg.name in test_families:
+            raise ValueError(f"Duplicate test family name: '{family_cfg.name}'.")
+        test_families[family_cfg.name] = family_cfg
 
     val_families_raw = cfg.get("val_families")
     if val_families_raw is None:
@@ -208,11 +232,20 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
     else:
         if not isinstance(val_families_raw, Mapping):
             raise TypeError("'val_families' must be a dictionary of configs.")
-        val_families = {
-            name: load_family_config(sub_cfg, default_n_nodes=default_n_nodes)
-            for name, sub_cfg in val_families_raw.items()
-            if not str(name).startswith("_")
-        }
+        val_families = {}
+        for name, sub_cfg in val_families_raw.items():
+            if str(name).startswith("_"):
+                continue
+            family_cfg = load_family_config(
+                sub_cfg,
+                default_n_nodes=default_n_nodes,
+                expected_name=str(name),
+            )
+            if family_cfg.name in val_families:
+                raise ValueError(
+                    f"Duplicate validation family name: '{family_cfg.name}'."
+                )
+            val_families[family_cfg.name] = family_cfg
 
     allowed_keys = {
         "seeds_test",

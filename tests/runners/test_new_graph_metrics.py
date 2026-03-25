@@ -321,17 +321,19 @@ class TestMetricsClassNewKeys:
 
     def test_new_metrics_in_default_list(self) -> None:
         m = Metrics()
+        # Count metrics are opt-in (excluded from defaults for cleaner validation).
         for key in [
-            "fp_count",
-            "fn_count",
-            "reversed_count",
-            "correct_count",
             "sparsity_ratio",
             "skeleton_f1",
             "orientation_accuracy",
             "ece",
         ]:
             assert key in m.metrics_list, f"{key} not in default metrics_list"
+        # Count metrics should NOT be in default list.
+        for key in ["fp_count", "fn_count", "reversed_count", "correct_count"]:
+            assert key not in m.metrics_list, (
+                f"{key} should not be in default metrics_list"
+            )
 
     def test_compute_batch_metrics_returns_new_keys(self) -> None:
         m = Metrics(

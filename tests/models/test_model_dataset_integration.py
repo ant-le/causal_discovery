@@ -16,6 +16,7 @@ import causal_meta.models  # noqa: F401
 
 def _make_dataset_batch(n_nodes: int = 5, samples_per_task: int = 32, seed: int = 0):
     family = SCMFamily(
+        name="test_integration",
         n_nodes=n_nodes,
         graph_generator=ErdosRenyiGenerator(edge_prob=0.4),
         mechanism_factory=LinearMechanismFactory(weight_scale=0.1),

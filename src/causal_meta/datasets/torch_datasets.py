@@ -51,6 +51,7 @@ class MetaIterableDataset(IterableDataset):
         self.families_by_n_nodes = {
             int(k): v for k, v in (families_by_n_nodes or {}).items()
         }
+        self.family_name = family.name if family is not None else "mixed_train_stream"
         self.base_seed = int(base_seed)
         self.samples_per_task = samples_per_task
         self.samples_per_task_obs = (
@@ -193,10 +194,12 @@ class MetaIterableDataset(IterableDataset):
 
             yield {
                 "seed": int(seed),
+                "family_name": family.name,
                 "data": data,
                 "intervention_mask": intervention_mask,
                 "adjacency": instance.adjacency_matrix,
                 "n_nodes": int(instance.n_nodes),
+                "samples_per_task": int(data.shape[0]),
             }
             seed += stride
             local_index += 1
@@ -217,6 +220,7 @@ class MetaFixedDataset(Dataset):
         samples_per_task: int = 128,
     ) -> None:
         self.family = family
+        self.family_name = family.name
         self.seeds = list(seeds)
         self.samples_per_task = samples_per_task
 
@@ -247,10 +251,12 @@ class MetaFixedDataset(Dataset):
 
         return {
             "seed": seed,
+            "family_name": self.family_name,
             "data": data,
             "intervention_mask": intervention_mask,
             "adjacency": adjacency,
             "n_nodes": int(instance.n_nodes),
+            "samples_per_task": int(self.samples_per_task),
         }
 
 
@@ -268,6 +274,7 @@ class MetaInterventionalDataset(Dataset):
         samples_per_task: int = 128,
     ) -> None:
         self.family = family
+        self.family_name = family.name
         self.seeds = list(seeds)
         self.intervention_value = intervention_value
         self.samples_per_task = samples_per_task
@@ -311,9 +318,11 @@ class MetaInterventionalDataset(Dataset):
             )
 
         result = {
+            "family_name": self.family_name,
             "observational": obs_data,
             "interventions": interventions,
             "seed": seed,
+            "samples_per_task": int(self.samples_per_task),
         }
 
         return result

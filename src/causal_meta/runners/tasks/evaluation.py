@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any, Mapping, cast
 
@@ -116,19 +117,27 @@ def _extract_sparsity_param(family_cfg: FamilyConfig) -> float | None:
 
 def _build_family_metadata(
     test_family_cfgs: dict[str, FamilyConfig],
+    *,
+    default_samples_per_task: int | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Build a dataset_key -> {n_nodes, graph_type, mech_type, sparsity_param} map."""
+    """Build a dataset_key -> metadata map for all evaluation families."""
     result: dict[str, dict[str, Any]] = {}
-    for name, fcfg in test_family_cfgs.items():
+    for fcfg in test_family_cfgs.values():
         entry: dict[str, Any] = {
+            "family_name": fcfg.name,
             "n_nodes": fcfg.n_nodes,
+            "samples_per_task": (
+                int(fcfg.samples_per_task)
+                if fcfg.samples_per_task is not None
+                else default_samples_per_task
+            ),
             "graph_type": _extract_graph_type(fcfg),
             "mech_type": _extract_mech_type(fcfg),
         }
         sp = _extract_sparsity_param(fcfg)
         if sp is not None:
             entry["sparsity_param"] = sp
-        result[name] = entry
+        result[fcfg.name] = entry
     return result
 
 
@@ -199,7 +208,16 @@ def run(
     # Pre-compute family metadata; distances are pre-computed by data_module.setup()
     dm_config = getattr(data_module, "config", None)
     test_family_cfgs = getattr(dm_config, "test_families", None) or {}
-    family_metadata = _build_family_metadata(test_family_cfgs)
+    default_samples_per_task = None
+    if (
+        dm_config is not None
+        and getattr(dm_config, "samples_per_task", None) is not None
+    ):
+        default_samples_per_task = int(dm_config.samples_per_task)
+    family_metadata = _build_family_metadata(
+        test_family_cfgs,
+        default_samples_per_task=default_samples_per_task,
+    )
     family_distances = getattr(data_module, "family_distances", {}) or {}
 
     model.eval()
@@ -216,8 +234,27 @@ def run(
     auc_balance_classes = bool(cfg.inference.get("auc_balance_classes", True))
     auc_seed = int(cfg.inference.get("auc_seed", 0))
 
-    # Initialize Metrics Handlers (default list includes all graph metrics)
+    # Initialize Metrics Handlers (full metric set including opt-in diagnostics)
     metrics_handler = Metrics(
+        metrics=[
+            "e-shd",
+            "e-edgef1",
+            "e-sid",
+            "ne-shd",
+            "ne-sid",
+            "graph_nll",
+            "edge_entropy",
+            "ancestor_f1",
+            "auc",
+            "fp_count",
+            "fn_count",
+            "reversed_count",
+            "correct_count",
+            "sparsity_ratio",
+            "skeleton_f1",
+            "orientation_accuracy",
+            "ece",
+        ],
         auc_num_shuffles=auc_num_shuffles,
         auc_balance_classes=auc_balance_classes,
         auc_seed=auc_seed,
@@ -264,6 +301,7 @@ def run(
         sampling_mode_ = sampling_mode(model_unwrapped)
         cached_context_logged = False
         sampling_context_logged = False
+        inference_times: list[float] = []
 
         with torch.no_grad():
             # For explicit/non-amortized models, prefer cached inference artifacts and avoid DataLoader+DistributedSampler padding.
@@ -354,9 +392,13 @@ def run(
                                 sampling_mode_,
                             )
                             sampling_context_logged = True
+                        t0 = time.perf_counter()
                         samples = model_unwrapped.sample(
                             input_data, num_samples=n_samples
                         )
+                        if device.type == "cuda":
+                            torch.cuda.synchronize(device)
+                        inference_times.append(time.perf_counter() - t0)
                         samples_for_metrics = samples.permute(1, 0, 2, 3)
 
                         if cache_inference:
@@ -412,11 +454,15 @@ def run(
                     if seeds is not None and hasattr(seeds, "tolist"):
                         seeds = seeds.tolist()
 
+                    t0 = time.perf_counter()
                     samples = model_unwrapped.sample(
                         input_data,
                         num_samples=n_samples,
                         mask=node_mask,
                     )  # (Batch, n_samples, N, N)
+                    if device.type == "cuda":
+                        torch.cuda.synchronize(device)
+                    inference_times.append(time.perf_counter() - t0)
                     samples_for_metrics = samples.permute(
                         1, 0, 2, 3
                     )  # (n_samples, Batch, N, N)
@@ -452,6 +498,15 @@ def run(
             for k, v in scm_raw.items():
                 final_metrics[k] = v
 
+            # Attach wall-clock inference times (only for live sampling, not
+            # cache hits).  When all tasks used cached artifacts the list is
+            # empty and the summary entries are omitted.
+            if inference_times:
+                final_metrics["inference_time_s"] = inference_times
+                mean_t = sum(inference_times) / len(inference_times)
+                summary["inference_time_s_mean"] = mean_t
+                summary["inference_time_s_total"] = sum(inference_times)
+
             all_summary_metrics[name] = summary
             all_raw_metrics[name] = final_metrics
 
@@ -475,11 +530,10 @@ def run(
             else 1
         )
 
-        # Graph-metric raw values are appended per update call. For amortized
-        # models this equals per-batch unless batch_size_test=1.
+        # Graph-metric raw values are appended per update call.  Batch size
+        # is enforced to 1 for test/val loaders, so granularity is always
+        # per-task.
         raw_granularity = "per_task"
-        if model_unwrapped.needs_pretraining and batch_size_test > 1:
-            raw_granularity = "per_batch"
 
         metadata = {
             "run_id": output_dir.name,

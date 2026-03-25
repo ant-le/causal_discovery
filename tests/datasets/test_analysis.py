@@ -23,7 +23,10 @@ def _build_family(edge_prob: float = 0.3, n_nodes: int = 5) -> SCMFamily:
     generator = ErdosRenyiGenerator(edge_prob=edge_prob)
     mechanism = LinearMechanismFactory(weight_scale=0.1)
     return SCMFamily(
-        n_nodes=n_nodes, graph_generator=generator, mechanism_factory=mechanism
+        name="test_family",
+        n_nodes=n_nodes,
+        graph_generator=generator,
+        mechanism_factory=mechanism,
     )
 
 
@@ -31,7 +34,10 @@ def _build_mlp_family(edge_prob: float = 0.3, n_nodes: int = 5) -> SCMFamily:
     generator = ErdosRenyiGenerator(edge_prob=edge_prob)
     mechanism = MLPMechanismFactory(hidden_dim=16)
     return SCMFamily(
-        n_nodes=n_nodes, graph_generator=generator, mechanism_factory=mechanism
+        name="test_mlp_family",
+        n_nodes=n_nodes,
+        graph_generator=generator,
+        mechanism_factory=mechanism,
     )
 
 

@@ -134,6 +134,25 @@ def expected_shd(target: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
     return shd_per_sample.float().mean(dim=0)
 
 
+def normalized_expected_shd(target: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
+    """Expected SHD normalized by the number of possible directed edges d(d-1).
+
+    This makes SHD comparable across graphs with different node counts.
+
+    Args:
+        target: (batch_size, num_nodes, num_nodes)
+        pred: (num_samples, batch_size, num_nodes, num_nodes)
+    Returns:
+        Tensor of shape (batch_size,)
+    """
+    shd = expected_shd(target, pred)
+    n_nodes = target.shape[-1]
+    n_possible = n_nodes * (n_nodes - 1)
+    if n_possible == 0:
+        return torch.zeros_like(shd)
+    return shd / n_possible
+
+
 def expected_f1_score(target: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
     """Expected F1 score for a batch of predictions (Vectorized).
 
@@ -253,6 +272,27 @@ def structural_interventional_distance(
     sid_flat = compute_sid_batched(targets_flat, preds_flat)  # (S*B,)
     sid_sb = sid_flat.view(num_samples, batch_size)
     return sid_sb.mean(dim=0)
+
+
+def normalized_structural_interventional_distance(
+    target: torch.Tensor, pred: torch.Tensor
+) -> torch.Tensor:
+    """Expected SID normalized by the maximum possible SID d(d-1).
+
+    This makes SID comparable across graphs with different node counts.
+
+    Args:
+        target: (batch_size, num_nodes, num_nodes)
+        pred: (num_samples, batch_size, num_nodes, num_nodes)
+    Returns:
+        Tensor of shape (batch_size,)
+    """
+    sid = structural_interventional_distance(target, pred)
+    n_nodes = target.shape[-1]
+    n_possible = n_nodes * (n_nodes - 1)
+    if n_possible == 0:
+        return torch.zeros_like(sid)
+    return sid / n_possible
 
 
 def compute_sid_batched(adj_true: torch.Tensor, adj_est: torch.Tensor) -> torch.Tensor:
@@ -468,14 +508,12 @@ class Metrics(BaseMetrics):
                 "e-shd",
                 "e-edgef1",
                 "e-sid",
+                "ne-shd",
+                "ne-sid",
                 "graph_nll",
                 "edge_entropy",
                 "ancestor_f1",
                 "auc",
-                "fp_count",
-                "fn_count",
-                "reversed_count",
-                "correct_count",
                 "sparsity_ratio",
                 "skeleton_f1",
                 "orientation_accuracy",
@@ -500,6 +538,11 @@ class Metrics(BaseMetrics):
         if "e-shd" in self.metrics_list:
             batch_metrics["e-shd"] = float(expected_shd(targets, samples).mean().item())
 
+        if "ne-shd" in self.metrics_list:
+            batch_metrics["ne-shd"] = float(
+                normalized_expected_shd(targets, samples).mean().item()
+            )
+
         if "e-edgef1" in self.metrics_list:
             batch_metrics["e-edgef1"] = float(
                 expected_f1_score(targets, samples).mean().item()
@@ -513,6 +556,13 @@ class Metrics(BaseMetrics):
         if "e-sid" in self.metrics_list:
             batch_metrics["e-sid"] = float(
                 structural_interventional_distance(targets, samples).mean().item()
+            )
+
+        if "ne-sid" in self.metrics_list:
+            batch_metrics["ne-sid"] = float(
+                normalized_structural_interventional_distance(targets, samples)
+                .mean()
+                .item()
             )
 
         if "graph_nll" in self.metrics_list:

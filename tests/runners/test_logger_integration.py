@@ -57,7 +57,7 @@ def test_pipeline_integration_smoke(tmp_path):
                 },
                 "test_families": {
                     "test_1": {
-                        "name": "test",
+                        "name": "test_1",
                         "n_nodes": 5,
                         "graph_cfg": {"type": "er", "sparsity": 0.5},
                         "mech_cfg": {"type": "linear", "weight_scale": 1.0},
@@ -144,7 +144,7 @@ def test_pipeline_falls_back_to_local_logger_when_wandb_init_fails(
                 },
                 "test_families": {
                     "test_1": {
-                        "name": "test",
+                        "name": "test_1",
                         "n_nodes": 5,
                         "graph_cfg": {"type": "er", "sparsity": 0.5},
                         "mech_cfg": {"type": "linear", "weight_scale": 1.0},
@@ -210,7 +210,7 @@ def test_pipeline_rejects_multiple_models(tmp_path) -> None:
                 },
                 "test_families": {
                     "test_1": {
-                        "name": "test",
+                        "name": "test_1",
                         "n_nodes": 5,
                         "graph_cfg": {"type": "er", "sparsity": 0.5},
                         "mech_cfg": {"type": "linear", "weight_scale": 1.0},

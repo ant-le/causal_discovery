@@ -38,6 +38,7 @@ def test_disjointness_hashing_does_not_build_mechanisms() -> None:
 
     mech = CountingMechanismFactory(weight_scale=0.1)
     family = SCMFamily(
+        name="test_counting",
         n_nodes=3,
         graph_generator=ErdosRenyiGenerator(edge_prob=0.4),
         mechanism_factory=mech,
@@ -49,6 +50,7 @@ def test_disjointness_hashing_does_not_build_mechanisms() -> None:
 def test_mechanism_aware_hashing_produces_different_hashes() -> None:
     """Test that same DAG with different mechanisms produces different hashes."""
     family = SCMFamily(
+        name="test_mech_hash",
         n_nodes=3,
         graph_generator=ErdosRenyiGenerator(edge_prob=0.5),
         mechanism_factory=LinearMechanismFactory(weight_scale=1.0),
@@ -102,6 +104,7 @@ def test_hash_mechanisms_config_enables_mechanism_hashing() -> None:
     # Note: __call__ is invoked once per sample_task (which builds all node mechanisms)
     mech_factory = CountingMechanismFactory(weight_scale=0.1)
     family = SCMFamily(
+        name="test_hash_config",
         n_nodes=3,
         graph_generator=ErdosRenyiGenerator(edge_prob=0.4),
         mechanism_factory=mech_factory,

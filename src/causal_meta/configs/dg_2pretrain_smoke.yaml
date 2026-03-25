@@ -1,16 +1,16 @@
 # @package _global_
 
 defaults:
-  - logger: wandb
-  - data: smoke
-  - model: bcnp
-  - trainer: default
-  - inference: default
+  - dg_2pretrain_multimodel
   - _self_
 
-name: "canary_multimodel"
+name: "dg_2pretrain_smoke"
 
-# Canary overrides: fast iteration with fewer steps to validate stability.
+# Fast validation config that preserves the dg_2pretrain benchmark layout.
+data:
+  seeds_val: [1000]
+  seeds_test: [2000]
+
 trainer:
   max_steps: 2000
   log_every_n_steps: 100

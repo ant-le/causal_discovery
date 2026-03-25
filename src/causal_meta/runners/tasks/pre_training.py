@@ -6,7 +6,7 @@ import logging
 import math
 import os
 from pathlib import Path
-from typing import Any, Iterable, Sequence, cast
+from typing import Any, Iterable, Mapping, Sequence, cast
 
 import torch
 import torch.distributed as dist
@@ -26,6 +26,16 @@ from causal_meta.runners.utils.distributed import DistributedContext
 from causal_meta.runners.utils.seeding import get_experiment_seed
 
 log = logging.getLogger(__name__)
+
+DEFAULT_VALIDATION_METRICS = ("e-edgef1", "e-sid", "graph_nll")
+DEFAULT_VALIDATION_GROUP_PREFIXES = {
+    "id": ("id_",),
+    "ood_graph": ("ood_graph_",),
+    "ood_mech": ("ood_mech_",),
+    "ood_both": ("ood_both_",),
+    "ood_nodes": ("ood_nodes_",),
+    "ood_samples": ("ood_samples_",),
+}
 
 
 def run(
@@ -120,6 +130,20 @@ def run(
     val_check_interval = int(cfg.trainer.get("val_check_interval", 1000))
     regulariser_update_interval = int(cfg.trainer.get("regulariser_update_interval", 0))
     grad_clip_norm = float(cfg.trainer.get("grad_clip_norm", 1.0))
+    validation_n_samples = int(
+        cfg.trainer.get(
+            "validation_n_samples",
+            cfg.get("inference", {}).get("n_samples", 10),
+        )
+    )
+    validation_metrics = _validation_metrics_from_config(cfg)
+    validation_log_per_family = bool(
+        cfg.trainer.get("validation_log_per_family", False)
+    )
+    validation_group_prefixes = _validation_group_prefixes_from_config(cfg)
+    validation_selection_metric = str(
+        cfg.trainer.get("validation_selection_metric", "mean_id_e-edgef1")
+    )
 
     best_val_metric = float("-inf")
     step = 0
@@ -332,37 +356,42 @@ def run(
 
         # Validation
         if val_check_interval > 0 and step % val_check_interval == 0:
-            val_n_samples = int(cfg.get("inference", {}).get("n_samples", 10))
-            # Validate involves sampling, which might need unwrapped model or handling in validate
             val_metrics = validate(
                 model_unwrapped,
                 data_module,
                 device,
-                num_samples=val_n_samples,
+                num_samples=validation_n_samples,
+                metrics=validation_metrics,
+                group_prefixes=validation_group_prefixes,
             )
 
             if rank == 0:
                 log.info(f"Validation at step {step}: {val_metrics}")
 
                 if logger:
-                    # ── Full Validations (per-family in-depth) ─────────
-                    full_payload = {
-                        f"val_full/{k}": v for k, v in val_metrics.items() if "/" in k
-                    }
-                    logger.log_metrics(full_payload, step=step)
+                    if validation_log_per_family:
+                        per_family_payload = {
+                            f"val_family/{k}": v
+                            for k, v in val_metrics.items()
+                            if "/" in k
+                        }
+                        if per_family_payload:
+                            logger.log_metrics(per_family_payload, step=step)
 
-                    # ── Aggregated Validations (ID vs OOD overview) ────
                     aggregate_payload = {
-                        f"val_aggregated/{k}": v
+                        f"val/{k}": v
                         for k, v in val_metrics.items()
                         if k.startswith("mean_") and "/" not in k
                     }
-                    logger.log_metrics(aggregate_payload, step=step)
+                    if aggregate_payload:
+                        logger.log_metrics(aggregate_payload, step=step)
 
-                # Save best model by ID validation E-F1 (fallback: global mean E-F1).
                 current_metric = val_metrics.get(
-                    "mean_id_e-edgef1",
-                    val_metrics.get("mean_e-edgef1", 0.0),
+                    validation_selection_metric,
+                    val_metrics.get(
+                        "mean_id_e-edgef1",
+                        val_metrics.get("mean_e-edgef1", 0.0),
+                    ),
                 )
                 if current_metric > best_val_metric:
                     best_val_metric = current_metric
@@ -437,6 +466,8 @@ def validate(
     data_module: CausalMetaModule,
     device: torch.device,
     num_samples: int = 10,
+    metrics: Sequence[str] | None = None,
+    group_prefixes: Mapping[str, Sequence[str]] | None = None,
 ) -> dict[str, float]:
     model.eval()
     val_loaders = data_module.val_dataloader()
@@ -446,7 +477,9 @@ def validate(
 
     with torch.no_grad():
         for name, loader in val_loaders.items():
-            metrics_handler = Metrics()
+            metrics_handler = Metrics(
+                metrics=list(metrics or DEFAULT_VALIDATION_METRICS)
+            )
             for batch in loader:
                 input_data, node_mask = _prepare_model_batch(batch, device)
                 adjacency_matrix = batch["adjacency"].to(device)
@@ -477,7 +510,10 @@ def validate(
         if values:
             avg_metrics[k] = sum(values) / len(values)
 
-    _augment_validation_group_metrics(avg_metrics)
+    _augment_validation_group_metrics(
+        avg_metrics,
+        group_prefixes=group_prefixes or DEFAULT_VALIDATION_GROUP_PREFIXES,
+    )
 
     # Calculate mean F1 across all datasets (Alias for checkpointing)
     if "mean_id_e-edgef1" in avg_metrics:
@@ -488,7 +524,11 @@ def validate(
     return avg_metrics
 
 
-def _augment_validation_group_metrics(metrics: dict[str, float]) -> None:
+def _augment_validation_group_metrics(
+    metrics: dict[str, float],
+    *,
+    group_prefixes: Mapping[str, Sequence[str]],
+) -> None:
     """Add grouped ID/OOD means for validation monitoring.
 
     Args:
@@ -502,19 +542,56 @@ def _augment_validation_group_metrics(metrics: dict[str, float]) -> None:
         grouped.setdefault(metric_name, {})[family_name] = float(value)
 
     for metric_name, family_values in grouped.items():
-        id_values = [
-            val for family, val in family_values.items() if family.startswith("id_")
-        ]
-        ood_values = [
-            val for family, val in family_values.items() if family.startswith("ood_")
-        ]
-
-        if id_values:
-            metrics[f"mean_id_{metric_name}"] = float(sum(id_values) / len(id_values))
-        if ood_values:
-            metrics[f"mean_ood_{metric_name}"] = float(
-                sum(ood_values) / len(ood_values)
+        all_ood_values: list[float] = []
+        for group_name, prefixes in group_prefixes.items():
+            normalized_prefixes = tuple(str(prefix) for prefix in prefixes)
+            group_values = [
+                val
+                for family, val in family_values.items()
+                if any(family.startswith(prefix) for prefix in normalized_prefixes)
+            ]
+            if not group_values:
+                continue
+            metrics[f"mean_{group_name}_{metric_name}"] = float(
+                sum(group_values) / len(group_values)
             )
+            if group_name.startswith("ood"):
+                all_ood_values.extend(group_values)
+
+        if all_ood_values:
+            metrics[f"mean_ood_{metric_name}"] = float(
+                sum(all_ood_values) / len(all_ood_values)
+            )
+
+
+def _validation_metrics_from_config(cfg: DictConfig) -> list[str]:
+    raw_metrics = cfg.trainer.get("validation_metrics", DEFAULT_VALIDATION_METRICS)
+    metrics = [str(metric) for metric in raw_metrics]
+    if not metrics:
+        raise ValueError("trainer.validation_metrics must contain at least one metric.")
+    return metrics
+
+
+def _validation_group_prefixes_from_config(
+    cfg: DictConfig,
+) -> dict[str, tuple[str, ...]]:
+    raw_prefixes = cfg.trainer.get(
+        "validation_group_prefixes", DEFAULT_VALIDATION_GROUP_PREFIXES
+    )
+    parsed: dict[str, tuple[str, ...]] = {}
+    for group_name, prefixes in raw_prefixes.items():
+        if isinstance(prefixes, str):
+            normalized = (prefixes,)
+        else:
+            normalized = tuple(str(prefix) for prefix in prefixes)
+        if not normalized:
+            raise ValueError(
+                f"trainer.validation_group_prefixes.{group_name} must not be empty."
+            )
+        parsed[str(group_name)] = normalized
+    if not parsed:
+        raise ValueError("trainer.validation_group_prefixes must not be empty.")
+    return parsed
 
 
 def _prepare_model_batch(

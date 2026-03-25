@@ -34,8 +34,8 @@ Cluster scripts auto-detect BayesDAG Python from `.bootstrap_env.sh` or
 ### Running a Smoke Test
 
 ```bash
-# Run a minimal local test
-uv run causal-meta name=smoke_test
+# Run the benchmark-shaped smoke config locally
+uv run causal-meta --config-name dg_2pretrain_smoke model=avici
 ```
 
 Smoke configs use online Weights & Biases logging. Ensure `wandb login` has been
@@ -47,16 +47,22 @@ run in your environment.
 sbatch scripts/run_bcnp.sh
 ```
 
-Run all models with:
+Run the main benchmark sweep with:
 
 ```bash
-scripts/submit_all_models.sh full
+scripts/submit_all_models.sh main
+```
+
+Run the smoke sweep with the same benchmark layout:
+
+```bash
+scripts/submit_all_models.sh smoke
 ```
 
 Run the ablation suite (AviCi + BCNP across all ablation data configs):
 
 ```bash
-scripts/submit_ablation_suite.sh ablation_multimodel
+scripts/submit_ablation_suite.sh
 ```
 
 ## Documentation
