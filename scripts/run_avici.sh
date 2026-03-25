@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=2
 #SBATCH --gpus-per-node=2
-#SBATCH --time=72:00:00
+#SBATCH --time=168:00:00
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
 #SBATCH --cpus-per-task=8
