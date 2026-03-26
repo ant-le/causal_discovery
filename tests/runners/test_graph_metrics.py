@@ -6,6 +6,8 @@ from causal_meta.runners.metrics.graph import (
     auc_graph_scores_configurable,
     expected_f1_score,
     expected_shd,
+    graph_nll_per_edge_score,
+    normalized_expected_shd,
 )
 
 
@@ -98,3 +100,39 @@ def test_auc_graph_scores_balanced_shuffling_is_deterministic() -> None:
 
     assert torch.allclose(auc_one, auc_two)
     assert 0.0 <= auc_one[0].item() <= 1.0
+
+
+def test_normalized_expected_shd_is_size_comparable_for_full_mismatch() -> None:
+    target_small = torch.zeros(1, 2, 2)
+    pred_small = torch.tensor([[[[0.0, 1.0], [1.0, 0.0]]]])
+    target_large = torch.zeros(1, 4, 4)
+    pred_large = torch.ones(1, 1, 4, 4) - torch.eye(4).view(1, 1, 4, 4)
+
+    shd_small = expected_shd(target_small, pred_small)
+    shd_large = expected_shd(target_large, pred_large)
+    ne_small = normalized_expected_shd(target_small, pred_small)
+    ne_large = normalized_expected_shd(target_large, pred_large)
+
+    assert shd_small[0].item() == 2.0
+    assert shd_large[0].item() == 12.0
+    assert np.isclose(ne_small[0].item(), 1.0)
+    assert np.isclose(ne_large[0].item(), 1.0)
+
+
+def test_graph_nll_per_edge_is_size_comparable_and_masks_diagonal() -> None:
+    target_small = torch.zeros(1, 2, 2)
+    target_large = torch.zeros(1, 4, 4)
+
+    probs_small = torch.tensor([[[0.99, 0.25], [0.25, 0.99]]])
+    probs_large = torch.full((1, 4, 4), 0.25)
+    probs_large[:, torch.arange(4), torch.arange(4)] = 0.99
+
+    preds_small = probs_small.unsqueeze(0)
+    preds_large = probs_large.unsqueeze(0)
+
+    nll_small = graph_nll_per_edge_score(target_small, preds_small)
+    nll_large = graph_nll_per_edge_score(target_large, preds_large)
+    expected = -np.log(0.75)
+
+    assert np.isclose(nll_small, expected, atol=1e-6)
+    assert np.isclose(nll_large, expected, atol=1e-6)

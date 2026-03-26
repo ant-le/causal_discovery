@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import inspect
+import json
 import logging
 import os
-from typing import cast
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Tuple
+from typing import cast
 
 import numpy as np
 import torch
@@ -33,6 +38,9 @@ class DiBSModel(BaseModel):
         seed: int = 0,
         use_marginal: bool = False,
         xla_preallocate: bool = False,
+        external_process: bool = False,
+        external_python: Optional[str] = None,
+        external_timeout_s: int = 3600,
         alpha: float | None = None,
         gamma_z: float | None = None,
         gamma_theta: float | None = None,
@@ -48,6 +56,9 @@ class DiBSModel(BaseModel):
         self.seed = seed
         self.use_marginal = use_marginal
         self.xla_preallocate = xla_preallocate
+        self.external_process = external_process
+        self.external_python = external_python
+        self.external_timeout_s = external_timeout_s
         self.alpha = alpha
         self.gamma_z = gamma_z
         self.gamma_theta = gamma_theta
@@ -66,6 +77,7 @@ class DiBSModel(BaseModel):
                 self._profile_overrides[str(name).lower()] = dict(values)
         self._active_profile: str | None = None
         self._rng_key = None
+        self._external_seed_counter = 0
         self._target_cache = None
 
     def set_inference_profile(self, profile: str | None) -> None:
@@ -157,20 +169,27 @@ class DiBSModel(BaseModel):
         Returns:
             Sampled adjacency matrices of shape (Batch, num_samples, Variables, Variables).
         """
+        _ = mask
+        batch_size, num_nodes = self._validate_sample_input(x)
+
+        if self.external_process:
+            return self._sample_external(x, num_samples, batch_size=batch_size)
+
+        return self._sample_in_process(x, num_samples, batch_size=batch_size)
+
+    def _sample_in_process(
+        self,
+        x: torch.Tensor,
+        num_samples: int,
+        *,
+        batch_size: int,
+    ) -> torch.Tensor:
         jax, jnp, dibs_cls, make_target = self._require_dibs()
-
-        if x.ndim != 3:
-            raise ValueError("Input data must have shape (Batch, Samples, Variables).")
-
-        batch_size, _, num_nodes = x.shape
-        if num_nodes != self.num_nodes:
-            raise ValueError(
-                "Input data node count does not match configured num_nodes."
-            )
+        num_nodes = self.num_nodes
 
         jax_platforms = sorted({d.platform for d in jax.devices()})
         log.info(
-            "DiBS sample: jax_platforms=%s, jax_version=%s, "
+            "DiBS sample: mode=in_process, jax_platforms=%s, jax_version=%s, "
             "batch_size=%d, num_nodes=%d, num_samples=%d, "
             "mode=%s, steps=%d, n_particles=%s",
             jax_platforms,
@@ -188,45 +207,115 @@ class DiBSModel(BaseModel):
 
         samples_per_batch = []
         for batch_idx in range(batch_size):
-            x_np = x[batch_idx].detach().cpu().numpy().astype(np.float32, copy=False)
-            x_jax = jnp.asarray(x_np)
-
             self._rng_key, model_key, sample_key = jax.random.split(self._rng_key, 3)
             graph_model, likelihood_model = self._get_target_models(
                 make_target=make_target, key=model_key
             )
 
-            dibs = dibs_cls(
-                x=x_jax,
-                interv_mask=None,
+            x_jax = jnp.asarray(
+                x[batch_idx].detach().cpu().numpy().astype(np.float32, copy=False)
+            )
+
+            graphs_t = self._sample_from_dibs(
+                x_jax=x_jax,
+                dibs_cls=dibs_cls,
                 graph_model=graph_model,
                 likelihood_model=likelihood_model,
-            )
-
-            n_particles = (
-                int(self.n_particles)
-                if self.n_particles is not None
-                else int(num_samples)
-            )
-            if n_particles < 1:
-                raise ValueError("DiBS n_particles must be >= 1.")
-
-            graphs, _ = dibs.sample(
-                key=sample_key,
-                n_particles=n_particles,
+                sample_key=sample_key,
+                n_particles=self._resolved_n_particles(num_samples),
                 steps=int(self.steps),
-            )
-
-            graphs_np = np.asarray(graphs)
-            graphs_t = torch.from_numpy(graphs_np.copy()).to(device=x.device)
-            graphs_t = (graphs_t > 0.5).to(dtype=torch.float32)
-            graphs_t = self._match_num_samples(
-                graphs_t,
-                target_samples=int(num_samples),
-                seed=self.seed + batch_idx,
+                num_samples=int(num_samples),
+                match_seed=self.seed + batch_idx,
+                device=x.device,
             )
             samples_per_batch.append(graphs_t)
 
+        return torch.stack(samples_per_batch, dim=0)
+
+    def _sample_external(
+        self,
+        x: torch.Tensor,
+        num_samples: int,
+        *,
+        batch_size: int,
+    ) -> torch.Tensor:
+        python_path = self._resolve_external_python()
+        script_path = Path(__file__).resolve().with_name("external_infer.py")
+
+        log.info(
+            "DiBS sample: mode=external, python=%s, batch_size=%d, num_nodes=%d, "
+            "num_samples=%d, profile=%s, mode_name=%s, steps=%d, n_particles=%s, timeout=%ds",
+            python_path,
+            batch_size,
+            self.num_nodes,
+            num_samples,
+            self._active_profile,
+            self.mode,
+            self.steps,
+            self.n_particles,
+            self.external_timeout_s,
+        )
+
+        samples_per_batch = []
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            for batch_idx in range(batch_size):
+                input_path = tmp_path / f"input_{batch_idx}.npz"
+                output_path = tmp_path / f"output_{batch_idx}.npz"
+                config_path = tmp_path / f"config_{batch_idx}.json"
+                x_np = (
+                    x[batch_idx].detach().cpu().numpy().astype(np.float32, copy=False)
+                )
+                batch_seed = self.seed + self._external_seed_counter + batch_idx
+
+                np.savez(input_path, data=x_np)
+                config_payload = self._build_external_config(
+                    output_path=output_path,
+                    num_samples=int(num_samples),
+                    seed=int(batch_seed),
+                )
+                config_path.write_text(json.dumps(config_payload), encoding="utf-8")
+
+                cmd = [
+                    python_path,
+                    str(script_path),
+                    "--config",
+                    str(config_path),
+                    "--input",
+                    str(input_path),
+                ]
+
+                try:
+                    subprocess.run(
+                        cmd,
+                        check=True,
+                        timeout=self.external_timeout_s,
+                        env=os.environ.copy(),
+                    )
+                except FileNotFoundError as exc:
+                    raise RuntimeError(
+                        f"DiBS external inference could not launch Python executable: {python_path}"
+                    ) from exc
+                except subprocess.CalledProcessError as exc:
+                    raise RuntimeError(
+                        "DiBS external inference failed. Ensure the selected Python "
+                        "environment has 'dibs-lib' and JAX installed."
+                    ) from exc
+                except subprocess.TimeoutExpired as exc:
+                    raise RuntimeError(
+                        "DiBS external inference timed out after "
+                        f"{self.external_timeout_s} seconds."
+                    ) from exc
+
+                result = np.load(output_path)
+                graph_samples = result["graph_samples"]
+                graphs_t = torch.from_numpy(graph_samples.copy()).to(
+                    device=x.device,
+                    dtype=torch.float32,
+                )
+                samples_per_batch.append(graphs_t)
+
+        self._external_seed_counter += batch_size
         return torch.stack(samples_per_batch, dim=0)
 
     def calculate_loss(
@@ -258,42 +347,197 @@ class DiBSModel(BaseModel):
                 n_vars=self.num_nodes,
                 **self._build_target_kwargs(make_target),
             )
-            result_tuple = cast(tuple[Any, ...], result)
-            if len(result_tuple) == 3:
-                _, graph_model, likelihood_model = result_tuple
-            else:
-                graph_model, likelihood_model = result_tuple
+            graph_model, likelihood_model = self._extract_target_models(result)
             self._target_cache = (graph_model, likelihood_model)
         return self._target_cache
+
+    def _build_external_config(
+        self,
+        *,
+        output_path: Path,
+        num_samples: int,
+        seed: int,
+    ) -> dict[str, Any]:
+        return {
+            "num_nodes": int(self.num_nodes),
+            "mode": str(self.mode),
+            "steps": int(self.steps),
+            "seed": int(seed),
+            "use_marginal": bool(self.use_marginal),
+            "xla_preallocate": bool(self.xla_preallocate),
+            "alpha": self.alpha,
+            "gamma_z": self.gamma_z,
+            "gamma_theta": self.gamma_theta,
+            "n_particles": self.n_particles,
+            "num_samples": int(num_samples),
+            "output": str(output_path),
+        }
+
+    def _resolve_external_python(self) -> str:
+        if not self.external_python:
+            return sys.executable
+        python_path = Path(os.path.expandvars(self.external_python)).expanduser()
+        if not python_path.is_absolute():
+            python_path = (Path.cwd() / python_path).resolve()
+        if not python_path.exists():
+            raise FileNotFoundError(
+                f"Resolved DiBS external_python does not exist: {python_path}"
+            )
+        return str(python_path)
+
+    def _resolved_n_particles(self, num_samples: int) -> int:
+        return self._resolve_n_particles_value(self.n_particles, num_samples)
+
+    def _validate_sample_input(self, x: torch.Tensor) -> tuple[int, int]:
+        if x.ndim != 3:
+            raise ValueError("Input data must have shape (Batch, Samples, Variables).")
+
+        batch_size, _, num_nodes = x.shape
+        if num_nodes != self.num_nodes:
+            raise ValueError(
+                "Input data node count does not match configured num_nodes."
+            )
+        return int(batch_size), int(num_nodes)
+
+    @staticmethod
+    def _sample_from_dibs(
+        *,
+        x_jax: Any,
+        dibs_cls: Any,
+        graph_model: Any,
+        likelihood_model: Any,
+        sample_key: Any,
+        n_particles: int,
+        steps: int,
+        num_samples: int,
+        match_seed: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        dibs = dibs_cls(
+            x=x_jax,
+            interv_mask=None,
+            graph_model=graph_model,
+            likelihood_model=likelihood_model,
+        )
+
+        graphs, _ = dibs.sample(
+            key=sample_key,
+            n_particles=int(n_particles),
+            steps=int(steps),
+        )
+
+        graphs_np = np.asarray(graphs)
+        graphs_t = torch.from_numpy(graphs_np.copy()).to(device=device)
+        graphs_t = (graphs_t > 0.5).to(dtype=torch.float32)
+        return DiBSModel._match_num_samples(
+            graphs_t,
+            target_samples=int(num_samples),
+            seed=int(match_seed),
+        )
+
+    @classmethod
+    def sample_numpy_array(
+        cls,
+        *,
+        data: np.ndarray,
+        num_nodes: int,
+        num_samples: int,
+        mode: str,
+        steps: int,
+        seed: int,
+        use_marginal: bool,
+        xla_preallocate: bool,
+        alpha: float | None,
+        gamma_z: float | None,
+        gamma_theta: float | None,
+        n_particles: int | None,
+    ) -> np.ndarray:
+        jax, jnp, dibs_cls, make_target = cls._require_dibs_static(
+            mode=mode,
+            use_marginal=use_marginal,
+            xla_preallocate=xla_preallocate,
+        )
+        key = jax.random.PRNGKey(int(seed))
+        key, model_key, sample_key = jax.random.split(key, 3)
+        target_result = make_target(
+            key=model_key,
+            n_vars=int(num_nodes),
+            **cls._build_target_kwargs_for(
+                make_target,
+                alpha=alpha,
+                gamma_z=gamma_z,
+                gamma_theta=gamma_theta,
+            ),
+        )
+        graph_model, likelihood_model = cls._extract_target_models(target_result)
+        x_jax = jnp.asarray(np.asarray(data, dtype=np.float32, copy=False))
+        graphs_t = cls._sample_from_dibs(
+            x_jax=x_jax,
+            dibs_cls=dibs_cls,
+            graph_model=graph_model,
+            likelihood_model=likelihood_model,
+            sample_key=sample_key,
+            n_particles=cls._resolve_n_particles_value(n_particles, num_samples),
+            steps=int(steps),
+            num_samples=int(num_samples),
+            match_seed=int(seed),
+            device=torch.device("cpu"),
+        )
+        return graphs_t.cpu().numpy()
 
     def _build_target_kwargs(
         self,
         make_target: Callable[..., Any],
     ) -> dict[str, float]:
         """Build optional target kwargs supported by the installed DiBS version."""
+        return self._build_target_kwargs_for(
+            make_target,
+            alpha=self.alpha,
+            gamma_z=self.gamma_z,
+            gamma_theta=self.gamma_theta,
+        )
+
+    @classmethod
+    def _build_target_kwargs_for(
+        cls,
+        make_target: Callable[..., Any],
+        *,
+        alpha: float | None,
+        gamma_z: float | None,
+        gamma_theta: float | None,
+    ) -> dict[str, float]:
         params = set(inspect.signature(make_target).parameters.keys())
         kwargs: dict[str, float] = {}
 
-        self._set_first_supported_param(
+        cls._set_first_supported_param(
             kwargs,
             params,
             candidates=("alpha_linear", "alpha"),
-            value=self.alpha,
+            value=alpha,
         )
-        self._set_first_supported_param(
+        cls._set_first_supported_param(
             kwargs,
             params,
             candidates=("gamma_z", "gamma_latent"),
-            value=self.gamma_z,
+            value=gamma_z,
         )
-        self._set_first_supported_param(
+        cls._set_first_supported_param(
             kwargs,
             params,
             candidates=("gamma_theta", "gamma"),
-            value=self.gamma_theta,
+            value=gamma_theta,
         )
 
         return kwargs
+
+    @staticmethod
+    def _extract_target_models(result: Any) -> tuple[Any, Any]:
+        result_tuple = cast(tuple[Any, ...], result)
+        if len(result_tuple) == 3:
+            _, graph_model, likelihood_model = result_tuple
+        else:
+            graph_model, likelihood_model = result_tuple
+        return graph_model, likelihood_model
 
     @staticmethod
     def _set_first_supported_param(
@@ -358,8 +602,28 @@ class DiBSModel(BaseModel):
             return None
         return int(value)
 
+    @staticmethod
+    def _resolve_n_particles_value(n_particles: int | None, num_samples: int) -> int:
+        resolved = int(n_particles) if n_particles is not None else int(num_samples)
+        if resolved < 1:
+            raise ValueError("DiBS n_particles must be >= 1.")
+        return resolved
+
     def _require_dibs(self) -> Tuple[Any, Any, Any, Callable[..., Any]]:
-        if not self.xla_preallocate:
+        return self._require_dibs_static(
+            mode=self.mode,
+            use_marginal=self.use_marginal,
+            xla_preallocate=self.xla_preallocate,
+        )
+
+    @staticmethod
+    def _require_dibs_static(
+        *,
+        mode: str,
+        use_marginal: bool,
+        xla_preallocate: bool,
+    ) -> Tuple[Any, Any, Any, Callable[..., Any]]:
+        if not xla_preallocate:
             os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 
         try:
@@ -376,10 +640,10 @@ class DiBSModel(BaseModel):
                 "Install with `pip install dibs-lib` and ensure a compatible JAX backend."
             ) from exc
 
-        dibs_cls = MarginalDiBS if self.use_marginal else JointDiBS
+        dibs_cls = MarginalDiBS if use_marginal else JointDiBS
         make_target = (
             make_linear_gaussian_model
-            if self.mode == "linear"
+            if mode == "linear"
             else make_nonlinear_gaussian_model
         )
 

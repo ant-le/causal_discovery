@@ -84,8 +84,6 @@ def _ddp_worker(*, rank: int, world_size: int, init_file: str, output_dir: str) 
                 "inference": {
                     "n_samples": 2,
                     "inil_graph_samples": 1,
-                    "use_cached_inference": False,
-                    "cache_inference": False,
                 },
             }
         )

@@ -29,11 +29,9 @@ from causal_meta.runners.utils.artifacts import (
     atomic_torch_save,
     cache_settings,
     cache_suffix,
-    find_inference_artifact,
     get_model_name,
     prepare_graph_samples_for_cache,
     resolve_output_dir,
-    torch_load,
 )
 from causal_meta.runners.utils.distributed import DistributedContext
 from causal_meta.runners.utils.explicit_profiles import (
@@ -141,47 +139,191 @@ def _build_family_metadata(
     return result
 
 
-def _prepare_cached_samples_for_metrics(
-    artifact: Mapping[str, Any],
+def _resolve_dataset_num_nodes(
+    dataset: MetaFixedDataset, family: Any | None
+) -> int | None:
+    """Infer the node count for a fixed evaluation dataset."""
+    if family is not None and hasattr(family, "n_nodes"):
+        return int(getattr(family, "n_nodes"))
+    if len(dataset) < 1:
+        return None
+    sample = dataset[0]
+    data = sample.get("data")
+    if isinstance(data, torch.Tensor) and data.ndim >= 2:
+        return int(data.shape[-1])
+    return None
+
+
+def _maybe_set_model_num_nodes(model: nn.Module, num_nodes: int | None) -> bool:
+    """Update explicit models that support dynamic node-count overrides."""
+    if num_nodes is None:
+        return False
+    setter = getattr(model, "set_num_nodes", None)
+    if not callable(setter):
+        return False
+    setter(int(num_nodes))
+    return True
+
+
+def _evaluate_explicit_model(
     *,
-    requested_n_samples: int,
-) -> tuple[torch.Tensor | None, int | None]:
-    """Validate and reshape cached graph samples for metric computation.
+    model: nn.Module,
+    loader: Any,
+    dataset_name: str,
+    family: Any | None,
+    device: torch.device,
+    rank: int,
+    world_size: int,
+    metrics_handler: Metrics,
+    scm_metrics_handler: SCMMetrics,
+    n_samples: int,
+    inference_root: Path,
+    model_name: str,
+    cache_dir: Any,
+    cache_dtype: str,
+    cache_n_samples: int | None,
+    suffix: str,
+) -> list[float]:
+    """Evaluate one explicit model dataset by always sampling live."""
+    dataset = cast(MetaFixedDataset, loader.dataset)
+    profile = infer_explicit_profile(dataset_name, family)
+    profile_applied = apply_explicit_profile(model, profile)
+    dataset_num_nodes = _resolve_dataset_num_nodes(dataset, family)
+    num_nodes_applied = _maybe_set_model_num_nodes(model, dataset_num_nodes)
+    sampling_mode_ = sampling_mode(model)
 
-    Args:
-        artifact: Loaded artifact payload.
-        requested_n_samples: Number of posterior samples requested by config.
+    if rank == 0 and profile_applied and profile is not None:
+        log.info(
+            "Applying explicit profile '%s' for dataset '%s'.", profile, dataset_name
+        )
+    if rank == 0 and num_nodes_applied and dataset_num_nodes is not None:
+        log.info(
+            "Applying explicit num_nodes=%d for dataset '%s'.",
+            dataset_num_nodes,
+            dataset_name,
+        )
 
-    Returns:
-        Tuple ``(samples_for_metrics, cached_n_samples)`` where:
-        - ``samples_for_metrics`` has shape ``(S, 1, N, N)`` when compatible,
-          otherwise ``None``.
-        - ``cached_n_samples`` is the number of samples found in cache, when
-          extractable.
-    """
-    graph_samples = artifact.get("graph_samples")
-    if not isinstance(graph_samples, torch.Tensor):
-        return None, None
+    out_dir = (
+        (inference_root / model_name / dataset_name)
+        if cache_dir
+        else (inference_root / dataset_name)
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Cached explicit-model artifacts are written as (B, K, N, N) with B=1.
-    if graph_samples.ndim == 4:
-        if int(graph_samples.shape[0]) != 1:
-            return None, int(graph_samples.shape[1])
-        cached_n_samples = int(graph_samples.shape[1])
-        if cached_n_samples < requested_n_samples:
-            return None, cached_n_samples
-        prepared = graph_samples[:, :requested_n_samples].permute(1, 0, 2, 3)
-        return prepared, cached_n_samples
+    inference_times: list[float] = []
+    sampling_context_logged = False
 
-    # Backward-compatible fallback for artifacts saved as (K, N, N).
-    if graph_samples.ndim == 3:
-        cached_n_samples = int(graph_samples.shape[0])
-        if cached_n_samples < requested_n_samples:
-            return None, cached_n_samples
-        prepared = graph_samples[:requested_n_samples].unsqueeze(1)
-        return prepared, cached_n_samples
+    with torch.no_grad():
+        for idx in shard_indices(len(dataset), rank=rank, world_size=world_size):
+            item = dataset[idx]
+            seed = int(item["seed"])
+            input_data_raw = item["data"]
+            adjacency_matrix_true = item["adjacency"]
+            input_data = normalize_scm_data(input_data_raw).to(device).unsqueeze(0)
+            adjacency_matrix = adjacency_matrix_true.to(device).unsqueeze(0)
 
-    return None, None
+            if rank == 0 and not sampling_context_logged:
+                log.info(
+                    "Evaluation sampling context: dataset=%s, device=%s, n_samples=%d, mode=%s",
+                    dataset_name,
+                    device,
+                    n_samples,
+                    sampling_mode_,
+                )
+                sampling_context_logged = True
+
+            t0 = time.perf_counter()
+            samples = model.sample(input_data, num_samples=n_samples).to(device)
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
+            inference_times.append(time.perf_counter() - t0)
+            samples_for_metrics = samples.permute(1, 0, 2, 3)
+
+            cached_samples = prepare_graph_samples_for_cache(
+                samples.detach(),
+                dtype=cache_dtype,
+                max_samples=cache_n_samples,
+            )
+            atomic_torch_save(
+                {
+                    "seed": seed,
+                    "idx": int(idx),
+                    "graph_samples": cached_samples.cpu(),
+                    "true_adj": (adjacency_matrix_true.detach() > 0.5)
+                    .to(dtype=torch.uint8)
+                    .cpu(),
+                    "cache_dtype": str(cache_dtype),
+                    "cache_n_samples": (
+                        int(cache_n_samples) if cache_n_samples is not None else None
+                    ),
+                    "requested_n_samples": int(n_samples),
+                    "num_samples_stored": int(cached_samples.shape[1]),
+                },
+                out_dir / f"seed_{seed}{suffix}",
+            )
+
+            metrics_handler.update(adjacency_matrix, samples_for_metrics)
+            if bool(getattr(model, "estimates_scm", False)):
+                scm_metrics_handler.update(
+                    obs_data=input_data.squeeze(0),
+                    graph_samples=samples_for_metrics.squeeze(1),
+                    family=family,
+                    seeds=[seed],
+                )
+
+    return inference_times
+
+
+def _evaluate_amortized_model(
+    *,
+    model: nn.Module,
+    loader: Any,
+    family: Any | None,
+    device: torch.device,
+    metrics_handler: Metrics,
+    scm_metrics_handler: SCMMetrics,
+    n_samples: int,
+) -> list[float]:
+    """Evaluate one amortized model dataset using batched loader inputs."""
+    inference_times: list[float] = []
+
+    with torch.no_grad():
+        for batch in loader:
+            input_data, node_mask = _prepare_amortized_model_input(batch, device)
+            adjacency_matrix = batch["adjacency"].to(device)
+            seeds = batch.get("seed")
+            if seeds is not None and hasattr(seeds, "tolist"):
+                seeds = seeds.tolist()
+
+            t0 = time.perf_counter()
+            samples = model.sample(
+                input_data,
+                num_samples=n_samples,
+                mask=node_mask,
+            ).to(device)
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
+            inference_times.append(time.perf_counter() - t0)
+            samples_for_metrics = samples.permute(1, 0, 2, 3)
+
+            metrics_handler.update(adjacency_matrix, samples_for_metrics)
+
+            if bool(getattr(model, "estimates_scm", False)):
+                batch_seeds = seeds if isinstance(seeds, list) else None
+                if batch_seeds is None:
+                    log.warning(
+                        "Skipping SCM metrics because batch seeds are unavailable."
+                    )
+                else:
+                    for b in range(int(input_data.shape[0])):
+                        scm_metrics_handler.update(
+                            obs_data=input_data[b],
+                            graph_samples=samples_for_metrics[:, b],
+                            family=family,
+                            seeds=[int(batch_seeds[b])],
+                        )
+
+    return inference_times
 
 
 def run(
@@ -243,6 +385,7 @@ def run(
             "ne-shd",
             "ne-sid",
             "graph_nll",
+            "graph_nll_per_edge",
             "edge_entropy",
             "ancestor_f1",
             "auc",
@@ -259,21 +402,19 @@ def run(
         auc_balance_classes=auc_balance_classes,
         auc_seed=auc_seed,
     )
-    scm_metrics_handler = SCMMetrics(metrics=["inil"])
+    scm_metrics_handler = SCMMetrics(metrics=["inil", "inil_per_node"])
 
-    # Determine output directory (used for optional cached inference)
+    # Determine output directory and artifact settings.
     output_dir = resolve_output_dir(cfg, output_dir)
     cache_dir = cfg.inference.get("cache_dir", None)
     inference_root = resolve_inference_root(cfg, output_dir)
-    use_cached_inference = bool(cfg.inference.get("use_cached_inference", True))
-    cache_inference = bool(cfg.inference.get("cache_inference", True))
     cache_compress, cache_dtype, cache_n_samples_cfg = cache_settings(cfg)
     cache_n_samples = cache_n_samples_cfg
     if cache_n_samples is not None and cache_n_samples < n_samples:
         if rank == 0:
             log.warning(
                 "cache_n_samples (%d) is smaller than inference.n_samples (%d); "
-                "overriding cache_n_samples to %d for idempotent cache hits.",
+                "overriding cache_n_samples to %d so written artifacts preserve all evaluated samples.",
                 cache_n_samples,
                 n_samples,
                 n_samples,
@@ -287,203 +428,40 @@ def run(
         if rank == 0:
             log.info(f"Evaluating on {name}...")
 
-        # Retrieve family for on-the-fly interventional evaluation
         test_families = getattr(data_module, "test_families", {}) or {}
         family = test_families.get(name)
-        profile = infer_explicit_profile(name, family)
-        profile_applied = apply_explicit_profile(model_unwrapped, profile)
-        if rank == 0 and profile_applied and profile is not None:
-            log.info(f"Applying explicit profile '{profile}' for dataset '{name}'.")
 
-        # Reset internal state for this dataset
         metrics_handler.reset()
         scm_metrics_handler.reset()
-        sampling_mode_ = sampling_mode(model_unwrapped)
-        cached_context_logged = False
-        sampling_context_logged = False
-        inference_times: list[float] = []
-
-        with torch.no_grad():
-            # For explicit/non-amortized models, prefer cached inference artifacts and avoid DataLoader+DistributedSampler padding.
-            if not model_unwrapped.needs_pretraining:
-                dataset = cast(MetaFixedDataset, loader.dataset)  # type: ignore[assignment]
-                for idx in shard_indices(
-                    len(dataset), rank=rank, world_size=dist_ctx.world_size
-                ):
-                    item = dataset[idx]
-                    seed = int(item["seed"])
-                    input_data_raw, adjacency_matrix_true = (
-                        item["data"],
-                        item["adjacency"],
-                    )
-                    input_data_norm = normalize_scm_data(input_data_raw)
-
-                    # Find cached artifact
-                    artifact_path = (
-                        find_inference_artifact(
-                            inference_root,
-                            dataset_name=name,
-                            model_name=model_name,
-                            seed=seed,
-                            prefer_compress=cache_compress,
-                            use_model_subdir=bool(cache_dir),
-                        )
-                        if use_cached_inference
-                        else None
-                    )
-
-                    input_data = input_data_norm.to(device).unsqueeze(0)
-                    adjacency_matrix = adjacency_matrix_true.to(device).unsqueeze(0)
-
-                    cache_hit_usable = False
-                    cache_out_path = artifact_path
-                    samples_for_metrics = torch.empty(0, device=device)
-
-                    if artifact_path is not None:
-                        try:
-                            artifact = torch_load(artifact_path)
-                        except Exception:
-                            if rank == 0:
-                                log.warning(
-                                    "Failed to load cached artifact %s; resampling.",
-                                    artifact_path,
-                                    exc_info=True,
-                                )
-                            artifact = None
-
-                        if artifact is not None:
-                            prepared_cached, cached_n_samples = (
-                                _prepare_cached_samples_for_metrics(
-                                    artifact,
-                                    requested_n_samples=n_samples,
-                                )
-                            )
-                            if prepared_cached is not None:
-                                if rank == 0 and not cached_context_logged:
-                                    log.info(
-                                        "Evaluation context: using cached inference for "
-                                        "dataset=%s, device=%s, mode=%s",
-                                        name,
-                                        device,
-                                        sampling_mode_,
-                                    )
-                                    cached_context_logged = True
-                                samples_for_metrics = prepared_cached.to(device)
-                                cache_hit_usable = True
-                            else:
-                                if rank == 0:
-                                    log.warning(
-                                        "Ignoring incompatible cached artifact %s "
-                                        "(cached_n_samples=%s, requested_n_samples=%d); "
-                                        "resampling and refreshing cache.",
-                                        artifact_path,
-                                        cached_n_samples,
-                                        n_samples,
-                                    )
-
-                    if not cache_hit_usable:
-                        if rank == 0 and not sampling_context_logged:
-                            log.info(
-                                "Evaluation sampling context: dataset=%s, device=%s, "
-                                "n_samples=%d, mode=%s",
-                                name,
-                                device,
-                                n_samples,
-                                sampling_mode_,
-                            )
-                            sampling_context_logged = True
-                        t0 = time.perf_counter()
-                        samples = model_unwrapped.sample(
-                            input_data, num_samples=n_samples
-                        )
-                        if device.type == "cuda":
-                            torch.cuda.synchronize(device)
-                        inference_times.append(time.perf_counter() - t0)
-                        samples_for_metrics = samples.permute(1, 0, 2, 3)
-
-                        if cache_inference:
-                            if cache_out_path is None:
-                                cache_out_path = (
-                                    (inference_root / model_name / name)
-                                    if cache_dir
-                                    else (inference_root / name)
-                                ) / f"seed_{seed}{suffix}"
-
-                            cached_samples = prepare_graph_samples_for_cache(
-                                samples.detach(),
-                                dtype=cache_dtype,
-                                max_samples=cache_n_samples,
-                            )
-                            atomic_torch_save(
-                                {
-                                    "seed": seed,
-                                    "idx": int(idx),
-                                    "graph_samples": cached_samples.cpu(),
-                                    "true_adj": (adjacency_matrix_true.detach() > 0.5)
-                                    .to(dtype=torch.uint8)
-                                    .cpu(),
-                                    "cache_dtype": str(cache_dtype),
-                                    "cache_n_samples": (
-                                        int(cache_n_samples)
-                                        if cache_n_samples is not None
-                                        else None
-                                    ),
-                                    "requested_n_samples": int(n_samples),
-                                    "num_samples_stored": int(cached_samples.shape[1]),
-                                },
-                                cache_out_path,
-                            )
-
-                    # Update handlers
-                    metrics_handler.update(adjacency_matrix, samples_for_metrics)
-                    if bool(getattr(model_unwrapped, "estimates_scm", False)):
-                        scm_metrics_handler.update(
-                            obs_data=input_data.squeeze(0),
-                            graph_samples=samples_for_metrics.squeeze(1),
-                            family=family,
-                            seeds=[seed],
-                        )
-
-            else:
-                for batch_idx, batch in enumerate(loader):
-                    input_data, node_mask = _prepare_amortized_model_input(
-                        batch, device
-                    )
-                    adjacency_matrix = batch["adjacency"].to(device)
-                    seeds = batch.get("seed")
-                    if seeds is not None and hasattr(seeds, "tolist"):
-                        seeds = seeds.tolist()
-
-                    t0 = time.perf_counter()
-                    samples = model_unwrapped.sample(
-                        input_data,
-                        num_samples=n_samples,
-                        mask=node_mask,
-                    )  # (Batch, n_samples, N, N)
-                    if device.type == "cuda":
-                        torch.cuda.synchronize(device)
-                    inference_times.append(time.perf_counter() - t0)
-                    samples_for_metrics = samples.permute(
-                        1, 0, 2, 3
-                    )  # (n_samples, Batch, N, N)
-
-                    metrics_handler.update(adjacency_matrix, samples_for_metrics)
-
-                    # Batch update for SCM metrics (assuming evaluation loop is usually batch size 1)
-                    if bool(getattr(model_unwrapped, "estimates_scm", False)):
-                        batch_seeds = seeds if isinstance(seeds, list) else None
-                        if batch_seeds is None:
-                            log.warning(
-                                "Skipping SCM metrics because batch seeds are unavailable."
-                            )
-                        else:
-                            for b in range(int(input_data.shape[0])):
-                                scm_metrics_handler.update(
-                                    obs_data=input_data[b],
-                                    graph_samples=samples_for_metrics[:, b],
-                                    family=family,
-                                    seeds=[int(batch_seeds[b])],
-                                )
+        if model_unwrapped.needs_pretraining:
+            inference_times = _evaluate_amortized_model(
+                model=model_unwrapped,
+                loader=loader,
+                family=family,
+                device=device,
+                metrics_handler=metrics_handler,
+                scm_metrics_handler=scm_metrics_handler,
+                n_samples=n_samples,
+            )
+        else:
+            inference_times = _evaluate_explicit_model(
+                model=model_unwrapped,
+                loader=loader,
+                dataset_name=name,
+                family=family,
+                device=device,
+                rank=rank,
+                world_size=dist_ctx.world_size,
+                metrics_handler=metrics_handler,
+                scm_metrics_handler=scm_metrics_handler,
+                n_samples=n_samples,
+                inference_root=inference_root,
+                model_name=model_name,
+                cache_dir=cache_dir,
+                cache_dtype=cache_dtype,
+                cache_n_samples=cache_n_samples,
+                suffix=suffix,
+            )
 
         # Compute Summary Stats (Mean + SEM) and Gather Raw Data
         summary = metrics_handler.compute(summary_stats=True)
@@ -498,9 +476,8 @@ def run(
             for k, v in scm_raw.items():
                 final_metrics[k] = v
 
-            # Attach wall-clock inference times (only for live sampling, not
-            # cache hits).  When all tasks used cached artifacts the list is
-            # empty and the summary entries are omitted.
+            # Attach wall-clock inference times for live sampling. When no
+            # timing data were recorded, the summary entries are omitted.
             if inference_times:
                 final_metrics["inference_time_s"] = inference_times
                 mean_t = sum(inference_times) / len(inference_times)

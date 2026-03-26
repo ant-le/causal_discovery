@@ -218,6 +218,44 @@ def graph_nll_score(
     return -float(log_prob.mean().item())
 
 
+def graph_nll_per_edge_score(
+    targets: torch.Tensor, preds: torch.Tensor, eps: float = 1e-6
+) -> float:
+    """Negative log-probability averaged per off-diagonal edge.
+
+    Uses the posterior mean as the Bernoulli parameter and masks the diagonal so
+    the score is comparable across node counts.
+
+    Args:
+        targets: ``(batch_size, num_nodes, num_nodes)``
+        preds: ``(num_samples, batch_size, num_nodes, num_nodes)``
+        eps: Clamp to avoid log(0).
+
+    Returns:
+        Scalar mean NLL per off-diagonal edge across the batch.
+    """
+    targets_t = (
+        targets if isinstance(targets, torch.Tensor) else torch.as_tensor(targets)
+    )
+    preds_t = preds if isinstance(preds, torch.Tensor) else torch.as_tensor(preds)
+
+    p = preds_t.float().mean(dim=0).clamp(eps, 1.0 - eps)
+    y = targets_t.float()
+    n_nodes = y.shape[-1]
+    n_possible = n_nodes * (n_nodes - 1)
+    if n_possible == 0:
+        return 0.0
+
+    diag_mask = ~torch.eye(n_nodes, dtype=torch.bool, device=y.device)
+    p_masked = p[:, diag_mask]
+    y_masked = y[:, diag_mask]
+    log_prob = y_masked * torch.log(p_masked) + (1.0 - y_masked) * torch.log(
+        1.0 - p_masked
+    )
+    nll_per_graph = -log_prob.sum(dim=-1) / float(n_possible)
+    return float(nll_per_graph.mean().item())
+
+
 def edge_entropy(preds: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     """Mean entropy of edge existence probabilities across the batch.
 
@@ -511,6 +549,7 @@ class Metrics(BaseMetrics):
                 "ne-shd",
                 "ne-sid",
                 "graph_nll",
+                "graph_nll_per_edge",
                 "edge_entropy",
                 "ancestor_f1",
                 "auc",
@@ -567,6 +606,11 @@ class Metrics(BaseMetrics):
 
         if "graph_nll" in self.metrics_list:
             batch_metrics["graph_nll"] = graph_nll_score(targets, samples)
+
+        if "graph_nll_per_edge" in self.metrics_list:
+            batch_metrics["graph_nll_per_edge"] = graph_nll_per_edge_score(
+                targets, samples
+            )
 
         if "edge_entropy" in self.metrics_list:
             batch_metrics["edge_entropy"] = float(edge_entropy(samples).item())

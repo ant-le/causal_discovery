@@ -85,6 +85,7 @@ def _pivot_raw_wide(raw_df: pd.DataFrame) -> pd.DataFrame:
             "GraphType",
             "MechType",
             "NNodes",
+            "SamplesPerTask",
             "SparsityParam",
             "SpectralDist",
             "KLDegreeDist",

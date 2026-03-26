@@ -20,7 +20,7 @@ from causal_meta.models.random.edge_prior import (
 from causal_meta.runners.logger.base import BaseLogger
 from causal_meta.runners.logger.local import LocalLogger
 from causal_meta.runners.logger.wandb import WandbLogger
-from causal_meta.runners.tasks import analysis, evaluation, inference, pre_training
+from causal_meta.runners.tasks import analysis, evaluation, pre_training
 from causal_meta.runners.utils.artifacts import resolve_output_dir
 from causal_meta.runners.utils.distributed import DistributedContext
 from causal_meta.runners.utils.env import log_environment_info
@@ -297,7 +297,7 @@ def run_pipeline(cfg: DictConfig) -> None:
                     find_unused_parameters=True,
                 )
 
-            # 5/6. Pre-training OR Inference
+            # 5/6. Pre-training (amortized models only)
             model_unwrapped_raw = model.module if is_distributed else model
             model_unwrapped = cast(BaseModel, model_unwrapped_raw)
             if not isinstance(model_unwrapped, BaseModel):
@@ -313,23 +313,15 @@ def run_pipeline(cfg: DictConfig) -> None:
                     logger=logger,
                     output_dir=base_output_dir,
                 )
-                inference_type = "Pre-Training"
-            else:
-                inference.run(
-                    cfg,
-                    model_unwrapped,
-                    data_module,
-                    logger=logger,
-                    output_dir=base_output_dir,
-                )
-                inference_type = "Inference"
-
-            if (not is_distributed) or dist_ctx.is_main_process:
-                log.info(f"--- Phase 1: {inference_type} ---")
+                if (not is_distributed) or dist_ctx.is_main_process:
+                    log.info("--- Phase 1: Pre-Training ---")
 
             # 7. Evaluation
             if (not is_distributed) or dist_ctx.is_main_process:
-                log.info("--- Phase 2: Evaluation ---")
+                if model_unwrapped.needs_pretraining:
+                    log.info("--- Phase 2: Evaluation ---")
+                else:
+                    log.info("--- Evaluation ---")
             evaluation.run(
                 cfg,
                 model,

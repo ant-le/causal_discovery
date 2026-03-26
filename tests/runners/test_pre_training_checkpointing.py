@@ -220,6 +220,9 @@ def test_augment_validation_group_metrics_adds_id_and_ood_means() -> None:
         "id_val_linear_er20/e-edgef1": 0.20,
         "id_val_neuralnet_er40/e-edgef1": 0.40,
         "ood_val_mechanism_periodic_er40/e-edgef1": 0.10,
+        "id_val_linear_er20/ne-sid": 0.12,
+        "id_val_neuralnet_er40/ne-sid": 0.18,
+        "ood_val_mechanism_periodic_er40/ne-sid": 0.25,
         "id_val_linear_er20/auc": 0.70,
         "id_val_neuralnet_er40/auc": 0.80,
         "ood_val_mechanism_periodic_er40/auc": 0.50,
@@ -232,5 +235,7 @@ def test_augment_validation_group_metrics_adds_id_and_ood_means() -> None:
 
     assert metrics["mean_id_e-edgef1"] == pytest.approx(0.30)
     assert metrics["mean_ood_e-edgef1"] == pytest.approx(0.10)
+    assert metrics["mean_id_ne-sid"] == pytest.approx(0.15)
+    assert metrics["mean_ood_ne-sid"] == pytest.approx(0.25)
     assert metrics["mean_id_auc"] == pytest.approx(0.75)
     assert metrics["mean_ood_auc"] == pytest.approx(0.50)

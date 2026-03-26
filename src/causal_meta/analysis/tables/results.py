@@ -13,14 +13,14 @@ log = logging.getLogger(__name__)
 
 def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
     """
-    Generates a LaTeX table comparing Models across Datasets for e-SHD and e-SID.
+    Generates a LaTeX table comparing Models across Datasets for normalized metrics.
     """
     # Filter for relevant metrics
-    metrics = ["e-shd", "e-sid"]
+    metrics = ["ne-shd", "ne-sid"]
     subset = df[df["Metric"].isin(metrics)].copy()
 
     if subset.empty:
-        log.warning("No e-shd/e-sid data for robustness table; skipping.")
+        log.warning("No ne-shd/ne-sid data for robustness table; skipping.")
         return
 
     models = sorted(subset["Model"].unique())
@@ -31,7 +31,7 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
     lines.append(r"\begin{table}[ht]")
     lines.append(r"\centering")
     lines.append(
-        r"\caption{Robustness Analysis: Structural metrics ($\mathbb{E}$-SHD and $\mathbb{E}$-SID) across in-distribution and OOD datasets. Lower is better.}"
+        r"\caption{Robustness Analysis: normalized structural metrics (normalized $\mathbb{E}$-SHD and normalized $\mathbb{E}$-SID) across in-distribution and OOD datasets. Lower is better.}"
     )
     lines.append(r"\label{tab:robustness}")
     lines.append(r"\resizebox{\textwidth}{!}{%")
@@ -48,12 +48,12 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
     header1 += (
         r" & \multicolumn{"
         + str(len(models))
-        + r"}{c}{\textbf{$\mathbb{E}$-SHD} $\downarrow$}"
+        + r"}{c}{\textbf{Normalized $\mathbb{E}$-SHD} $\downarrow$}"
     )
     header1 += (
         r" & \multicolumn{"
         + str(len(models))
-        + r"}{c}{\textbf{$\mathbb{E}$-SID} $\downarrow$}"
+        + r"}{c}{\textbf{Normalized $\mathbb{E}$-SID} $\downarrow$}"
     )
     header1 += r" \\"
     lines.append(header1)
@@ -100,7 +100,7 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
                 val = subset[
                     (subset["Dataset"] == ds)
                     & (subset["Model"] == m)
-                    & (subset["Metric"] == "e-shd")
+                    & (subset["Metric"] == "ne-shd")
                 ]["Mean"].iloc[0]
                 shd_vals.append(val)
             except (IndexError, KeyError):
@@ -111,7 +111,7 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
                 val = subset[
                     (subset["Dataset"] == ds)
                     & (subset["Model"] == m)
-                    & (subset["Metric"] == "e-sid")
+                    & (subset["Metric"] == "ne-sid")
                 ]["Mean"].iloc[0]
                 sid_vals.append(val)
             except (IndexError, KeyError):
@@ -127,15 +127,15 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
                 mean = subset[
                     (subset["Dataset"] == ds)
                     & (subset["Model"] == m)
-                    & (subset["Metric"] == "e-shd")
+                    & (subset["Metric"] == "ne-shd")
                 ]["Mean"].iloc[0]
                 sem = subset[
                     (subset["Dataset"] == ds)
                     & (subset["Model"] == m)
-                    & (subset["Metric"] == "e-shd")
+                    & (subset["Metric"] == "ne-shd")
                 ]["SEM"].iloc[0]
 
-                cell = rf"${mean:.1f} \pm {sem:.1f}$"
+                cell = rf"${mean:.3f} \pm {sem:.3f}$"
                 if abs(mean - min_shd) < 0.001:  # Best value
                     cell = r"\textbf{" + cell + "}"
                 row_str += f" & {cell}"
@@ -148,15 +148,15 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
                 mean = subset[
                     (subset["Dataset"] == ds)
                     & (subset["Model"] == m)
-                    & (subset["Metric"] == "e-sid")
+                    & (subset["Metric"] == "ne-sid")
                 ]["Mean"].iloc[0]
                 sem = subset[
                     (subset["Dataset"] == ds)
                     & (subset["Model"] == m)
-                    & (subset["Metric"] == "e-sid")
+                    & (subset["Metric"] == "ne-sid")
                 ]["SEM"].iloc[0]
 
-                cell = rf"${mean:.1f} \pm {sem:.1f}$"
+                cell = rf"${mean:.3f} \pm {sem:.3f}$"
                 if abs(mean - min_sid) < 0.001:  # Best value
                     cell = r"\textbf{" + cell + "}"
                 row_str += f" & {cell}"
@@ -182,7 +182,7 @@ def generate_distance_regression_table(
     df: pd.DataFrame,
     output_path: Path,
 ) -> None:
-    """Regress E-SID degradation on shift-distance predictors via OLS.
+    """Regress normalized E-SID degradation on shift-distance predictors via OLS.
 
     Produces a LaTeX table with R^2, coefficients, and p-values per model.
     Answers: *which type of distributional shift predicts degradation most strongly?*
@@ -194,13 +194,13 @@ def generate_distance_regression_table(
         log.warning("scipy not available; skipping distance regression table.")
         return
 
-    # Filter to E-SID metric only
+    # Filter to normalized E-SID metric only
     if df.empty or "Metric" not in df.columns:
         log.warning("Empty or column-less DataFrame for regression table; skipping.")
         return
-    sid_df = df[df["Metric"] == "e-sid"].copy()
+    sid_df = df[df["Metric"] == "ne-sid"].copy()
     if sid_df.empty:
-        log.warning("No E-SID data for regression table; skipping.")
+        log.warning("No normalized E-SID data for regression table; skipping.")
         return
 
     needed_cols = {"SpectralDist", "KLDegreeDist", "Model", "DatasetKey", "Mean"}
@@ -257,7 +257,7 @@ def generate_distance_regression_table(
     lines.append(r"\begin{table}[ht]")
     lines.append(r"\centering")
     lines.append(
-        r"\caption{OLS regression of $\mathbb{E}$-SID degradation on distributional"
+        r"\caption{OLS regression of normalized $\mathbb{E}$-SID degradation on distributional"
         r" distance measures. Degradation is computed relative to each model's mean"
         r" ID performance.}"
     )

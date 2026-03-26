@@ -90,8 +90,6 @@ def test_pipeline_integration_smoke(tmp_path):
             "inference": {
                 "n_samples": 2,
                 "inil_graph_samples": 1,
-                "use_cached_inference": False,
-                "cache_inference": False,
             },
         }
     )
@@ -177,8 +175,6 @@ def test_pipeline_falls_back_to_local_logger_when_wandb_init_fails(
             "inference": {
                 "n_samples": 2,
                 "inil_graph_samples": 1,
-                "use_cached_inference": False,
-                "cache_inference": False,
             },
         }
     )

@@ -14,8 +14,6 @@ def test_evaluation_writes_results_to_output_dir(tmp_path) -> None:
             "inference": {
                 "n_samples": 2,
                 "inil_graph_samples": 2,
-                "use_cached_inference": False,
-                "cache_inference": False,
             },
         }
     )
@@ -57,3 +55,4 @@ def test_evaluation_writes_results_to_output_dir(tmp_path) -> None:
     assert "summary" in payload
     assert "raw" in payload
     assert "test" in payload["summary"]
+    assert "graph_nll_per_edge_mean" in payload["summary"]["test"]

@@ -42,8 +42,6 @@ def test_random_pipeline_infers_training_sparsity_and_runs(tmp_path) -> None:
             "inference": {
                 "n_samples": 2,
                 "inil_graph_samples": 1,
-                "use_cached_inference": False,
-                "cache_inference": False,
             },
         }
     )

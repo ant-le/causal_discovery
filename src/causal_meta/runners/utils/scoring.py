@@ -68,6 +68,49 @@ class LinearGaussianScorer:
         self.variances.clamp_min_(1e-6)
         self.fitted = True
 
+    def _score_nll_impl(
+        self,
+        data: torch.Tensor,
+        intervention_target: int = -1,
+        intervention_value: float = 0.0,
+        *,
+        normalize_by_nodes: bool = False,
+    ) -> float:
+        if not self.fitted:
+            raise RuntimeError("Model must be fitted before scoring.")
+
+        _ = intervention_value
+        num_samples = data.shape[0]
+        total_nll = 0.0
+        scored_nodes = 0
+
+        for j in range(self.n_nodes):
+            if j == intervention_target:
+                continue
+
+            scored_nodes += 1
+            parents = torch.nonzero(self.adjacency[:, j], as_tuple=False).flatten()
+
+            if parents.numel() > 0:
+                pred = data[:, parents] @ self.weights[parents, j] + self.biases[j]
+            else:
+                pred = self.biases[j]
+
+            resid = data[:, j] - pred
+            term1 = 0.5 * torch.log(2 * torch.pi * self.variances[j])
+            term2 = (resid**2) / (2 * self.variances[j])
+
+            nll_j = term1 + term2
+            total_nll += nll_j.sum()
+
+        if num_samples <= 0:
+            return 0.0
+
+        avg_nll = float(total_nll.item() / num_samples)
+        if normalize_by_nodes and scored_nodes > 0:
+            avg_nll /= float(scored_nodes)
+        return avg_nll
+
     def score_nll(
         self,
         data: torch.Tensor,
@@ -85,38 +128,23 @@ class LinearGaussianScorer:
         Returns:
             float: Average NLL per sample.
         """
-        if not self.fitted:
-            raise RuntimeError("Model must be fitted before scoring.")
+        return self._score_nll_impl(
+            data,
+            intervention_target=intervention_target,
+            intervention_value=intervention_value,
+            normalize_by_nodes=False,
+        )
 
-        num_samples = data.shape[0]
-        total_nll = 0.0
-
-        for j in range(self.n_nodes):
-            if j == intervention_target:
-                # Skip scoring the intervened node (probability is 1.0 / delta)
-                # Or check if it matches value (usually assumed valid by generation)
-                continue
-
-            parents = torch.nonzero(self.adjacency[:, j], as_tuple=False).flatten()
-
-            # If parents include intervention target, use the intervention value
-            # In data, the target column should already have the value,
-            # so standard regression prediction works as long as 'data' is correct.
-            # However, we must ensure we use the *observational* weights (which we have).
-
-            # Predict
-            if parents.numel() > 0:
-                pred = data[:, parents] @ self.weights[parents, j] + self.biases[j]
-            else:
-                pred = self.biases[j]
-
-            # Gaussian Log Likelihood
-            # log p(x) = -0.5 * log(2pi) - 0.5 * log(var) - (x-mu)^2 / (2var)
-            resid = data[:, j] - pred
-            term1 = 0.5 * torch.log(2 * torch.pi * self.variances[j])
-            term2 = (resid**2) / (2 * self.variances[j])
-
-            nll_j = term1 + term2
-            total_nll += nll_j.sum()
-
-        return float(total_nll.item() / num_samples)
+    def score_nll_per_node(
+        self,
+        data: torch.Tensor,
+        intervention_target: int = -1,
+        intervention_value: float = 0.0,
+    ) -> float:
+        """Compute average NLL per sample and scored node."""
+        return self._score_nll_impl(
+            data,
+            intervention_target=intervention_target,
+            intervention_value=intervention_value,
+            normalize_by_nodes=True,
+        )

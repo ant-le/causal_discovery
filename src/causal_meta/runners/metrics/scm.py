@@ -33,7 +33,9 @@ class SCMMetrics(BaseMetrics):
 
     def __init__(self, metrics: List[str] | None = None) -> None:
         super().__init__()
-        self.metrics_list = metrics if metrics is not None else ["inil"]
+        self.metrics_list = (
+            metrics if metrics is not None else ["inil", "inil_per_node"]
+        )
         self._warned_linear_gaussian = False
 
     # ── Interventional data generation ────────────────────────────────
@@ -97,7 +99,12 @@ class SCMMetrics(BaseMetrics):
             family: SCMFamily used for on-the-fly generation (optional).
             seeds: Dataset seed(s) for on-the-fly generation (optional).
         """
-        if "inil" not in self.metrics_list:
+        enabled_metrics = {
+            metric
+            for metric in self.metrics_list
+            if metric in {"inil", "inil_per_node"}
+        }
+        if not enabled_metrics:
             return
 
         current_seeds: List[int] = []
@@ -145,12 +152,16 @@ class SCMMetrics(BaseMetrics):
     ) -> None:
         n_graph_samples = int(graph_samples.shape[0])
         task_nlls: List[float] = []
+        task_nlls_per_node: List[float] = []
 
         # Deduplicate graphs for efficiency
         flat = graph_samples.detach().to(dtype=torch.int8).reshape(n_graph_samples, -1)
         unique_flat, inverse = torch.unique(flat, dim=0, return_inverse=True)
 
         per_unique_nll: List[float] = [float("inf")] * int(unique_flat.shape[0])
+        per_unique_nll_per_node: List[float] = [float("inf")] * int(
+            unique_flat.shape[0]
+        )
 
         for u in range(int(unique_flat.shape[0])):
             adj = (
@@ -167,6 +178,7 @@ class SCMMetrics(BaseMetrics):
                 continue
 
             total_nll_k = 0.0
+            total_nll_per_node_k = 0.0
             total_samples = 0
 
             for item in interventional_data:
@@ -177,24 +189,40 @@ class SCMMetrics(BaseMetrics):
                 nll_avg = scorer.score_nll(
                     int_data_x, intervention_target=target, intervention_value=val
                 )
+                nll_per_node_avg = scorer.score_nll_per_node(
+                    int_data_x,
+                    intervention_target=target,
+                    intervention_value=val,
+                )
                 total_nll_k += nll_avg * int_data_x.shape[0]
+                total_nll_per_node_k += nll_per_node_avg * int_data_x.shape[0]
                 total_samples += int_data_x.shape[0]
 
             if total_samples > 0:
                 per_unique_nll[u] = total_nll_k / total_samples
+                per_unique_nll_per_node[u] = total_nll_per_node_k / total_samples
             else:
                 per_unique_nll[u] = 0.0
+                per_unique_nll_per_node[u] = 0.0
 
         for k in range(n_graph_samples):
             task_nlls.append(per_unique_nll[int(inverse[k].item())])
+            task_nlls_per_node.append(per_unique_nll_per_node[int(inverse[k].item())])
 
         # Aggregate: - log (mean ( exp ( - nlls ) ) )
-        if task_nlls:
-            nlls_t = torch.tensor(task_nlls)
-            valid_nlls = nlls_t[torch.isfinite(nlls_t)]
-            if valid_nlls.numel() > 0:
-                neg_nlls = -valid_nlls
-                log_sum_exp = torch.logsumexp(neg_nlls, dim=0)
-                inil_score = -(log_sum_exp - np.log(int(valid_nlls.numel())))
+        for metric_name, task_values in (
+            ("inil", task_nlls),
+            ("inil_per_node", task_nlls_per_node),
+        ):
+            if metric_name not in self.metrics_list or not task_values:
+                continue
 
-                self.history["inil"].append(inil_score.item())
+            nlls_t = torch.tensor(task_values)
+            valid_nlls = nlls_t[torch.isfinite(nlls_t)]
+            if valid_nlls.numel() == 0:
+                continue
+
+            neg_nlls = -valid_nlls
+            log_sum_exp = torch.logsumexp(neg_nlls, dim=0)
+            inil_score = -(log_sum_exp - np.log(int(valid_nlls.numel())))
+            self.history[metric_name].append(inil_score.item())

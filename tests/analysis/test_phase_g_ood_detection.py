@@ -38,11 +38,15 @@ def _make_raw_ood_df(
         shd = float(rng.normal(5.0, 1.0))
         sid = float(rng.normal(20.0, 2.0))
         nll = float(rng.normal(2.0, 0.5))
+        ne_shd = shd / 20.0
+        ne_sid = sid / 380.0
         for metric, val in [
             ("edge_entropy", entropy),
             ("e-shd", shd),
             ("e-sid", sid),
-            ("graph_nll", nll),
+            ("ne-shd", ne_shd),
+            ("ne-sid", ne_sid),
+            ("graph_nll_per_edge", nll),
         ]:
             rows.append(
                 {
@@ -70,11 +74,15 @@ def _make_raw_ood_df(
         shd = float(rng.normal(15.0, 2.0))
         sid = float(rng.normal(40.0, 4.0))
         nll = float(rng.normal(5.0, 1.0))
+        ne_shd = shd / 20.0
+        ne_sid = sid / 380.0
         for metric, val in [
             ("edge_entropy", entropy),
             ("e-shd", shd),
             ("e-sid", sid),
-            ("graph_nll", nll),
+            ("ne-shd", ne_shd),
+            ("ne-sid", ne_sid),
+            ("graph_nll_per_edge", nll),
         ]:
             rows.append(
                 {
@@ -173,7 +181,9 @@ class TestComputeOODDetectionMetrics:
 
     def test_graph_nll_score(self) -> None:
         raw_df = _make_raw_ood_df()
-        result = compute_ood_detection_metrics(raw_df, score_metric="graph_nll")
+        result = compute_ood_detection_metrics(
+            raw_df, score_metric="graph_nll_per_edge"
+        )
         assert not result.empty
         assert "AUROC" in result.columns
 
@@ -196,7 +206,7 @@ class TestComputeSelectivePrediction:
         assert "MeanValue" in result.columns
         assert "AccuracyMetric" in result.columns
         assert "Threshold" in result.columns
-        assert set(result["AccuracyMetric"]) == {"e-shd", "e-sid"}
+        assert set(result["AccuracyMetric"]) == {"ne-shd", "ne-sid"}
 
     def test_coverage_range(self) -> None:
         raw_df = _make_raw_ood_df()
@@ -211,7 +221,7 @@ class TestComputeSelectivePrediction:
         """Accepting only low-entropy predictions should give lower E-SHD."""
         raw_df = _make_raw_ood_df()
         result = compute_selective_prediction(raw_df, n_thresholds=50)
-        shd_result = result[result["AccuracyMetric"] == "e-shd"]
+        shd_result = result[result["AccuracyMetric"] == "ne-shd"]
         if len(shd_result) > 1:
             low_t = (
                 shd_result.sort_values(by="Coverage", ascending=True)
@@ -233,7 +243,7 @@ class TestComputeSelectivePrediction:
     def test_rejects_single_metric_mode(self) -> None:
         raw_df = _make_raw_ood_df()
         with pytest.raises(ValueError):
-            compute_selective_prediction(raw_df, accuracy_metrics=["e-shd"])
+            compute_selective_prediction(raw_df, accuracy_metrics=["ne-shd"])
 
 
 # ── generate_ood_detection_table ────────────────────────────────────────

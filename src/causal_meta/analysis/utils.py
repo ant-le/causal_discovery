@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -33,6 +34,15 @@ MODEL_NAME_MAP: dict[str, str] = {
     "dibs": "DiBS",
     "random": "Random",
     "random_smoke": "Random",
+    "bayesdag": "BayesDAG",
+}
+
+# Canonical thesis labels used in paper tables/figures.
+# Keys must match the directory names under experiments/thesis_runs/.
+PAPER_MODEL_LABELS: dict[str, str] = {
+    "avici": "AviCi-DG",
+    "bcnp": "BCNP-DG",
+    "dibs": "DiBS",
     "bayesdag": "BayesDAG",
 }
 
@@ -71,6 +81,35 @@ DATASET_DESCRIPTION_MAP: dict[str, str] = {
     "ood_both_sbm_periodic": "OOD-Both SBM Periodic",
 }
 
+GRAPH_DESCRIPTION_MAP: dict[str, str] = {
+    "er20": "ER-20",
+    "er40": "ER-40",
+    "er60": "ER-60",
+    "sf1": "SF-1",
+    "sf2": "SF-2",
+    "sf3": "SF-3",
+    "sbm": "SBM",
+}
+
+MECH_DESCRIPTION_MAP: dict[str, str] = {
+    "linear": "Linear",
+    "neuralnet": "NeuralNet",
+    "gpcde": "GP",
+    "periodic": "Periodic",
+    "square": "Square",
+    "logistic_map": "Logistic Map",
+    "pnl_tanh": "PNL (tanh)",
+}
+
+SHIFT_DESCRIPTION_MAP: dict[str, str] = {
+    "id": "ID",
+    "ood_graph": "OOD-Graph",
+    "ood_mech": "OOD-Mech",
+    "ood_both": "OOD-Both",
+    "ood_nodes": "OOD-Nodes",
+    "ood_samples": "OOD-Samples",
+}
+
 
 def map_model_name(raw_model: str) -> str:
     """Map a model key to a display name."""
@@ -85,7 +124,68 @@ def map_model_name(raw_model: str) -> str:
 
 def map_dataset_description(raw_dataset: str) -> str:
     """Map a dataset key to a human-readable description."""
-    return DATASET_DESCRIPTION_MAP.get(raw_dataset, raw_dataset)
+    if raw_dataset in DATASET_DESCRIPTION_MAP:
+        return DATASET_DESCRIPTION_MAP[raw_dataset]
+    generated = _auto_format_dataset_key(raw_dataset)
+    return generated if generated is not None else raw_dataset
+
+
+def _format_token(token: str, mapping: Mapping[str, str]) -> str:
+    mapped = mapping.get(token)
+    if mapped is not None:
+        return mapped
+    return token.replace("_", " ").title()
+
+
+def _auto_format_dataset_key(raw_dataset: str) -> str | None:
+    match = re.match(r"^(?P<body>.+?)_d(?P<d>\d+)_n(?P<n>\d+)$", raw_dataset)
+    if match is None:
+        return None
+
+    body = str(match.group("body"))
+    n_nodes = int(match.group("d"))
+    n_samples = int(match.group("n"))
+
+    shift_prefix = next(
+        (
+            prefix
+            for prefix in sorted(SHIFT_DESCRIPTION_MAP.keys(), key=len, reverse=True)
+            if body == prefix or body.startswith(f"{prefix}_")
+        ),
+        None,
+    )
+    if shift_prefix is None:
+        return None
+
+    remainder = body[len(shift_prefix) :].lstrip("_")
+    tokens = [token for token in remainder.split("_") if token]
+    if not tokens:
+        return None
+
+    graph_token: str | None = None
+    mech_token = ""
+    graph_positions = [
+        idx for idx, token in enumerate(tokens) if token in GRAPH_DESCRIPTION_MAP
+    ]
+    if not graph_positions:
+        return None
+
+    if shift_prefix in {"ood_graph", "ood_both"}:
+        graph_index = graph_positions[0]
+        graph_token = tokens[graph_index]
+        mech_token = "_".join(tokens[graph_index + 1 :])
+    else:
+        graph_index = graph_positions[-1]
+        graph_token = tokens[graph_index]
+        mech_token = "_".join(tokens[:graph_index])
+
+    pieces = [SHIFT_DESCRIPTION_MAP[shift_prefix]]
+    if mech_token:
+        pieces.append(_format_token(mech_token, MECH_DESCRIPTION_MAP))
+    if graph_token:
+        pieces.append(_format_token(graph_token, GRAPH_DESCRIPTION_MAP))
+    pieces.append(f"(d={n_nodes}, n={n_samples})")
+    return " ".join(pieces)
 
 
 def resolve_run_directories(
@@ -253,6 +353,7 @@ def load_runs_dataframe(
             graph_type = str(ds_fam.get("graph_type", "")) if ds_fam else ""
             mech_type = str(ds_fam.get("mech_type", "")) if ds_fam else ""
             n_nodes = ds_fam.get("n_nodes")
+            samples_per_task = ds_fam.get("samples_per_task")
             sparsity_param = ds_fam.get("sparsity_param")
 
             # Enrich with distributional distances (Phase D)
@@ -284,6 +385,11 @@ def load_runs_dataframe(
                         "GraphType": graph_type,
                         "MechType": mech_type,
                         "NNodes": int(n_nodes) if n_nodes is not None else None,
+                        "SamplesPerTask": (
+                            int(samples_per_task)
+                            if samples_per_task is not None
+                            else None
+                        ),
                         "SparsityParam": (
                             float(sparsity_param)
                             if sparsity_param is not None
@@ -393,6 +499,7 @@ def load_raw_task_dataframe(
             graph_type = str(ds_fam.get("graph_type", "")) if ds_fam else ""
             mech_type = str(ds_fam.get("mech_type", "")) if ds_fam else ""
             n_nodes = ds_fam.get("n_nodes")
+            samples_per_task = ds_fam.get("samples_per_task")
             sparsity_param = ds_fam.get("sparsity_param")
 
             ds_dist = _as_mapping(distances.get(dataset_key_str))
@@ -424,6 +531,11 @@ def load_raw_task_dataframe(
                             "GraphType": graph_type,
                             "MechType": mech_type,
                             "NNodes": (int(n_nodes) if n_nodes is not None else None),
+                            "SamplesPerTask": (
+                                int(samples_per_task)
+                                if samples_per_task is not None
+                                else None
+                            ),
                             "SparsityParam": (
                                 float(sparsity_param)
                                 if sparsity_param is not None
@@ -521,7 +633,7 @@ def generate_all_artifacts_from_runs(
     # Phase G: OOD detection analysis (needs raw per-task data)
     ood_raw_df = load_raw_task_dataframe(
         run_dirs,
-        metrics=["edge_entropy", "graph_nll", "e-shd", "e-sid"],
+        metrics=["edge_entropy", "graph_nll_per_edge", "ne-shd", "ne-sid"],
         require_per_task=True,
         skip_non_per_task=not strict,
     )
@@ -530,7 +642,7 @@ def generate_all_artifacts_from_runs(
         generate_entropy_histogram(ood_raw_df, output_dir / "entropy_histogram.png")
 
         # OOD detection AUROC/AUPRC table
-        for score in ("edge_entropy", "graph_nll"):
+        for score in ("edge_entropy", "graph_nll_per_edge"):
             detection_df = compute_ood_detection_metrics(ood_raw_df, score_metric=score)
             if not detection_df.empty:
                 generate_ood_detection_table(

@@ -1,8 +1,8 @@
 import torch
 from torch.utils.data import DataLoader
 
-from causal_meta.runners.tasks.pre_training import validate
 from causal_meta.datasets.utils import collate_fn_scm
+from causal_meta.runners.tasks.pre_training import validate
 
 
 class _DummyDataModule:
@@ -57,4 +57,34 @@ def test_pre_training_validate_uses_validation_loader() -> None:
     metrics = validate(model, data_module, torch.device("cpu"))
     assert data_module.val_called is True
     assert metrics["id/e-edgef1"] == 1.0  # empty prediction matches empty truth
+    assert metrics["id/ne-sid"] == 0.0
+    assert metrics["id/ne-shd"] == 0.0
+    assert metrics["ne-sid"] == 0.0
+    assert metrics["ne-shd"] == 0.0
     assert "mean_e-edgef1" in metrics
+
+
+def test_pre_training_validate_allows_normalized_metric_override() -> None:
+    n_nodes = 3
+    x = torch.zeros(5, n_nodes)
+    adj = torch.zeros(n_nodes, n_nodes)
+    loader = DataLoader(
+        [{"seed": 0, "data": x, "adjacency": adj}],
+        batch_size=1,
+        collate_fn=collate_fn_scm,
+    )
+
+    data_module = _DummyDataModule(loader)
+    model = _DummyModel(n_nodes=n_nodes)
+
+    metrics = validate(
+        model,
+        data_module,
+        torch.device("cpu"),
+        metrics=["ne-sid"],
+    )
+
+    assert metrics["id/ne-sid"] == 0.0
+    assert metrics["ne-sid"] == 0.0
+    assert "id/e-edgef1" not in metrics
+    assert "mean_e-edgef1" not in metrics

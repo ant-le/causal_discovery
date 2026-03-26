@@ -7,7 +7,6 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-import torch
 
 from causal_meta.datasets.data_module import CausalMetaModule
 from causal_meta.datasets.generators.configs import (
@@ -25,7 +24,6 @@ from causal_meta.runners.tasks.evaluation import (
     _extract_graph_type,
     _extract_mech_type,
     _extract_sparsity_param,
-    _prepare_cached_samples_for_metrics,
 )
 
 
@@ -256,45 +254,3 @@ class TestFamilyDistances:
         assert "fam_a" in result
         for key in ("spectral", "kl_degree", "mechanism"):
             assert math.isnan(result["fam_a"][key])
-
-
-# ── _prepare_cached_samples_for_metrics ──────────────────────────────────
-
-
-class TestPrepareCachedSamplesForMetrics:
-    def test_compatible_explicit_cache_shape(self) -> None:
-        artifact = {"graph_samples": torch.zeros(1, 8, 4, 4)}
-        prepared, cached_n = _prepare_cached_samples_for_metrics(
-            artifact,
-            requested_n_samples=5,
-        )
-        assert cached_n == 8
-        assert prepared is not None
-        assert tuple(prepared.shape) == (5, 1, 4, 4)
-
-    def test_incompatible_when_too_few_samples(self) -> None:
-        artifact = {"graph_samples": torch.zeros(1, 3, 4, 4)}
-        prepared, cached_n = _prepare_cached_samples_for_metrics(
-            artifact,
-            requested_n_samples=5,
-        )
-        assert prepared is None
-        assert cached_n == 3
-
-    def test_legacy_k_n_n_layout(self) -> None:
-        artifact = {"graph_samples": torch.zeros(7, 4, 4)}
-        prepared, cached_n = _prepare_cached_samples_for_metrics(
-            artifact,
-            requested_n_samples=6,
-        )
-        assert cached_n == 7
-        assert prepared is not None
-        assert tuple(prepared.shape) == (6, 1, 4, 4)
-
-    def test_missing_graph_samples_returns_none(self) -> None:
-        prepared, cached_n = _prepare_cached_samples_for_metrics(
-            {},
-            requested_n_samples=4,
-        )
-        assert prepared is None
-        assert cached_n is None

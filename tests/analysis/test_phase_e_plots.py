@@ -31,7 +31,15 @@ def _make_synthetic_df() -> pd.DataFrame:
         "ood_graph_sbm_linear": ("sbm", "linear", None, 1.2, 2.1),
         "ood_both_sbm_periodic": ("sbm", "periodic", None, 1.5, 3.0),
     }
-    metrics = ["e-shd", "e-sid", "edge_entropy", "auc"]
+    metrics = [
+        "e-shd",
+        "e-sid",
+        "ne-shd",
+        "ne-sid",
+        "edge_entropy",
+        "auc",
+        "graph_nll_per_edge",
+    ]
 
     for model in models:
         for dk, (gt, mt, sp, sd, kl) in datasets.items():
@@ -83,9 +91,9 @@ class TestOODCategory:
 class TestPivotMetrics:
     def test_pivot_produces_columns(self) -> None:
         df = _make_synthetic_df()
-        wide = _pivot_metrics(df, ["e-shd", "edge_entropy"])
+        wide = _pivot_metrics(df, ["ne-shd", "edge_entropy"])
         assert not wide.empty
-        assert "e-shd" in wide.columns
+        assert "ne-shd" in wide.columns
         assert "edge_entropy" in wide.columns
 
     def test_pivot_empty_on_missing_metric(self) -> None:

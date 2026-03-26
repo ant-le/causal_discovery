@@ -321,7 +321,7 @@ data:
 trainer:
   accumulate_grad_batches: 4
   validation_n_samples: 16
-  validation_metrics: [e-edgef1, e-sid, graph_nll]
+  validation_metrics: [e-edgef1, ne-sid, ne-shd]
   validation_log_per_family: false
   validation_selection_metric: mean_id_e-edgef1
 

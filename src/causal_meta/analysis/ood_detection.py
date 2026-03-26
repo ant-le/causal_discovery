@@ -1,7 +1,7 @@
 """OOD detection and selective prediction analysis.
 
 Treats the problem as binary classification (ID vs OOD) using posterior
-uncertainty measures (``edge_entropy``, ``graph_nll``) as detection scores.
+uncertainty measures (``edge_entropy``, ``graph_nll_per_edge``) as detection scores.
 Computes AUROC / AUPRC per model and generates selective prediction
 (accuracy-vs-coverage) Pareto frontiers.
 
@@ -54,6 +54,7 @@ def _pivot_raw_wide(
             "GraphType",
             "MechType",
             "NNodes",
+            "SamplesPerTask",
             "SparsityParam",
             "SpectralDist",
             "KLDegreeDist",
@@ -199,7 +200,7 @@ def compute_ood_detection_metrics(
 def compute_selective_prediction(
     raw_df: pd.DataFrame,
     score_metric: str = "edge_entropy",
-    accuracy_metrics: Sequence[str] = ("e-shd", "e-sid"),
+    accuracy_metrics: Sequence[str] = ("ne-shd", "ne-sid"),
     n_thresholds: int = 50,
 ) -> pd.DataFrame:
     """Compute selective prediction curves: accuracy vs coverage at varying thresholds.
@@ -211,7 +212,7 @@ def compute_selective_prediction(
         score_metric: Uncertainty metric (higher = less trustworthy).
         accuracy_metrics: Performance metrics to evaluate for accepted
             predictions. This function expects a multi-metric sequence
-            (for example ``["e-shd", "e-sid"]``).
+            (for example ``["ne-shd", "ne-sid"]``).
         n_thresholds: Number of threshold values to sweep.
 
     Returns:

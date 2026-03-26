@@ -9,6 +9,9 @@ steps: 1000
 seed: 0
 use_marginal: false
 xla_preallocate: false
+external_process: true
+external_python: ${oc.env:CAUSAL_META_DIBS_PYTHON,null}
+external_timeout_s: 3600
 
 # Default profile (used when dataset family cannot be mapped).
 alpha: 0.02

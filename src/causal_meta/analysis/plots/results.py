@@ -17,11 +17,19 @@ log = logging.getLogger(__name__)
 
 def generate_structural_figure(df: pd.DataFrame, output_path: Path) -> None:
     # ---------------------------------------------------------
-    # 1) Structural Metrics (e-shd, e-sid) - 1 Row, 2 Columns
+    # 1) Structural Metrics (ne-shd, ne-sid) - 1 Row, 2 Columns
     # ---------------------------------------------------------
     structural_metrics = [
-        ("e-shd", "Expected SHD", "Level 1: Graph Structure (SHD) ↓"),
-        ("e-sid", "Expected SID", "Level 2: Interventional Accuracy (SID) ↓"),
+        (
+            "ne-shd",
+            "Normalized E-SHD",
+            "Level 1: Graph Structure (normalized SHD) ↓",
+        ),
+        (
+            "ne-sid",
+            "Normalized E-SID",
+            "Level 2: Interventional Accuracy (normalized SID) ↓",
+        ),
     ]
 
     fig, axes = plt.subplots(1, 2, figsize=(18, 7), sharey=False)
@@ -96,7 +104,11 @@ def generate_performance_figure(df: pd.DataFrame, output_path: Path) -> None:
     # ---------------------------------------------------------
     other_metrics = [
         ("auc", "AUC", "Causal Discovery AUC ↑"),
-        ("graph_nll", "Graph NLL", "Graph Negative Log-Likelihood ↓"),
+        (
+            "graph_nll_per_edge",
+            "Graph NLL / edge",
+            "Graph Negative Log-Likelihood per edge ↓",
+        ),
         ("ancestor_f1", "Ancestor F1", "Ancestor F1 Score ↑"),
         ("e-edgef1", "Edge F1", "Expected Edge F1 Score ↑"),
         ("edge_entropy", "Entropy", "Edge Entropy ↓"),
@@ -107,7 +119,7 @@ def generate_performance_figure(df: pd.DataFrame, output_path: Path) -> None:
     axes_flat = axes.flatten()
 
     for idx, (metric_id, ylabel, title) in enumerate(other_metrics):
-        log_scale = metric_id == "graph_nll"
+        log_scale = metric_id == "graph_nll_per_edge"
         draw_point_plot(
             axes_flat[idx],
             df,
@@ -163,6 +175,7 @@ def _pivot_metrics(
             "GraphType",
             "MechType",
             "NNodes",
+            "SamplesPerTask",
             "SparsityParam",
             "SpectralDist",
             "KLDegreeDist",
@@ -184,13 +197,14 @@ def _pivot_metrics(
 
 
 def generate_calibration_scatter(df: pd.DataFrame, output_path: Path) -> None:
-    """Scatter plot of edge_entropy (x) vs e-shd (y) per model, coloured by OOD category.
+    """Scatter plot of edge_entropy (x) vs ne-shd (y) per model, coloured by OOD category.
 
-    An ideal calibrated model shows high entropy → high SHD and low entropy →
-    low SHD.  Overconfident OOD predictions cluster at low-entropy / high-SHD.
+    An ideal calibrated model shows high entropy → high normalized SHD and low
+    entropy → low normalized SHD. Overconfident OOD predictions cluster at
+    low-entropy / high-error regions.
     """
-    wide = _pivot_metrics(df, ["edge_entropy", "e-shd"])
-    if wide.empty or "edge_entropy" not in wide.columns or "e-shd" not in wide.columns:
+    wide = _pivot_metrics(df, ["edge_entropy", "ne-shd"])
+    if wide.empty or "edge_entropy" not in wide.columns or "ne-shd" not in wide.columns:
         log.warning("Insufficient data for calibration scatter; skipping.")
         return
 
@@ -221,7 +235,7 @@ def generate_calibration_scatter(df: pd.DataFrame, output_path: Path) -> None:
                 continue
             ax.scatter(
                 cdf["edge_entropy"],
-                cdf["e-shd"],
+                cdf["ne-shd"],
                 label=cat,
                 color=colour,
                 s=60,
@@ -230,7 +244,7 @@ def generate_calibration_scatter(df: pd.DataFrame, output_path: Path) -> None:
                 linewidths=0.3,
             )
         ax.set_xlabel("Edge Entropy", fontsize=11)
-        ax.set_ylabel("E-SHD ↓", fontsize=11)
+        ax.set_ylabel("Normalized E-SHD ↓", fontsize=11)
         ax.set_title(model, fontsize=13, fontweight="bold")
         ax.grid(True, linestyle="--", alpha=0.4)
 
@@ -257,13 +271,13 @@ def generate_calibration_scatter(df: pd.DataFrame, output_path: Path) -> None:
 
 
 def generate_distance_degradation_scatter(df: pd.DataFrame, output_path: Path) -> None:
-    """Scatter of spectral distance (x) vs E-SID degradation relative to ID mean (y).
+    """Scatter of spectral distance (x) vs normalized E-SID degradation (y).
 
     One series per model with a linear trend line.  This is the key figure that
     upgrades the analysis from categorical to quantitative.
     """
-    wide = _pivot_metrics(df, ["e-sid"])
-    if wide.empty or "e-sid" not in wide.columns:
+    wide = _pivot_metrics(df, ["ne-sid"])
+    if wide.empty or "ne-sid" not in wide.columns:
         log.warning("Insufficient data for distance-degradation scatter; skipping.")
         return
 
@@ -277,15 +291,15 @@ def generate_distance_degradation_scatter(df: pd.DataFrame, output_path: Path) -
     if not group_cols:
         group_cols = ["Model"]
 
-    # Compute per-run/per-model ID baseline (mean E-SID across ID datasets)
+    # Compute per-run/per-model ID baseline (mean normalized E-SID across ID datasets)
     id_means = (
         wide[wide["OODCategory"] == "ID"]
-        .groupby(group_cols)["e-sid"]
+        .groupby(group_cols)["ne-sid"]
         .mean()
         .rename("id_baseline")
     )
     wide = wide.merge(id_means, on=group_cols, how="left")
-    wide["degradation"] = wide["e-sid"] - wide["id_baseline"]
+    wide["degradation"] = wide["ne-sid"] - wide["id_baseline"]
 
     # OOD-only fit/scatter (ID rows define the baseline and are not fit points).
     plot_df = wide[wide["OODCategory"] != "ID"].dropna(
@@ -346,7 +360,9 @@ def generate_distance_degradation_scatter(df: pd.DataFrame, output_path: Path) -
             )
 
     ax.set_xlabel("Spectral Distance from Training Distribution", fontsize=12)
-    ax.set_ylabel("E-SID Degradation (vs. ID baseline) ↑ = worse", fontsize=12)
+    ax.set_ylabel(
+        "Normalized E-SID Degradation (vs. ID baseline) ↑ = worse", fontsize=12
+    )
     ax.set_title("Shift Distance vs. OOD Degradation", fontsize=14, fontweight="bold")
     ax.axhline(0, color="grey", linestyle=":", alpha=0.5)
     ax.grid(True, linestyle="--", alpha=0.4)
@@ -359,17 +375,17 @@ def generate_distance_degradation_scatter(df: pd.DataFrame, output_path: Path) -
     log.info("Saved distance-degradation scatter to %s", output_path)
 
 
-# ── E.6  Density-stratified E-SID plot (S6) ────────────────────────────
+# ── E.6  Density-stratified normalized E-SID plot (S6) ─────────────────
 
 
 def generate_density_stratified_figure(df: pd.DataFrame, output_path: Path) -> None:
-    """Plot E-SID vs sparsity level for each model.
+    """Plot normalized E-SID vs sparsity level for each model.
 
     Uses the ER families that vary sparsity (ER20/40/60) at fixed n_nodes=20.
     One line per model, x-axis = SparsityParam.
     """
-    wide = _pivot_metrics(df, ["e-sid"])
-    if wide.empty or "e-sid" not in wide.columns:
+    wide = _pivot_metrics(df, ["ne-sid"])
+    if wide.empty or "ne-sid" not in wide.columns:
         log.warning("Insufficient data for density-stratified plot; skipping.")
         return
 
@@ -395,7 +411,7 @@ def generate_density_stratified_figure(df: pd.DataFrame, output_path: Path) -> N
         mdf = er_df[er_df["Model"] == model].sort_values("SparsityParam")
         # Group by sparsity level in case there are multiple mech types
         grouped = (
-            mdf.groupby("SparsityParam")["e-sid"].agg(["mean", "sem"]).reset_index()
+            mdf.groupby("SparsityParam")["ne-sid"].agg(["mean", "sem"]).reset_index()
         )
         colour = cmap(i)
         ax.errorbar(
@@ -411,7 +427,7 @@ def generate_density_stratified_figure(df: pd.DataFrame, output_path: Path) -> N
         )
 
     ax.set_xlabel("Sparsity Parameter (edge probability / expected edges)", fontsize=12)
-    ax.set_ylabel("E-SID ↓", fontsize=12)
+    ax.set_ylabel("Normalized E-SID ↓", fontsize=12)
     ax.set_title(
         "Performance vs. Graph Density (ER families)", fontsize=14, fontweight="bold"
     )
@@ -661,7 +677,7 @@ def generate_selective_prediction_pareto(
 
     df = pareto_df.copy()
     if "AccuracyMetric" not in df.columns:
-        df["AccuracyMetric"] = "e-shd"
+        df["AccuracyMetric"] = "ne-shd"
 
     metric_order = sorted(df["AccuracyMetric"].dropna().unique())
     if not metric_order:
@@ -716,7 +732,11 @@ def generate_selective_prediction_pareto(
             )
 
         metric_label = metric.replace("-", "-").upper()
-        if metric == "e-shd":
+        if metric == "ne-shd":
+            y_label = "Mean normalized E-SHD of accepted predictions ↓"
+        elif metric == "ne-sid":
+            y_label = "Mean normalized E-SID of accepted predictions ↓"
+        elif metric == "e-shd":
             y_label = "Mean E-SHD of accepted predictions ↓"
         elif metric == "e-sid":
             y_label = "Mean E-SID of accepted predictions ↓"
