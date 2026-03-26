@@ -42,6 +42,16 @@ def main() -> None:
     input_payload = np.load(input_path)
     data = _validate_data(input_payload["data"], num_nodes=int(config["num_nodes"]))
 
+    # Log JAX backend info early so GPU vs CPU is immediately visible.
+    import jax  # noqa: E402 — deferred to keep startup fast when unused
+
+    jax_devices = jax.devices()
+    log.info(
+        "JAX backend: platform=%s, devices=%s",
+        jax_devices[0].platform if jax_devices else "none",
+        [str(d) for d in jax_devices],
+    )
+
     log.info(
         "DiBS external bootstrap: samples=%d, num_nodes=%d, num_samples=%d, mode=%s, steps=%d, n_particles=%s",
         int(data.shape[0]),

@@ -46,8 +46,8 @@ def infer_device(model: nn.Module, dist_ctx: DistributedContext) -> torch.device
 
 def sampling_mode(model: BaseModel) -> str:
     """Return ``"external"`` if the model uses an external Python process."""
-    external_python = getattr(model, "external_python", None)
-    return "external" if external_python else "in_process"
+    external_process = getattr(model, "external_process", False)
+    return "external" if external_process else "in_process"
 
 
 # ── Data / sharding helpers ───────────────────────────────────────────

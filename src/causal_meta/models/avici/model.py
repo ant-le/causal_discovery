@@ -410,9 +410,9 @@ class AviciModel(BaseModel):
             logp_edges = logp_edges.masked_fill(pad_edges, float("-inf"))
         spectral_radii = self._acyclicity_spectral_log(logp_edges)
         ave_acyc_penalty = spectral_radii.mean()
-        wgt_acyc_penalty = (
-            self.regulariser_weight.to(dtype=logits.dtype) * ave_acyc_penalty
-        )
+        # Use the current weight as a plain float so that inplace updates in
+        # ``update_regulariser_weight`` cannot invalidate the autograd graph.
+        wgt_acyc_penalty = float(self.regulariser_weight.item()) * ave_acyc_penalty
 
         if update_regulariser:
             self.update_regulariser_weight(ave_acyc_penalty)

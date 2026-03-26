@@ -141,6 +141,33 @@ def test_avici_acyclicity_regularizer_is_differentiable() -> None:
     assert float(logits.grad.abs().sum().item()) > 0.0
 
 
+def test_avici_backward_safe_with_regulariser_update() -> None:
+    """Verify that backward() succeeds when update_regulariser=True.
+
+    Regression test: inplace updates to ``regulariser_weight`` inside
+    ``calculate_loss`` previously caused a RuntimeError during backward
+    because the autograd graph version check failed.
+    """
+    torch.manual_seed(0)
+    model = causal_meta.models.AviciModel(
+        num_nodes=5,
+        d_model=8,
+        nhead=2,
+        num_layers=2,
+        regulariser_lr=1e-4,
+        regulariser_ema_alpha=1.0,
+        regulariser_warmup_updates=0,
+    )
+    model.regulariser_weight.data = torch.tensor(1.0)
+
+    x = torch.randn(2, 50, 5)
+    target = torch.zeros(2, 5, 5)
+
+    output = model(x)
+    loss = model.calculate_loss(output, target, update_regulariser=True).mean()
+    loss.backward()  # should not raise RuntimeError
+
+
 def test_avici_regulariser_update_uses_warmup() -> None:
     model = causal_meta.models.AviciModel(
         num_nodes=5,
@@ -151,12 +178,14 @@ def test_avici_regulariser_update_uses_warmup() -> None:
         regulariser_ema_alpha=1.0,
         regulariser_warmup_updates=4,
     )
-    logits = torch.full((2, 5, 5), 0.1)
-    target = torch.zeros(2, 5, 5)
 
-    _ = model.calculate_loss(logits, target, update_regulariser=True)
+    # Drive the weight upward with a known positive penalty so the test does
+    # not depend on the random seed used inside the spectral power iteration.
+    penalty = torch.tensor(2.0)
+
+    model.update_regulariser_weight(penalty)
     first_weight = float(model.regulariser_weight.item())
-    _ = model.calculate_loss(logits, target, update_regulariser=True)
+    model.update_regulariser_weight(penalty)
     second_weight = float(model.regulariser_weight.item())
 
     assert first_weight > 0.0

@@ -285,12 +285,17 @@ class DiBSModel(BaseModel):
                     str(input_path),
                 ]
 
+                env = os.environ.copy()
+                # Ensure JAX in the subprocess initialises the CUDA/GPU
+                # backend instead of silently falling back to CPU.
+                env.setdefault("JAX_PLATFORMS", "cuda,cpu")
+
                 try:
                     subprocess.run(
                         cmd,
                         check=True,
                         timeout=self.external_timeout_s,
-                        env=os.environ.copy(),
+                        env=env,
                     )
                 except FileNotFoundError as exc:
                     raise RuntimeError(
