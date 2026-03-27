@@ -242,6 +242,7 @@ def _prepare_raw_dataframe(run_dirs: Sequence[Path]) -> pd.DataFrame:
         "sparsity_ratio",
         "skeleton_f1",
         "orientation_accuracy",
+        "valid_dag_pct",
     ]
     raw_df = load_raw_task_dataframe(
         run_dirs,
@@ -268,7 +269,9 @@ def generate_results_anchor_table(
 
     subset = raw_df[
         raw_df["AxisCategory"].eq("id")
-        & raw_df["Metric"].isin(["ne-sid", "ne-shd", "e-edgef1", "inference_time_s"])
+        & raw_df["Metric"].isin(
+            ["ne-sid", "ne-shd", "e-edgef1", "valid_dag_pct", "inference_time_s"]
+        )
     ].copy()
     if subset.empty:
         raise EmptyAnalysisDataError(
@@ -285,6 +288,7 @@ def generate_results_anchor_table(
         ("ne-sid", r"Normalized \mathbb{E}-SID", False),
         ("ne-shd", r"Normalized \mathbb{E}-SHD", False),
         ("e-edgef1", r"\mathbb{E}-Edge F1", True),
+        ("valid_dag_pct", r"Valid DAG (\%)", True),
         ("inference_time_s", r"Runtime / dataset", False),
     ]
 
@@ -293,9 +297,9 @@ def generate_results_anchor_table(
         r"\centering",
         r"\caption{Speed--robustness anchor on the in-distribution families. Values report task-level means and standard errors aggregated over all in-distribution tasks.}",
         r"\label{tab:results_anchor}",
-        r"\begin{tabular}{lcccc}",
+        r"\begin{tabular}{lccccc}",
         r"\toprule",
-        r"\textbf{Model} & \textbf{Normalized $\mathbb{E}$-SID $\downarrow$} & \textbf{Normalized $\mathbb{E}$-SHD $\downarrow$} & \textbf{$\mathbb{E}$-Edge F1 $\uparrow$} & \textbf{Runtime / dataset $\downarrow$} \\",
+        r"\textbf{Model} & \textbf{Normalized $\mathbb{E}$-SID $\downarrow$} & \textbf{Normalized $\mathbb{E}$-SHD $\downarrow$} & \textbf{$\mathbb{E}$-Edge F1 $\uparrow$} & \textbf{Valid DAG (\%) $\uparrow$} & \textbf{Runtime / dataset $\downarrow$} \\",
         r"\midrule",
     ]
 

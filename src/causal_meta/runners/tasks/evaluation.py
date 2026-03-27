@@ -396,6 +396,7 @@ def run(
             "sparsity_ratio",
             "skeleton_f1",
             "orientation_accuracy",
+            "valid_dag_pct",
             "ece",
         ],
         auc_num_shuffles=auc_num_shuffles,

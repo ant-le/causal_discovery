@@ -12,6 +12,7 @@ from causal_meta.runners.metrics.graph import (
     expected_calibration_error,
     skeleton_orientation_scores,
     sparsity_ratio,
+    valid_dag_rate,
 )
 
 
@@ -313,6 +314,65 @@ class TestExpectedCalibrationError:
             pass
 
 
+# ── valid_dag_rate ──────────────────────────────────────────────────────
+
+
+class TestValidDagRate:
+    """Tests for DAG-validity rate over posterior samples."""
+
+    def test_all_samples_are_valid_dags(self) -> None:
+        target = torch.tensor([[[0, 1], [0, 0]]], dtype=torch.float32)
+        pred = torch.tensor(
+            [
+                [[[0, 1], [0, 0]]],
+                [[[0, 0], [0, 0]]],
+            ],
+            dtype=torch.float32,
+        )
+
+        rate = valid_dag_rate(target, pred)
+        assert abs(rate[0].item() - 1.0) < 1e-6
+
+    def test_all_samples_are_invalid(self) -> None:
+        target = torch.tensor([[[0, 1], [0, 0]]], dtype=torch.float32)
+        pred = torch.tensor(
+            [
+                [[[0, 1], [1, 0]]],
+                [[[1, 0], [0, 0]]],
+            ],
+            dtype=torch.float32,
+        )
+
+        rate = valid_dag_rate(target, pred)
+        assert abs(rate[0].item() - 0.0) < 1e-6
+
+    def test_mixed_validity_rate(self) -> None:
+        target = torch.tensor(
+            [
+                [[0, 1], [0, 0]],
+                [[0, 1], [0, 0]],
+            ],
+            dtype=torch.float32,
+        )
+        pred = torch.tensor(
+            [
+                [
+                    [[0, 1], [0, 0]],
+                    [[0, 1], [1, 0]],
+                ],
+                [
+                    [[0, 1], [1, 0]],
+                    [[0, 1], [0, 0]],
+                ],
+            ],
+            dtype=torch.float32,
+        )
+
+        rate = valid_dag_rate(target, pred)
+        assert abs(rate[0].item() - 0.5) < 1e-6
+        assert abs(rate[1].item() - 0.5) < 1e-6
+
+
 # ── Integration: Metrics class with new keys ───────────────────────────
 
 
@@ -326,6 +386,7 @@ class TestMetricsClassNewKeys:
             "sparsity_ratio",
             "skeleton_f1",
             "orientation_accuracy",
+            "valid_dag_pct",
             "ece",
         ]:
             assert key in m.metrics_list, f"{key} not in default metrics_list"
@@ -345,6 +406,7 @@ class TestMetricsClassNewKeys:
                 "sparsity_ratio",
                 "skeleton_f1",
                 "orientation_accuracy",
+                "valid_dag_pct",
                 "ece",
             ]
         )
@@ -360,14 +422,16 @@ class TestMetricsClassNewKeys:
             "sparsity_ratio",
             "skeleton_f1",
             "orientation_accuracy",
+            "valid_dag_pct",
             "ece",
         ]:
             assert key in result, f"{key} missing from batch metrics output"
             assert isinstance(result[key], float), f"{key} is not a float"
+        assert abs(result["valid_dag_pct"] - 100.0) < 1e-6
 
     def test_update_and_compute_flow(self) -> None:
         """Full update → compute cycle with new metrics."""
-        m = Metrics(metrics=["fp_count", "skeleton_f1", "ece"])
+        m = Metrics(metrics=["fp_count", "skeleton_f1", "valid_dag_pct", "ece"])
         target = torch.tensor([[[0, 1, 0], [0, 0, 1], [0, 0, 0]]], dtype=torch.float32)
         pred = torch.tensor([[[[0, 1, 0], [0, 0, 1], [0, 0, 0]]]], dtype=torch.float32)
 
@@ -377,6 +441,7 @@ class TestMetricsClassNewKeys:
         result = m.compute(summary_stats=True)
         assert "fp_count_mean" in result
         assert "skeleton_f1_mean" in result
+        assert "valid_dag_pct_mean" in result
         assert "ece_mean" in result
 
     def test_selective_metrics_no_crash(self) -> None:

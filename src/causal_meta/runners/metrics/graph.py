@@ -556,6 +556,7 @@ class Metrics(BaseMetrics):
                 "sparsity_ratio",
                 "skeleton_f1",
                 "orientation_accuracy",
+                "valid_dag_pct",
                 "ece",
             ]
         )
@@ -662,6 +663,11 @@ class Metrics(BaseMetrics):
         if "ece" in self.metrics_list:
             batch_metrics["ece"] = float(
                 expected_calibration_error(targets, samples).item()
+            )
+
+        if "valid_dag_pct" in self.metrics_list:
+            batch_metrics["valid_dag_pct"] = float(
+                100.0 * valid_dag_rate(targets, samples).mean().item()
             )
 
         return batch_metrics
@@ -933,3 +939,38 @@ def expected_calibration_error(
         ece_per_graph[b] = ece
 
     return ece_per_graph.mean()
+
+
+def valid_dag_rate(target: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
+    """Fraction of posterior graph samples that are valid DAGs.
+
+    Args:
+        target: (B, N, N) ground truth binary adjacency.
+        pred: (S, B, N, N) sampled binary adjacency.
+
+    Returns:
+        Tensor of shape ``(B,)`` with per-task fractions in ``[0, 1]``.
+    """
+    if target.ndim != 3 or pred.ndim != 4:
+        raise ValueError("target must be 3D and pred must be 4D.")
+    if pred.shape[1:] != target.shape:
+        raise ValueError(
+            "pred shape must be (num_samples, batch, N, N) matching target."
+        )
+
+    num_samples, batch_size, n_nodes, _ = pred.shape
+    pred_flat = (pred > 0.5).reshape(num_samples * batch_size, n_nodes, n_nodes)
+
+    # Compute transitive closure without masking diagonal; a diagonal True entry
+    # indicates a directed cycle (including explicit self-loops).
+    reach = pred_flat
+    if n_nodes > 1:
+        steps = int(math.ceil(math.log2(n_nodes)))
+        reach_f = reach.to(dtype=torch.float32)
+        for _ in range(steps):
+            reach = reach | (reach_f @ reach_f > 0)
+            reach_f = reach.to(dtype=torch.float32)
+
+    has_cycle = torch.diagonal(reach, dim1=-2, dim2=-1).any(dim=-1)
+    is_dag = (~has_cycle).to(dtype=torch.float32)
+    return is_dag.view(num_samples, batch_size).mean(dim=0)

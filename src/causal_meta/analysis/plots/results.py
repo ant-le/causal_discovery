@@ -112,9 +112,13 @@ def generate_performance_figure(df: pd.DataFrame, output_path: Path) -> None:
         ("ancestor_f1", "Ancestor F1", "Ancestor F1 Score ↑"),
         ("e-edgef1", "Edge F1", "Expected Edge F1 Score ↑"),
         ("edge_entropy", "Entropy", "Edge Entropy ↓"),
+        (
+            "valid_dag_pct",
+            "Valid DAG (%)",
+            "Valid DAG Samples (%) ↑",
+        ),
     ]
 
-    # 2 rows, 3 columns = 6 slots. We have 5 metrics.
     fig, axes = plt.subplots(2, 3, figsize=(20, 12))
     axes_flat = axes.flatten()
 
@@ -127,18 +131,24 @@ def generate_performance_figure(df: pd.DataFrame, output_path: Path) -> None:
             ylabel,
             title,
             log_scale=log_scale,
-            show_legend=False,  # We'll add a shared legend in the empty slot
+            show_legend=False,
         )
 
-    # Handle the legend. We can put it in the 6th (empty) slot.
+    # Shared legend for the full figure.
     handles, labels = axes_flat[0].get_legend_handles_labels()
     if handles:
-        axes_flat[5].legend(handles, labels, title="Model", loc="center", fontsize=12)
-        axes_flat[5].axis("off")  # Hide the axis for the legend slot
-    else:
-        axes_flat[5].axis("off")
+        fig.legend(
+            handles,
+            labels,
+            title="Model",
+            loc="center",
+            bbox_to_anchor=(0.5, 0.97),
+            ncol=len(labels),
+            fontsize=12,
+            frameon=False,
+        )
 
-    plt.tight_layout()
+    plt.tight_layout(rect=(0, 0, 1, 0.94))
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
     log.info("Saved %s", output_path)

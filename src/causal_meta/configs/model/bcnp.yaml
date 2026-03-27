@@ -17,7 +17,8 @@ num_layers_decoder: 4
 
 # Sinkhorn permutation sampling.
 n_perm_samples: 100
-sinkhorn_iter: 20
+# Match the BCNP training setup reported in the meta-learning paper.
+sinkhorn_iter: 1000
 q_before_l: true
 
 # Optional internal BCNP tensor diagnostics.

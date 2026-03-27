@@ -92,6 +92,22 @@ def run(
     # Unwrap model for attribute access
     model_unwrapped = unwrap_model(model)
 
+    total_params, trainable_params = _count_parameters(model_unwrapped)
+
+    if rank == 0:
+        log.info(
+            "Model parameters | total=%s | trainable=%s",
+            f"{total_params:,}",
+            f"{trainable_params:,}",
+        )
+        if logger:
+            logger.log_hyperparams(
+                {
+                    "model/total_parameters": total_params,
+                    "model/trainable_parameters": trainable_params,
+                }
+            )
+
     if not model_unwrapped.needs_pretraining:
         if rank == 0:
             log.info("Model does not require pre-training. Exiting.")
@@ -728,6 +744,14 @@ def _compute_grad_norm(parameters: Iterable[torch.nn.Parameter]) -> float:
         grad = param.grad.detach()
         total += float(torch.sum(grad * grad).item())
     return float(total**0.5)
+
+
+def _count_parameters(model: nn.Module) -> tuple[int, int]:
+    total = sum(param.numel() for param in model.parameters())
+    trainable = sum(
+        param.numel() for param in model.parameters() if param.requires_grad
+    )
+    return total, trainable
 
 
 def _current_learning_rate(optimizer: optim.Optimizer) -> float:
