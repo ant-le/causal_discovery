@@ -27,7 +27,7 @@ from causal_meta.runners.utils.seeding import get_experiment_seed
 
 log = logging.getLogger(__name__)
 
-DEFAULT_VALIDATION_METRICS = ("e-edgef1", "ne-sid", "ne-shd")
+DEFAULT_VALIDATION_METRICS = ("e-edgef1", "ne-sid", "ne-shd", "valid_dag_pct")
 DEFAULT_VALIDATION_GROUP_PREFIXES = {
     "id": ("id_",),
     "ood_graph": ("ood_graph_",),

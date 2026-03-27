@@ -59,8 +59,10 @@ def test_pre_training_validate_uses_validation_loader() -> None:
     assert metrics["id/e-edgef1"] == 1.0  # empty prediction matches empty truth
     assert metrics["id/ne-sid"] == 0.0
     assert metrics["id/ne-shd"] == 0.0
+    assert metrics["id/valid_dag_pct"] == 100.0
     assert metrics["ne-sid"] == 0.0
     assert metrics["ne-shd"] == 0.0
+    assert metrics["valid_dag_pct"] == 100.0
     assert "mean_e-edgef1" in metrics
 
 
@@ -87,4 +89,5 @@ def test_pre_training_validate_allows_normalized_metric_override() -> None:
     assert metrics["id/ne-sid"] == 0.0
     assert metrics["ne-sid"] == 0.0
     assert "id/e-edgef1" not in metrics
+    assert "id/valid_dag_pct" not in metrics
     assert "mean_e-edgef1" not in metrics
