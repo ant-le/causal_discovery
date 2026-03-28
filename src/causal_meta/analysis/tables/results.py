@@ -14,6 +14,9 @@ log = logging.getLogger(__name__)
 def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
     """
     Generates a LaTeX table comparing Models across Datasets for normalized metrics.
+
+    Rows are grouped by OOD category (ID first, then OOD groups) with ``\\midrule``
+    separators between groups.  Per-column best values are bolded.
     """
     # Filter for relevant metrics
     metrics = ["ne-shd", "ne-sid"]
@@ -26,7 +29,29 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
     models = sorted(subset["Model"].unique())
     datasets = sorted(subset["Dataset"].unique())
 
-    # Start building LaTeX
+    # ── Classify each dataset into an OOD group for row ordering ───────
+    # Build DatasetKey→Dataset map from the dataframe
+    dk_map: dict[str, str] = {}
+    if "DatasetKey" in subset.columns:
+        for _, row in subset[["DatasetKey", "Dataset"]].drop_duplicates().iterrows():
+            dk_map[str(row["Dataset"])] = str(row["DatasetKey"])
+
+    def _row_ood_group(ds_name: str) -> str:
+        dk = dk_map.get(ds_name, ds_name)
+        return _ood_category(dk, binary=True)  # "ID" or "OOD"
+
+    # Sort: ID datasets first, then OOD, alphabetically within each group
+    id_datasets = sorted([d for d in datasets if _row_ood_group(d) == "ID"])
+    ood_datasets = sorted([d for d in datasets if _row_ood_group(d) != "ID"])
+
+    col_best: dict[str, float] = {}
+    for metric in metrics:
+        metric_vals = subset[subset["Metric"] == metric]["Mean"].dropna()
+        col_best[metric] = (
+            float(metric_vals.min()) if not metric_vals.empty else float("inf")
+        )
+
+    # ── Build LaTeX ────────────────────────────────────────────────────
     lines = []
     lines.append(r"\begin{table}[ht]")
     lines.append(r"\centering")
@@ -37,8 +62,6 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
     lines.append(r"\resizebox{\textwidth}{!}{%")
 
     # Column definition: Dataset + (2 metrics * N models)
-    # We group by Metric -> Model
-    # Columns: Dataset | SHD (Model1...ModelN) | SID (Model1...ModelN)
     col_def = "l" + ("c" * len(models)) + "|" + ("c" * len(models))
     lines.append(r"\begin{tabular}{" + col_def + "}")
     lines.append(r"\toprule")
@@ -60,19 +83,14 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
 
     # Header Row 2: Models
     header2 = ""
-    # For SHD
     header2 += r" & " + " & ".join(
         [r"\textbf{" + m.replace("_", r"\_") + "}" for m in models]
     )
-    # For SID
     header2 += r" & " + " & ".join(
         [r"\textbf{" + m.replace("_", r"\_") + "}" for m in models]
     )
     header2 += r" \\"
 
-    # Midrule spanning the metric groups
-    # SHD columns: 2 to 1+len(models)
-    # SID columns: 2+len(models) to 1+2*len(models)
     lines.append(
         r"\cmidrule(lr){2-"
         + str(1 + len(models))
@@ -85,86 +103,60 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
     lines.append(header2)
     lines.append(r"\midrule")
 
-    # Data Rows
-    for ds in datasets:
-        row_str = ds.replace("_", r"\_")
+    def _emit_rows(ds_list: list[str]) -> None:
+        for ds in ds_list:
+            row_str = ds.replace("_", r"\_")
 
-        # Collect values to find best (lowest) per metric per row
-        shd_vals = []
-        sid_vals = []
+            # SHD Columns
+            for m in models:
+                try:
+                    mean = subset[
+                        (subset["Dataset"] == ds)
+                        & (subset["Model"] == m)
+                        & (subset["Metric"] == "ne-shd")
+                    ]["Mean"].iloc[0]
+                    sem = subset[
+                        (subset["Dataset"] == ds)
+                        & (subset["Model"] == m)
+                        & (subset["Metric"] == "ne-shd")
+                    ]["SEM"].iloc[0]
+                    cell = rf"${mean:.3f} \pm {sem:.3f}$"
+                    if abs(mean - col_best["ne-shd"]) < 1e-6:
+                        cell = r"\textbf{" + cell + "}"
+                    row_str += f" & {cell}"
+                except (IndexError, KeyError):
+                    row_str += " & -"
 
-        # Pass 1: Get values to identify min
-        for m in models:
-            # SHD
-            try:
-                val = subset[
-                    (subset["Dataset"] == ds)
-                    & (subset["Model"] == m)
-                    & (subset["Metric"] == "ne-shd")
-                ]["Mean"].iloc[0]
-                shd_vals.append(val)
-            except (IndexError, KeyError):
-                shd_vals.append(float("inf"))
+            # SID Columns
+            for m in models:
+                try:
+                    mean = subset[
+                        (subset["Dataset"] == ds)
+                        & (subset["Model"] == m)
+                        & (subset["Metric"] == "ne-sid")
+                    ]["Mean"].iloc[0]
+                    sem = subset[
+                        (subset["Dataset"] == ds)
+                        & (subset["Model"] == m)
+                        & (subset["Metric"] == "ne-sid")
+                    ]["SEM"].iloc[0]
+                    cell = rf"${mean:.3f} \pm {sem:.3f}$"
+                    if abs(mean - col_best["ne-sid"]) < 1e-6:
+                        cell = r"\textbf{" + cell + "}"
+                    row_str += f" & {cell}"
+                except (IndexError, KeyError):
+                    row_str += " & -"
 
-            # SID
-            try:
-                val = subset[
-                    (subset["Dataset"] == ds)
-                    & (subset["Model"] == m)
-                    & (subset["Metric"] == "ne-sid")
-                ]["Mean"].iloc[0]
-                sid_vals.append(val)
-            except (IndexError, KeyError):
-                sid_vals.append(float("inf"))
+            row_str += r" \\"
+            lines.append(row_str)
 
-        min_shd = min(shd_vals)
-        min_sid = min(sid_vals)
-
-        # Pass 2: Build String
-        # SHD Columns
-        for i, m in enumerate(models):
-            try:
-                mean = subset[
-                    (subset["Dataset"] == ds)
-                    & (subset["Model"] == m)
-                    & (subset["Metric"] == "ne-shd")
-                ]["Mean"].iloc[0]
-                sem = subset[
-                    (subset["Dataset"] == ds)
-                    & (subset["Model"] == m)
-                    & (subset["Metric"] == "ne-shd")
-                ]["SEM"].iloc[0]
-
-                cell = rf"${mean:.3f} \pm {sem:.3f}$"
-                if abs(mean - min_shd) < 0.001:  # Best value
-                    cell = r"\textbf{" + cell + "}"
-                row_str += f" & {cell}"
-            except (IndexError, KeyError):
-                row_str += " & -"
-
-        # SID Columns
-        for i, m in enumerate(models):
-            try:
-                mean = subset[
-                    (subset["Dataset"] == ds)
-                    & (subset["Model"] == m)
-                    & (subset["Metric"] == "ne-sid")
-                ]["Mean"].iloc[0]
-                sem = subset[
-                    (subset["Dataset"] == ds)
-                    & (subset["Model"] == m)
-                    & (subset["Metric"] == "ne-sid")
-                ]["SEM"].iloc[0]
-
-                cell = rf"${mean:.3f} \pm {sem:.3f}$"
-                if abs(mean - min_sid) < 0.001:  # Best value
-                    cell = r"\textbf{" + cell + "}"
-                row_str += f" & {cell}"
-            except (IndexError, KeyError):
-                row_str += " & -"
-
-        row_str += r" \\"
-        lines.append(row_str)
+    # Emit ID rows, then midrule, then OOD rows
+    if id_datasets:
+        _emit_rows(id_datasets)
+    if id_datasets and ood_datasets:
+        lines.append(r"\midrule")
+    if ood_datasets:
+        _emit_rows(ood_datasets)
 
     lines.append(r"\bottomrule")
     lines.append(r"\end{tabular}")
@@ -274,7 +266,7 @@ def generate_distance_regression_table(
     for run_id, model in series_keys:
         if "RunID" in group_cols:
             mdf = sid_df[(sid_df["RunID"] == run_id) & (sid_df["Model"] == model)]
-            series_label = f"{model} [{run_id}]"
+            series_label = model
         else:
             mdf = sid_df[sid_df["Model"] == model]
             series_label = model

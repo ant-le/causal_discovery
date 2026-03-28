@@ -196,6 +196,7 @@ class FamilyConfig:
     graph_cfg: GraphConfig
     mech_cfg: MechanismConfig
     samples_per_task: Optional[int] = None
+    noise_type: str = "gaussian"
 
     def validate(self) -> None:
         if not self.name:
@@ -204,6 +205,14 @@ class FamilyConfig:
             raise ValueError("n_nodes must be positive.")
         if self.samples_per_task is not None and self.samples_per_task < 1:
             raise ValueError("samples_per_task must be positive when provided.")
+        # Import here to avoid circular imports at module level.
+        from causal_meta.datasets.noise import SUPPORTED_NOISE_TYPES
+
+        if self.noise_type not in SUPPORTED_NOISE_TYPES:
+            raise ValueError(
+                f"Unknown noise_type '{self.noise_type}'. "
+                f"Supported: {SUPPORTED_NOISE_TYPES}"
+            )
 
 
 @dataclass

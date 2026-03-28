@@ -226,6 +226,8 @@ def ood_category(dataset_key: str, *, binary: bool = False) -> str:
         return "OOD"
     if "both" in dk:
         return "OOD-Both"
+    if "noise" in dk:
+        return "OOD-Noise"
     if "graph" in dk or "sbm" in dk:
         return "OOD-Graph"
     if "mech" in dk or any(t in dk for t in ("periodic", "square", "logistic", "pnl")):

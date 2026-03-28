@@ -311,6 +311,22 @@ data:
       graph_cfg: *graph_er40
       mech_cfg: *mech_linear
 
+    ood_noise_laplace_linear_er40_d20_n500:
+      name: ood_noise_laplace_linear_er40_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_linear
+      noise_type: laplace
+
+    ood_noise_uniform_linear_er40_d20_n500:
+      name: ood_noise_uniform_linear_er40_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_linear
+      noise_type: uniform
+
     ood_both_sbm_periodic_d60_n100:
       name: ood_both_sbm_periodic_d60_n100
       n_nodes: 60

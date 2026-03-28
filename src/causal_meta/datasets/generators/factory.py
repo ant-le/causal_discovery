@@ -179,6 +179,7 @@ def load_family_config(
         )
 
     samples_per_task_raw = cfg.get("samples_per_task")
+    noise_type = str(cfg.get("noise_type", "gaussian")).strip()
     family_cfg = configs.FamilyConfig(
         name=name,
         n_nodes=int(n_nodes_raw),
@@ -187,6 +188,7 @@ def load_family_config(
         samples_per_task=(
             int(samples_per_task_raw) if samples_per_task_raw is not None else None
         ),
+        noise_type=noise_type,
     )
     family_cfg.validate()
     return family_cfg

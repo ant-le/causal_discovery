@@ -7,7 +7,14 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.axes import Axes
 
+from causal_meta.analysis.utils import MODEL_COLORS, MODEL_MARKERS
+
 log = logging.getLogger(__name__)
+
+
+def _model_color(model: str) -> str:
+    """Return the canonical colour for *model*, falling back to grey."""
+    return MODEL_COLORS.get(model, "#555555")
 
 
 def draw_point_plot(
@@ -38,14 +45,6 @@ def draw_point_plot(
     x_labels = datasets
     hue_labels = models
 
-    # Create a color map for Models
-    if len(hue_labels) <= 10:
-        cmap = plt.get_cmap("tab10")
-    else:
-        cmap = plt.get_cmap("tab20")
-
-    colors = [cmap(i) for i in range(len(hue_labels))]
-
     # Calculate offsets for each hue (Model)
     num_hues = len(hue_labels)
     width = 0.6  # Total width for all hues within a x-tick
@@ -58,16 +57,19 @@ def draw_point_plot(
         # Filter data for this Model
         hue_data = subset[subset["Model"] == hue]
 
+        color = _model_color(hue)
+        marker = MODEL_MARKERS.get(hue, "o")
+
         # Determine marker style based on model type
-        # Meta-learners (AviCi, BCNP) get Filled Circle
-        # Explicit/Baselines (DiBS, Random) get Hollow Circle
+        # Meta-learners (AviCi, BCNP) get Filled markers
+        # Explicit/Baselines (DiBS, BayesDAG) get Hollow markers
         is_meta = hue.lower().startswith(("avici", "bcnp"))
 
         # Base styling
         plot_kwargs = {
-            "fmt": "o",
+            "fmt": marker,
             "label": hue,
-            "color": colors[j],
+            "color": color,
             "capsize": 0,
             "markersize": 8,
             "alpha": 0.9,
@@ -76,7 +78,7 @@ def draw_point_plot(
         if not is_meta:
             # Make it hollow
             plot_kwargs["markerfacecolor"] = "white"
-            plot_kwargs["markeredgecolor"] = colors[j]
+            plot_kwargs["markeredgecolor"] = color
             plot_kwargs["markeredgewidth"] = 2.0
 
         means = []

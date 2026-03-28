@@ -11,8 +11,14 @@ from matplotlib.axes import Axes
 
 from causal_meta.analysis.failure_modes import ood_category as _ood_category
 from causal_meta.analysis.plots.utils import draw_point_plot
+from causal_meta.analysis.utils import MODEL_COLORS, MODEL_MARKERS
 
 log = logging.getLogger(__name__)
+
+
+def _model_color(model: str) -> str:
+    """Return the canonical colour for *model*, falling back to grey."""
+    return MODEL_COLORS.get(model, "#555555")
 
 
 def generate_structural_figure(df: pd.DataFrame, output_path: Path) -> None:
@@ -329,8 +335,6 @@ def generate_distance_degradation_scatter(df: pd.DataFrame, output_path: Path) -
     else:
         series_keys = [("", str(model)) for model in sorted(plot_df["Model"].unique())]
 
-    cmap = plt.get_cmap("tab10")
-
     fig, ax = plt.subplots(figsize=(8, 6))
 
     for i, (run_id, model) in enumerate(series_keys):
@@ -344,7 +348,7 @@ def generate_distance_degradation_scatter(df: pd.DataFrame, output_path: Path) -
         if mdf.empty:
             continue
 
-        colour = cmap(i)
+        colour = _model_color(model)
         ax.scatter(
             mdf["SpectralDist"],
             mdf["degradation"],
@@ -413,7 +417,6 @@ def generate_density_stratified_figure(df: pd.DataFrame, output_path: Path) -> N
         return
 
     models = sorted(er_df["Model"].unique())
-    cmap = plt.get_cmap("tab10")
 
     fig, ax = plt.subplots(figsize=(8, 6))
 
@@ -423,14 +426,15 @@ def generate_density_stratified_figure(df: pd.DataFrame, output_path: Path) -> N
         grouped = (
             mdf.groupby("SparsityParam")["ne-sid"].agg(["mean", "sem"]).reset_index()
         )
-        colour = cmap(i)
+        colour = _model_color(model)
+        marker = MODEL_MARKERS.get(model, "o")
         ax.errorbar(
             grouped["SparsityParam"],
             grouped["mean"],
             yerr=grouped["sem"],
             label=model,
             color=colour,
-            marker="o",
+            marker=marker,
             capsize=3,
             linewidth=2,
             markersize=7,
@@ -573,6 +577,114 @@ def generate_failure_mode_bar(
     log.info("Saved failure-mode bar chart to %s", output_path)
 
 
+# ── Greyscale per-model failure mode bar ───────────────────────────────
+
+# Greyscale palette for failure mode categories (ordered lightest→darkest).
+_FAILURE_MODE_GREYS: dict[str, str] = {
+    "reasonable": "#d9d9d9",
+    "sparse": "#a6a6a6",
+    "reversed": "#737373",
+    "dense": "#404040",
+    "empty": "#1a1a1a",
+}
+
+
+def generate_per_model_failure_mode_bar(
+    fractions_df: pd.DataFrame,
+    *,
+    model: str,
+    output_path: Path,
+) -> None:
+    """Greyscale stacked bar chart for a single model's failure modes.
+
+    Produces one figure per amortised model.  The legend is placed above the
+    plot and font sizes are increased for thesis readability.
+
+    Args:
+        fractions_df: Output of
+            :func:`~causal_meta.analysis.failure_modes.failure_mode_fractions`
+            with columns ``Model``, ``DatasetKey``, and one column per failure
+            mode category (values in [0, 1]).
+        model: The display name of the model to plot (e.g. ``"AviCi"``).
+        output_path: Where to save the figure.
+    """
+    from matplotlib.patches import Patch
+
+    from causal_meta.analysis.failure_modes import (
+        FAILURE_MODE_CATEGORIES,
+        ood_category,
+    )
+
+    if fractions_df.empty:
+        log.warning("Empty fractions DataFrame; skipping per-model failure bar.")
+        return
+
+    model_df = fractions_df[fractions_df["Model"] == model].copy()
+    if model_df.empty:
+        log.warning("No failure-mode data for model '%s'; skipping.", model)
+        return
+
+    for cat in FAILURE_MODE_CATEGORIES:
+        if cat not in model_df.columns:
+            model_df[cat] = 0.0
+
+    model_df["OODCategory"] = model_df["DatasetKey"].apply(ood_category)
+
+    agg = model_df.groupby("OODCategory")[FAILURE_MODE_CATEGORIES].mean().reset_index()
+    categories = sorted(agg["OODCategory"].unique())
+    n_categories = len(categories)
+
+    if n_categories == 0:
+        log.warning("No OOD categories for model '%s'; skipping.", model)
+        return
+
+    fig, ax = plt.subplots(figsize=(max(7, 2 * n_categories), 5))
+
+    x = np.arange(n_categories)
+    bar_width = 0.55
+    agg_indexed = agg.set_index("OODCategory").reindex(categories).fillna(0.0)
+
+    bottoms = np.zeros(n_categories)
+    for cat in FAILURE_MODE_CATEGORIES:
+        heights = agg_indexed[cat].to_numpy(dtype=float)
+        ax.bar(
+            x,
+            heights,
+            bar_width,
+            bottom=bottoms,
+            color=_FAILURE_MODE_GREYS.get(cat, "#999999"),
+            edgecolor="white",
+            linewidth=0.6,
+        )
+        bottoms += heights
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(categories, fontsize=12)
+    ax.set_ylabel("Fraction of Test Tasks", fontsize=13)
+    ax.set_title(model, fontsize=15, fontweight="bold")
+    ax.set_ylim(0, 1.05)
+    ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+
+    # Legend above the axes
+    handles = [
+        Patch(facecolor=_FAILURE_MODE_GREYS.get(cat, "#999"), label=cat)
+        for cat in FAILURE_MODE_CATEGORIES
+    ]
+    ax.legend(
+        handles=handles,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.02),
+        ncol=len(FAILURE_MODE_CATEGORIES),
+        fontsize=11,
+        frameon=False,
+    )
+
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    log.info("Saved per-model failure-mode bar for '%s' to %s", model, output_path)
+
+
 # ── E.3a  Entropy histogram: ID vs OOD (S4) ────────────────────────────
 
 
@@ -711,8 +823,16 @@ def generate_selective_prediction_pareto(
     all_series_keys = list(df.groupby(series_cols, dropna=False).groups.keys())
     all_labels = [_series_label(k) for k in all_series_keys]
 
-    cmap = plt.get_cmap("tab10")
-    color_map = {label: cmap(i % 10) for i, label in enumerate(sorted(set(all_labels)))}
+    # Build colour map from MODEL_COLORS, falling back for unknown labels
+    def _label_to_model(label: str) -> str:
+        for model_name in MODEL_COLORS:
+            if label == model_name or label.startswith(f"{model_name} ["):
+                return model_name
+        return label
+
+    color_map = {
+        label: _model_color(_label_to_model(label)) for label in sorted(set(all_labels))
+    }
 
     fig, axes = plt.subplots(
         1,
@@ -977,8 +1097,8 @@ def generate_posterior_diagnostic_violins(
         squeeze=False,
     )
 
-    cmap = plt.get_cmap("tab10")
-    cat_colors = {cat: cmap(i) for i, cat in enumerate(categories)}
+    cmap_cat = plt.get_cmap("tab10")
+    cat_colors = {cat: cmap_cat(i) for i, cat in enumerate(categories)}
 
     for m_idx, model in enumerate(models):
         mdf = df[df["Model"] == model]

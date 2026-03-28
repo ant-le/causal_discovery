@@ -1,0 +1,16 @@
+# Ignore curated local thesis runs by default.
+*
+!.gitignore
+!README.md
+!avici/
+!bcnp/
+!dibs/
+!bayesdag/
+avici/*
+!avici/.gitkeep
+bcnp/*
+!bcnp/.gitkeep
+dibs/*
+!dibs/.gitkeep
+bayesdag/*
+!bayesdag/.gitkeep

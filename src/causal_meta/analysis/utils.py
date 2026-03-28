@@ -40,11 +40,35 @@ MODEL_NAME_MAP: dict[str, str] = {
 # Canonical thesis labels used in paper tables/figures.
 # Keys must match the directory names under experiments/thesis_runs/.
 PAPER_MODEL_LABELS: dict[str, str] = {
-    "avici": "AviCi-DG",
-    "bcnp": "BCNP-DG",
+    "avici": "AviCi",
+    "bcnp": "BCNP",
     "dibs": "DiBS",
     "bayesdag": "BayesDAG",
 }
+
+# ── Unified plot styling constants ─────────────────────────────────────
+
+AMORTISED_MODELS: frozenset[str] = frozenset({"AviCi", "BCNP"})
+"""Display names of amortised (meta-learning) models."""
+
+EXPLICIT_MODELS: frozenset[str] = frozenset({"DiBS", "BayesDAG"})
+"""Display names of explicit (per-task) models."""
+
+MODEL_COLORS: dict[str, str] = {
+    "AviCi": "#1f77b4",  # blue
+    "BCNP": "#ff7f0e",  # orange
+    "DiBS": "#7f7f7f",  # medium grey
+    "BayesDAG": "#bfbfbf",  # light grey
+}
+"""Consistent per-model colours: amortised in colour, explicit in grey."""
+
+MODEL_MARKERS: dict[str, str] = {
+    "AviCi": "o",
+    "BCNP": "s",
+    "DiBS": "D",
+    "BayesDAG": "^",
+}
+"""Consistent per-model markers for scatter/line plots."""
 
 # Dataset keys -> human-readable labels
 DATASET_DESCRIPTION_MAP: dict[str, str] = {
@@ -77,6 +101,9 @@ DATASET_DESCRIPTION_MAP: dict[str, str] = {
     "ood_mech_square_er40": "OOD-M Square",
     "ood_mech_logistic_map_er40": "OOD-M Logistic Map",
     "ood_mech_pnl_tanh_er40": "OOD-M PNL (tanh)",
+    # ── OOD Noise: ER-40 × Linear × {Laplace, Uniform} ────────────────
+    "ood_noise_laplace_linear_er40": "OOD-N Laplace Linear",
+    "ood_noise_uniform_linear_er40": "OOD-N Uniform Linear",
     # ── OOD Both: SBM × Periodic ──────────────────────────────────────
     "ood_both_sbm_periodic": "OOD-Both SBM Periodic",
 }
@@ -105,6 +132,7 @@ SHIFT_DESCRIPTION_MAP: dict[str, str] = {
     "id": "ID",
     "ood_graph": "OOD-Graph",
     "ood_mech": "OOD-Mech",
+    "ood_noise": "OOD-Noise",
     "ood_both": "OOD-Both",
     "ood_nodes": "OOD-Nodes",
     "ood_samples": "OOD-Samples",

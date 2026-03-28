@@ -12,6 +12,7 @@ from causal_meta.datasets.generators.mechanisms import (
     ConstantMechanism,
     MechanismFactory,
 )
+from causal_meta.datasets.noise import NoiseSampler, create_noise_sampler
 
 
 def _topological_order_from_adj(adjacency_matrix: torch.Tensor) -> List[int]:
@@ -28,6 +29,7 @@ class SCMInstance:
         adjacency_matrix: torch.Tensor,
         mechanisms: Sequence[nn.Module],
         topological_order: Optional[Sequence[int]] = None,
+        noise_sampler: Optional[NoiseSampler] = None,
     ) -> None:
         if adjacency_matrix.shape[0] != adjacency_matrix.shape[1]:
             raise ValueError("Adjacency matrix must be square.")
@@ -45,6 +47,11 @@ class SCMInstance:
             torch.nonzero(self.adjacency_matrix[:, node], as_tuple=False).flatten()
             for node in range(self.adjacency_matrix.shape[0])
         ]
+        self._noise_sampler: NoiseSampler = (
+            noise_sampler
+            if noise_sampler is not None
+            else create_noise_sampler("gaussian")
+        )
 
     @property
     def n_nodes(self) -> int:
@@ -81,9 +88,7 @@ class SCMInstance:
                     )
                 )
 
-                noise = torch.randn(
-                    (num_samples, 1), device=device, dtype=torch.float32
-                )
+                noise = self._noise_sampler((num_samples, 1), device, torch.float32)
                 value = self.mechanisms[node](parent_values, noise)
                 samples[:, node] = value.view(-1)
 
@@ -112,7 +117,9 @@ class SCMInstance:
             new_mechanisms[node] = ConstantMechanism(value)
 
         # Return new instance (topological order will be recomputed automatically)
-        return SCMInstance(mutilated_adjacency, new_mechanisms)
+        return SCMInstance(
+            mutilated_adjacency, new_mechanisms, noise_sampler=self._noise_sampler
+        )
 
 
 class SCMFamily:
@@ -124,6 +131,7 @@ class SCMFamily:
         n_nodes: int,
         graph_generator: GraphGenerator,
         mechanism_factory: MechanismFactory,
+        noise_type: str = "gaussian",
     ) -> None:
         if not name:
             raise ValueError("name must be a non-empty string.")
@@ -133,6 +141,9 @@ class SCMFamily:
         self.n_nodes = n_nodes
         self.graph_generator = graph_generator
         self.mechanism_factory = mechanism_factory
+        # Validate early so a bad noise_type fails at config time, not sample time.
+        self._noise_sampler = create_noise_sampler(noise_type)
+        self.noise_type = noise_type
 
     def sample_task(self, seed: int) -> SCMInstance:
         """Sample a single SCM instance with deterministic seeding."""
@@ -149,7 +160,12 @@ class SCMFamily:
             )
 
         topological_order = _topological_order_from_adj(adjacency_matrix)
-        return SCMInstance(adjacency_matrix, mechanisms, topological_order)
+        return SCMInstance(
+            adjacency_matrix,
+            mechanisms,
+            topological_order,
+            noise_sampler=self._noise_sampler,
+        )
 
     def sample_graph(self, seed: int) -> torch.Tensor:
         """

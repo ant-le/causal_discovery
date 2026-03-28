@@ -429,6 +429,7 @@ class CausalMetaModule:
             n_nodes=cfg.n_nodes,
             graph_generator=graph_generator,
             mechanism_factory=mechanism_factory,
+            noise_type=cfg.noise_type,
         )
 
     def _family_samples_per_task(self, cfg: FamilyConfig) -> int:
