@@ -610,20 +610,20 @@ def generate_all_artifacts_from_runs(
         generate_selective_prediction_pareto,
         generate_structural_figure,
     )
-    from causal_meta.analysis.tables.results import (
+    from causal_meta.analysis.rq1.tables import (
         generate_distance_regression_table,
         generate_robustness_table,
     )
-    from causal_meta.analysis.failure_modes import (
+    from causal_meta.analysis.rq1.failure_modes import (
         classify_failure_modes,
         failure_mode_fractions,
     )
-    from causal_meta.analysis.ood_detection import (
+    from causal_meta.analysis.rq3.ood_detection import (
         compute_ood_detection_metrics,
         compute_selective_prediction,
         generate_ood_detection_table,
     )
-    from causal_meta.analysis.posterior_diagnostics import (
+    from causal_meta.analysis.rq3.diagnostics import (
         run_posterior_diagnostics_from_runs,
     )
 
