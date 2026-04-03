@@ -240,6 +240,7 @@ def prepare_raw_dataframe(run_dirs: Sequence[Path]) -> pd.DataFrame:
         "skeleton_f1",
         "orientation_accuracy",
         "valid_dag_pct",
+        "threshold_valid_dag_pct",
     ]
     raw_df = load_raw_task_dataframe(
         run_dirs,

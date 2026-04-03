@@ -429,9 +429,34 @@ class TestMetricsClassNewKeys:
             assert isinstance(result[key], float), f"{key} is not a float"
         assert abs(result["valid_dag_pct"] - 100.0) < 1e-6
 
+    def test_threshold_valid_dag_pct_can_exceed_sample_valid_dag_pct(self) -> None:
+        """A thresholded mean graph can be a DAG even when most samples are cyclic."""
+        m = Metrics(metrics=["valid_dag_pct", "threshold_valid_dag_pct"])
+        target = torch.zeros((1, 3, 3), dtype=torch.float32)
+        pred = torch.tensor(
+            [
+                [[[0, 1, 0], [0, 0, 1], [1, 0, 0]]],
+                [[[0, 1, 0], [0, 0, 1], [0, 0, 0]]],
+                [[[0, 1, 0], [0, 0, 1], [0, 0, 0]]],
+            ],
+            dtype=torch.float32,
+        )
+
+        result = m._compute_batch_metrics(target, pred)
+        assert abs(result["valid_dag_pct"] - (200.0 / 3.0)) < 1e-5
+        assert abs(result["threshold_valid_dag_pct"] - 100.0) < 1e-6
+
     def test_update_and_compute_flow(self) -> None:
         """Full update → compute cycle with new metrics."""
-        m = Metrics(metrics=["fp_count", "skeleton_f1", "valid_dag_pct", "ece"])
+        m = Metrics(
+            metrics=[
+                "fp_count",
+                "skeleton_f1",
+                "valid_dag_pct",
+                "threshold_valid_dag_pct",
+                "ece",
+            ]
+        )
         target = torch.tensor([[[0, 1, 0], [0, 0, 1], [0, 0, 0]]], dtype=torch.float32)
         pred = torch.tensor([[[[0, 1, 0], [0, 0, 1], [0, 0, 0]]]], dtype=torch.float32)
 
@@ -442,6 +467,7 @@ class TestMetricsClassNewKeys:
         assert "fp_count_mean" in result
         assert "skeleton_f1_mean" in result
         assert "valid_dag_pct_mean" in result
+        assert "threshold_valid_dag_pct_mean" in result
         assert "ece_mean" in result
 
     def test_selective_metrics_no_crash(self) -> None:

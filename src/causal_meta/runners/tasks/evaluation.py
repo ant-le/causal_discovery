@@ -278,14 +278,29 @@ def _evaluate_amortized_model(
     *,
     model: nn.Module,
     loader: Any,
+    dataset_name: str,
     family: Any | None,
     device: torch.device,
     metrics_handler: Metrics,
     scm_metrics_handler: SCMMetrics,
     n_samples: int,
+    inference_root: Path,
+    model_name: str,
+    cache_dir: Any,
+    cache_dtype: str,
+    cache_n_samples: int | None,
+    suffix: str,
 ) -> list[float]:
     """Evaluate one amortized model dataset using batched loader inputs."""
+    out_dir = (
+        (inference_root / model_name / dataset_name)
+        if cache_dir
+        else (inference_root / dataset_name)
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+
     inference_times: list[float] = []
+    batch_idx = 0
 
     with torch.no_grad():
         for batch in loader:
@@ -308,8 +323,40 @@ def _evaluate_amortized_model(
 
             metrics_handler.update(adjacency_matrix, samples_for_metrics)
 
+            # Save inference artifacts per task (batch_size is always 1 at
+            # test time, so each batch element corresponds to a single task).
+            batch_seeds = seeds if isinstance(seeds, list) else None
+            for b in range(int(input_data.shape[0])):
+                seed = int(batch_seeds[b]) if batch_seeds is not None else batch_idx
+                adjacency_true = adjacency_matrix[b]
+
+                cached_samples = prepare_graph_samples_for_cache(
+                    samples[b : b + 1].detach(),
+                    dtype=cache_dtype,
+                    max_samples=cache_n_samples,
+                )
+                atomic_torch_save(
+                    {
+                        "seed": seed,
+                        "idx": batch_idx,
+                        "graph_samples": cached_samples.cpu(),
+                        "true_adj": (adjacency_true.detach() > 0.5)
+                        .to(dtype=torch.uint8)
+                        .cpu(),
+                        "cache_dtype": str(cache_dtype),
+                        "cache_n_samples": (
+                            int(cache_n_samples)
+                            if cache_n_samples is not None
+                            else None
+                        ),
+                        "requested_n_samples": int(n_samples),
+                        "num_samples_stored": int(cached_samples.shape[1]),
+                    },
+                    out_dir / f"seed_{seed}{suffix}",
+                )
+                batch_idx += 1
+
             if bool(getattr(model, "estimates_scm", False)):
-                batch_seeds = seeds if isinstance(seeds, list) else None
                 if batch_seeds is None:
                     log.warning(
                         "Skipping SCM metrics because batch seeds are unavailable."
@@ -397,6 +444,7 @@ def run(
             "skeleton_f1",
             "orientation_accuracy",
             "valid_dag_pct",
+            "threshold_valid_dag_pct",
             "ece",
         ],
         auc_num_shuffles=auc_num_shuffles,
@@ -438,11 +486,18 @@ def run(
             inference_times = _evaluate_amortized_model(
                 model=model_unwrapped,
                 loader=loader,
+                dataset_name=name,
                 family=family,
                 device=device,
                 metrics_handler=metrics_handler,
                 scm_metrics_handler=scm_metrics_handler,
                 n_samples=n_samples,
+                inference_root=inference_root,
+                model_name=model_name,
+                cache_dir=cache_dir,
+                cache_dtype=cache_dtype,
+                cache_n_samples=cache_n_samples,
+                suffix=suffix,
             )
         else:
             inference_times = _evaluate_explicit_model(

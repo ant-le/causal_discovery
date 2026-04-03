@@ -120,12 +120,17 @@ def generate_performance_figure(df: pd.DataFrame, output_path: Path) -> None:
         ("edge_entropy", "Entropy", "Edge Entropy ↓"),
         (
             "valid_dag_pct",
-            "Valid DAG (%)",
+            "Valid DAG Samples (%)",
             "Valid DAG Samples (%) ↑",
+        ),
+        (
+            "threshold_valid_dag_pct",
+            "Thresholded DAG (%)",
+            "Thresholded Mean-Graph DAG (%) ↑",
         ),
     ]
 
-    fig, axes = plt.subplots(2, 3, figsize=(20, 12))
+    fig, axes = plt.subplots(3, 3, figsize=(20, 16))
     axes_flat = axes.flatten()
 
     for idx, (metric_id, ylabel, title) in enumerate(other_metrics):

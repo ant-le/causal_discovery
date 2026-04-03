@@ -32,6 +32,7 @@ def run_thesis_analysis(
     input_root: Path,
     thesis_root: Path,
     strict: bool = True,
+    skip_posterior: bool = False,
 ) -> Path:
     """Run the curated thesis analysis pipeline and rebuild generated outputs."""
 
@@ -195,29 +196,34 @@ def run_thesis_analysis(
                 raise
             log.warning("Failure-mode analysis failed.", exc_info=True)
 
-        try:
-            posterior_df = rq3_diagnostics.run_posterior_diagnostics_from_runs(run_dirs)
-            if not posterior_df.empty:
-                posterior_df = posterior_df.copy()
-                posterior_df["Model"] = posterior_df["Model"].map(
-                    thesis_common.paper_model_label
+        if skip_posterior:
+            log.info("Posterior diagnostics skipped (--skip-posterior).")
+        else:
+            try:
+                posterior_df = rq3_diagnostics.run_posterior_diagnostics_from_runs(
+                    run_dirs
                 )
-                generate_event_probability_bar(
-                    posterior_df, figures_dir / "event_probabilities.pdf"
-                )
-                generate_posterior_diagnostic_violins(
-                    posterior_df, figures_dir / "posterior_diagnostics.pdf"
-                )
-                generated_files.extend(
-                    [
-                        "figures/event_probabilities.pdf",
-                        "figures/posterior_diagnostics.pdf",
-                    ]
-                )
-        except Exception:
-            if strict:
-                raise
-            log.warning("Posterior diagnostics failed.", exc_info=True)
+                if not posterior_df.empty:
+                    posterior_df = posterior_df.copy()
+                    posterior_df["Model"] = posterior_df["Model"].map(
+                        thesis_common.paper_model_label
+                    )
+                    generate_event_probability_bar(
+                        posterior_df, figures_dir / "event_probabilities.pdf"
+                    )
+                    generate_posterior_diagnostic_violins(
+                        posterior_df, figures_dir / "posterior_diagnostics.pdf"
+                    )
+                    generated_files.extend(
+                        [
+                            "figures/event_probabilities.pdf",
+                            "figures/posterior_diagnostics.pdf",
+                        ]
+                    )
+            except Exception:
+                if strict:
+                    raise
+                log.warning("Posterior diagnostics failed.", exc_info=True)
 
         thesis_common.write_selected_runs(
             selected_runs, provenance_dir / "selected_runs.json"
@@ -291,12 +297,18 @@ def main() -> None:
         action="store_true",
         help="Continue when optional diagnostics fail instead of aborting.",
     )
+    parser.add_argument(
+        "--skip-posterior",
+        action="store_true",
+        help="Skip posterior diagnostics (avoids loading .pt.gz inference artifacts).",
+    )
     args = parser.parse_args()
 
     run_thesis_analysis(
         input_root=Path(args.input_root),
         thesis_root=Path(args.thesis_root),
         strict=not bool(args.best_effort),
+        skip_posterior=bool(args.skip_posterior),
     )
 
 

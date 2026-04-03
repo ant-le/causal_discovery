@@ -75,6 +75,45 @@ def _attach_file_logger(output_dir: Path, *, filename: str) -> None:
     root_logger.addHandler(file_handler)
 
 
+def _maybe_load_best_checkpoint_for_eval(
+    cfg: DictConfig,
+    model: BaseModel,
+    *,
+    output_dir: Path,
+) -> bool:
+    """Load ``checkpoints/best.pt`` for evaluation when explicitly requested.
+
+    Returns ``True`` when a checkpoint was loaded and pre-training should be
+    skipped for amortized models.
+    """
+    use_best = bool(cfg.get("inference", {}).get("use_best_checkpoint_for_eval", False))
+    if not use_best:
+        return False
+
+    if not model.needs_pretraining:
+        raise ValueError(
+            "inference.use_best_checkpoint_for_eval=true is only supported for "
+            "amortized models with checkpoints."
+        )
+
+    checkpoint_path = output_dir / "checkpoints" / "best.pt"
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(
+            f"Requested best checkpoint for evaluation, but no checkpoint was found at {checkpoint_path}"
+        )
+
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    model_state_dict = checkpoint.get("model_state_dict")
+    if model_state_dict is None:
+        raise KeyError(
+            f"Checkpoint at {checkpoint_path} does not contain model_state_dict"
+        )
+
+    model.load_state_dict(model_state_dict)
+    log.info("Loaded best checkpoint for evaluation from %s", checkpoint_path)
+    return True
+
+
 @hydra.main(version_base=None, config_path="configs", config_name="default")
 def main(cfg: DictConfig) -> None:
     run_pipeline(cfg)
@@ -305,16 +344,28 @@ def run_pipeline(cfg: DictConfig) -> None:
                     "Expected model to be a BaseModel or DDP-wrapped BaseModel."
                 )
 
+            loaded_best_checkpoint_for_eval = _maybe_load_best_checkpoint_for_eval(
+                cfg,
+                model_unwrapped,
+                output_dir=base_output_dir,
+            )
+
             if model_unwrapped.needs_pretraining:
-                pre_training.run(
-                    cfg,
-                    model,
-                    data_module,
-                    logger=logger,
-                    output_dir=base_output_dir,
-                )
-                if (not is_distributed) or dist_ctx.is_main_process:
-                    log.info("--- Phase 1: Pre-Training ---")
+                if loaded_best_checkpoint_for_eval:
+                    if (not is_distributed) or dist_ctx.is_main_process:
+                        log.info(
+                            "--- Phase 1: Pre-Training Skipped (loaded best checkpoint) ---"
+                        )
+                else:
+                    pre_training.run(
+                        cfg,
+                        model,
+                        data_module,
+                        logger=logger,
+                        output_dir=base_output_dir,
+                    )
+                    if (not is_distributed) or dist_ctx.is_main_process:
+                        log.info("--- Phase 1: Pre-Training ---")
 
             # 7. Evaluation
             if (not is_distributed) or dist_ctx.is_main_process:

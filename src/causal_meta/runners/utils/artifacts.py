@@ -10,9 +10,7 @@ from typing import Any, Mapping
 
 import numpy as np
 import torch
-from hydra.core.hydra_config import HydraConfig
-
-from causal_meta.models.factory import MODEL_REGISTRY
+import logging
 
 log = logging.getLogger(__name__)
 
@@ -131,6 +129,8 @@ def resolve_output_dir(cfg: Any, output_dir: Path | str | None = None) -> Path:
         return Path(str(override))
 
     try:
+        from hydra.core.hydra_config import HydraConfig
+
         return Path(HydraConfig.get().runtime.output_dir)
     except Exception:
         return Path(os.getcwd())
@@ -161,6 +161,8 @@ def get_model_name(cfg: Any, model: Any | None = None) -> str:
         return str(model_type)
 
     if model is not None:
+        from causal_meta.models.factory import MODEL_REGISTRY
+
         for name, cls in MODEL_REGISTRY.items():
             try:
                 if isinstance(model, cls):

@@ -557,6 +557,7 @@ class Metrics(BaseMetrics):
                 "skeleton_f1",
                 "orientation_accuracy",
                 "valid_dag_pct",
+                "threshold_valid_dag_pct",
                 "ece",
             ]
         )
@@ -668,6 +669,11 @@ class Metrics(BaseMetrics):
         if "valid_dag_pct" in self.metrics_list:
             batch_metrics["valid_dag_pct"] = float(
                 100.0 * valid_dag_rate(targets, samples).mean().item()
+            )
+
+        if "threshold_valid_dag_pct" in self.metrics_list:
+            batch_metrics["threshold_valid_dag_pct"] = float(
+                100.0 * threshold_valid_dag_rate(targets, samples).mean().item()
             )
 
         return batch_metrics
@@ -974,3 +980,29 @@ def valid_dag_rate(target: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
     has_cycle = torch.diagonal(reach, dim1=-2, dim2=-1).any(dim=-1)
     is_dag = (~has_cycle).to(dtype=torch.float32)
     return is_dag.view(num_samples, batch_size).mean(dim=0)
+
+
+def threshold_valid_dag_rate(target: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
+    """Validity of the thresholded posterior-mean graph.
+
+    This mirrors AVICI's reported use of a single hard prediction graph obtained
+    from posterior edge probabilities, rather than posterior graph samples.
+
+    Args:
+        target: ``(B, N, N)`` ground truth binary adjacency.
+        pred: ``(S, B, N, N)`` sampled binary adjacency.
+
+    Returns:
+        Tensor of shape ``(B,)`` containing ``1`` if the thresholded mean graph
+        is a DAG and ``0`` otherwise.
+    """
+    if target.ndim != 3 or pred.ndim != 4:
+        raise ValueError("target must be 3D and pred must be 4D.")
+    if pred.shape[1:] != target.shape:
+        raise ValueError(
+            "pred shape must be (num_samples, batch, N, N) matching target."
+        )
+
+    mean_graph = (pred.float().mean(dim=0) > 0.5).to(dtype=pred.dtype)
+    mean_graph = mean_graph.unsqueeze(0)
+    return valid_dag_rate(target, mean_graph)
