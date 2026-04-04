@@ -333,6 +333,80 @@ test_families:
       length_scale_range: [0.1, 10.0]
       variance_range: [0.1, 10.0]
 
+  # ── OOD Graph Only: WS × {Linear, MLP, GP} (3 families) ─────────────
+  ood_graph_ws_linear:
+    name: ood_graph_ws_linear
+    graph_cfg:
+      type: ws
+      k: 4
+      p: 0.3
+    mech_cfg:
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+
+  ood_graph_ws_neuralnet:
+    name: ood_graph_ws_neuralnet
+    graph_cfg:
+      type: ws
+      k: 4
+      p: 0.3
+    mech_cfg:
+      type: mlp
+      hidden_dim: 32
+
+  ood_graph_ws_gpcde:
+    name: ood_graph_ws_gpcde
+    graph_cfg:
+      type: ws
+      k: 4
+      p: 0.3
+    mech_cfg:
+      type: gp
+      mode: approximate
+      rff_dim: 512
+      num_kernels: 4
+      length_scale_range: [0.1, 10.0]
+      variance_range: [0.1, 10.0]
+
+  # ── OOD Graph Only: GRG × {Linear, MLP, GP} (3 families) ────────────
+  ood_graph_grg_linear:
+    name: ood_graph_grg_linear
+    graph_cfg:
+      type: grg
+      radius: 0.3
+      dim: 2
+    mech_cfg:
+      type: linear
+      weight_scale: 10.0
+      noise_concentration: 2.0
+      noise_rate: 2.0
+
+  ood_graph_grg_neuralnet:
+    name: ood_graph_grg_neuralnet
+    graph_cfg:
+      type: grg
+      radius: 0.3
+      dim: 2
+    mech_cfg:
+      type: mlp
+      hidden_dim: 32
+
+  ood_graph_grg_gpcde:
+    name: ood_graph_grg_gpcde
+    graph_cfg:
+      type: grg
+      radius: 0.3
+      dim: 2
+    mech_cfg:
+      type: gp
+      mode: approximate
+      rff_dim: 512
+      num_kernels: 4
+      length_scale_range: [0.1, 10.0]
+      variance_range: [0.1, 10.0]
+
   # ── OOD Mechanism Only: ER40 × {Periodic, Square, LogisticMap, PNL} ─
   ood_mech_periodic_er40:
     name: ood_mech_periodic_er40
@@ -373,7 +447,7 @@ test_families:
       inner_config:
         type: linear
 
-  # ── OOD Both: SBM × Periodic (1 family) ─────────────────────────────
+  # ── OOD Both: {SBM, WS, GRG} × Periodic (3 families) ─────────────────
   ood_both_sbm_periodic:
     name: ood_both_sbm_periodic
     graph_cfg:
@@ -381,6 +455,26 @@ test_families:
       n_blocks: 4
       p_intra: 0.6
       p_inter: 0.01
+    mech_cfg:
+      type: periodic
+      weight_scale: 1.0
+
+  ood_both_ws_periodic:
+    name: ood_both_ws_periodic
+    graph_cfg:
+      type: ws
+      k: 4
+      p: 0.3
+    mech_cfg:
+      type: periodic
+      weight_scale: 1.0
+
+  ood_both_grg_periodic:
+    name: ood_both_grg_periodic
+    graph_cfg:
+      type: grg
+      radius: 0.3
+      dim: 2
     mech_cfg:
       type: periodic
       weight_scale: 1.0

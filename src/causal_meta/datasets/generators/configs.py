@@ -5,9 +5,11 @@ from typing import Dict, List, Optional, Union
 
 from causal_meta.datasets.generators.graphs import (
     ErdosRenyiGenerator,
+    GeometricRandomGenerator,
     MixtureGraphGenerator,
     SBMGenerator,
     ScaleFreeGenerator,
+    WattsStrogatzGenerator,
 )
 from causal_meta.datasets.generators.mechanisms import (
     GPMechanismFactory,
@@ -50,6 +52,24 @@ class SBMConfig:
         return SBMGenerator(
             n_blocks=self.n_blocks, p_intra=self.p_intra, p_inter=self.p_inter
         )
+
+
+@dataclass
+class WattsStrogatzConfig:
+    k: int = 4
+    p: float = 0.3
+
+    def instantiate(self) -> WattsStrogatzGenerator:
+        return WattsStrogatzGenerator(k=self.k, p=self.p)
+
+
+@dataclass
+class GeometricRandomConfig:
+    radius: float = 0.3
+    dim: int = 2
+
+    def instantiate(self) -> GeometricRandomGenerator:
+        return GeometricRandomGenerator(radius=self.radius, dim=self.dim)
 
 
 @dataclass
@@ -172,7 +192,13 @@ class PNLMechanismConfig:
 
 # Unions for Type Hinting
 GraphConfig = Union[
-    ErdosRenyiConfig, ScaleFreeConfig, SBMConfig, MixtureGraphConfig, Instantiable
+    ErdosRenyiConfig,
+    ScaleFreeConfig,
+    SBMConfig,
+    WattsStrogatzConfig,
+    GeometricRandomConfig,
+    MixtureGraphConfig,
+    Instantiable,
 ]
 MechanismConfig = Union[
     LinearMechanismConfig,

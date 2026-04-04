@@ -49,6 +49,10 @@ GRAPH_CONFIG_MAP = {
     "sf": configs.ScaleFreeConfig,
     "scale_free": configs.ScaleFreeConfig,
     "sbm": configs.SBMConfig,
+    "ws": configs.WattsStrogatzConfig,
+    "watts_strogatz": configs.WattsStrogatzConfig,
+    "grg": configs.GeometricRandomConfig,
+    "geometric_random": configs.GeometricRandomConfig,
     "mixture": configs.MixtureGraphConfig,
 }
 

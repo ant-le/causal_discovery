@@ -88,6 +88,14 @@ data:
       n_blocks: 4
       p_intra: 0.6
       p_inter: 0.01
+    ws: &graph_ws
+      type: ws
+      k: 4
+      p: 0.3
+    grg: &graph_grg
+      type: grg
+      radius: 0.3
+      dim: 2
 
   _mechanisms:
     linear: &mech_linear
@@ -163,6 +171,20 @@ data:
       graph_cfg: *graph_sbm
       mech_cfg: *mech_linear
 
+    ood_graph_ws_linear_d20_n500:
+      name: ood_graph_ws_linear_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_ws
+      mech_cfg: *mech_linear
+
+    ood_graph_grg_linear_d20_n500:
+      name: ood_graph_grg_linear_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_grg
+      mech_cfg: *mech_linear
+
     ood_mech_periodic_er40_d20_n500:
       name: ood_mech_periodic_er40_d20_n500
       n_nodes: 20
@@ -227,6 +249,48 @@ data:
       graph_cfg: *graph_sbm
       mech_cfg: *mech_gpcde
 
+    ood_graph_ws_linear_d20_n500:
+      name: ood_graph_ws_linear_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_ws
+      mech_cfg: *mech_linear
+
+    ood_graph_ws_neuralnet_d20_n500:
+      name: ood_graph_ws_neuralnet_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_ws
+      mech_cfg: *mech_neuralnet
+
+    ood_graph_ws_gpcde_d20_n500:
+      name: ood_graph_ws_gpcde_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_ws
+      mech_cfg: *mech_gpcde
+
+    ood_graph_grg_linear_d20_n500:
+      name: ood_graph_grg_linear_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_grg
+      mech_cfg: *mech_linear
+
+    ood_graph_grg_neuralnet_d20_n500:
+      name: ood_graph_grg_neuralnet_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_grg
+      mech_cfg: *mech_neuralnet
+
+    ood_graph_grg_gpcde_d20_n500:
+      name: ood_graph_grg_gpcde_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_grg
+      mech_cfg: *mech_gpcde
+
     ood_mech_periodic_er40_d20_n500:
       name: ood_mech_periodic_er40_d20_n500
       n_nodes: 20
@@ -268,6 +332,20 @@ data:
       samples_per_task: 500
       graph_cfg: *graph_sbm
       mech_cfg: *mech_pnl_tanh
+
+    ood_both_ws_periodic_d20_n500:
+      name: ood_both_ws_periodic_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_ws
+      mech_cfg: *mech_periodic
+
+    ood_both_grg_periodic_d20_n500:
+      name: ood_both_grg_periodic_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_grg
+      mech_cfg: *mech_periodic
 
     ood_nodes_linear_sf2_d50_n500:
       name: ood_nodes_linear_sf2_d50_n500
@@ -332,6 +410,20 @@ data:
       n_nodes: 60
       samples_per_task: 100
       graph_cfg: *graph_sbm
+      mech_cfg: *mech_periodic
+
+    ood_both_ws_periodic_d60_n100:
+      name: ood_both_ws_periodic_d60_n100
+      n_nodes: 60
+      samples_per_task: 100
+      graph_cfg: *graph_ws
+      mech_cfg: *mech_periodic
+
+    ood_both_grg_periodic_d60_n100:
+      name: ood_both_grg_periodic_d60_n100
+      n_nodes: 60
+      samples_per_task: 100
+      graph_cfg: *graph_grg
       mech_cfg: *mech_periodic
 
 trainer:

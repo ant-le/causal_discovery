@@ -3,8 +3,10 @@ import torch
 
 from causal_meta.datasets.generators.graphs import (
     ErdosRenyiGenerator,
+    GeometricRandomGenerator,
     SBMGenerator,
     ScaleFreeGenerator,
+    WattsStrogatzGenerator,
 )
 from causal_meta.datasets.generators.mechanisms import (
     GPMechanismFactory,
@@ -153,3 +155,84 @@ def test_scale_free_connected() -> None:
 
     undirected = nx.from_numpy_array(adjacency.numpy(), create_using=nx.Graph)
     assert nx.is_connected(undirected)
+
+
+# ── Watts-Strogatz tests ──
+
+
+def test_watts_strogatz_produces_dag() -> None:
+    generator = WattsStrogatzGenerator(k=4, p=0.3)
+    adjacency = generator(n_nodes=20, seed=42)
+
+    assert adjacency.shape == (20, 20)
+    assert adjacency.dtype == torch.float32
+    # No self-loops
+    assert adjacency.diag().sum().item() == 0.0
+    # DAG check: the oriented graph should be a DAG
+    graph = nx.from_numpy_array(adjacency.numpy(), create_using=nx.DiGraph)
+    assert nx.is_directed_acyclic_graph(graph)
+
+
+def test_watts_strogatz_seed_reproducibility() -> None:
+    generator = WattsStrogatzGenerator(k=4, p=0.5)
+    adj_a = generator(n_nodes=15, seed=7)
+    adj_b = generator(n_nodes=15, seed=7)
+    assert torch.equal(adj_a, adj_b)
+
+
+def test_watts_strogatz_different_seeds_differ() -> None:
+    generator = WattsStrogatzGenerator(k=4, p=0.5)
+    adj_a = generator(n_nodes=15, seed=0)
+    adj_b = generator(n_nodes=15, seed=1)
+    assert not torch.equal(adj_a, adj_b)
+
+
+def test_watts_strogatz_has_edges() -> None:
+    generator = WattsStrogatzGenerator(k=4, p=0.3)
+    adjacency = generator(n_nodes=20, seed=0)
+    assert adjacency.sum().item() > 0
+
+
+# ── Geometric Random Graph tests ──
+
+
+def test_geometric_random_produces_dag() -> None:
+    generator = GeometricRandomGenerator(radius=0.5, dim=2)
+    adjacency = generator(n_nodes=20, seed=42)
+
+    assert adjacency.shape == (20, 20)
+    assert adjacency.dtype == torch.float32
+    # No self-loops
+    assert adjacency.diag().sum().item() == 0.0
+    # DAG check
+    graph = nx.from_numpy_array(adjacency.numpy(), create_using=nx.DiGraph)
+    assert nx.is_directed_acyclic_graph(graph)
+
+
+def test_geometric_random_seed_reproducibility() -> None:
+    generator = GeometricRandomGenerator(radius=0.4, dim=2)
+    adj_a = generator(n_nodes=15, seed=7)
+    adj_b = generator(n_nodes=15, seed=7)
+    assert torch.equal(adj_a, adj_b)
+
+
+def test_geometric_random_different_seeds_differ() -> None:
+    generator = GeometricRandomGenerator(radius=0.4, dim=2)
+    adj_a = generator(n_nodes=15, seed=0)
+    adj_b = generator(n_nodes=15, seed=1)
+    assert not torch.equal(adj_a, adj_b)
+
+
+def test_geometric_random_has_edges() -> None:
+    generator = GeometricRandomGenerator(radius=0.5, dim=2)
+    adjacency = generator(n_nodes=20, seed=0)
+    assert adjacency.sum().item() > 0
+
+
+def test_geometric_random_higher_dim() -> None:
+    generator = GeometricRandomGenerator(radius=0.6, dim=3)
+    adjacency = generator(n_nodes=15, seed=5)
+
+    assert adjacency.shape == (15, 15)
+    graph = nx.from_numpy_array(adjacency.numpy(), create_using=nx.DiGraph)
+    assert nx.is_directed_acyclic_graph(graph)
