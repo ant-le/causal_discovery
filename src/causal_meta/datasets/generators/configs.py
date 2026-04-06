@@ -242,13 +242,42 @@ class FamilyConfig:
 
 
 @dataclass
+class RealWorldFamilyConfig:
+    """Configuration for a real-world dataset with a fixed ground-truth DAG.
+
+    Unlike :class:`FamilyConfig`, this does not specify graph or mechanism
+    generators.  Instead it points to a *loader* — a callable string
+    identifier (e.g. ``"sachs"``, ``"syntren"``) — that returns the
+    observational data matrix and adjacency matrix.
+    """
+
+    name: str
+    loader: str
+    n_nodes: int
+    samples_per_task: Optional[int] = None
+    loader_kwargs: Optional[Dict[str, str]] = None
+
+    def validate(self) -> None:
+        if not self.name:
+            raise ValueError("name must be a non-empty string.")
+        if self.n_nodes < 1:
+            raise ValueError("n_nodes must be positive.")
+        if self.samples_per_task is not None and self.samples_per_task < 1:
+            raise ValueError("samples_per_task must be positive when provided.")
+
+
+# Union type for test/val families that may be either generative or real-world.
+AnyFamilyConfig = Union[FamilyConfig, RealWorldFamilyConfig]
+
+
+@dataclass
 class DataModuleConfig:
     """Top-level configuration for the CausalMetaModule."""
 
     train_family: FamilyConfig
 
     # Support multiple named test families (e.g., {"ood_graph": ..., "ood_mech": ...})
-    test_families: Dict[str, FamilyConfig]
+    test_families: Dict[str, AnyFamilyConfig]
 
     seeds_test: List[int]
 

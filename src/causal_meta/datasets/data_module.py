@@ -9,13 +9,18 @@ from typing import Any, Dict, Optional, Sequence, Set
 import torch
 from torch.utils.data import DataLoader
 
-from causal_meta.datasets.generators.configs import DataModuleConfig, FamilyConfig
+from causal_meta.datasets.generators.configs import (
+    DataModuleConfig,
+    FamilyConfig,
+    RealWorldFamilyConfig,
+)
 from causal_meta.datasets.generators.factory import load_data_module_config
 from causal_meta.datasets.scm import SCMFamily
 from causal_meta.datasets.torch_datasets import (
     MetaFixedDataset,
     MetaInterventionalDataset,
     MetaIterableDataset,
+    RealWorldDataset,
 )
 from causal_meta.datasets.utils import (
     collate_fn_interventional,
@@ -83,13 +88,19 @@ class CausalMetaModule:
             cfg.name: self._build_family(cfg) for cfg in val_family_cfgs.values()
         }
 
-        # Build all test families, keyed by cfg.name for consistency.
-        self._resolved_test_cfgs: Dict[str, FamilyConfig] = {
-            cfg.name: cfg for cfg in self.config.test_families.values()
-        }
+        # ----- Separate generative vs. real-world test families -----
+        self._resolved_test_cfgs: Dict[str, FamilyConfig] = {}
+        self._resolved_rw_test_cfgs: Dict[str, RealWorldFamilyConfig] = {}
+        for cfg in self.config.test_families.values():
+            if isinstance(cfg, RealWorldFamilyConfig):
+                self._resolved_rw_test_cfgs[cfg.name] = cfg
+            else:
+                self._resolved_test_cfgs[cfg.name] = cfg
+
+        # Build generative SCM families.
         self.test_families = {
             cfg.name: self._build_family(cfg)
-            for cfg in self.config.test_families.values()
+            for cfg in self._resolved_test_cfgs.values()
         }
 
         # Collect hashes from validation and test sets for disjointness check
@@ -152,6 +163,7 @@ class CausalMetaModule:
             for name, family in self.val_families.items()
         }
 
+        # ----- Build test datasets: generative families -----
         self.test_datasets = {
             name: MetaFixedDataset(
                 family,
@@ -162,6 +174,17 @@ class CausalMetaModule:
             )
             for name, family in self.test_families.items()
         }
+
+        # ----- Build test datasets: real-world families -----
+        for rw_name, rw_cfg in self._resolved_rw_test_cfgs.items():
+            rw_dataset = self._build_real_world_dataset(rw_cfg)
+            self.test_datasets[rw_name] = rw_dataset
+            log.info(
+                "Loaded real-world test family '%s': %d variables, %d observations",
+                rw_name,
+                rw_dataset._n_nodes,
+                rw_dataset._data.shape[0],
+            )
 
         self.test_interventional_datasets = {
             name: MetaInterventionalDataset(
@@ -430,6 +453,27 @@ class CausalMetaModule:
             graph_generator=graph_generator,
             mechanism_factory=mechanism_factory,
             noise_type=cfg.noise_type,
+        )
+
+    def _build_real_world_dataset(self, cfg: RealWorldFamilyConfig) -> RealWorldDataset:
+        """Load a real-world dataset by dispatching on ``cfg.loader``."""
+        from causal_meta.datasets.real_world import load_real_world_dataset
+
+        data, adjacency = load_real_world_dataset(
+            cfg.loader,
+            **(cfg.loader_kwargs or {}),
+        )
+        samples_per_task = (
+            int(cfg.samples_per_task)
+            if cfg.samples_per_task is not None
+            else int(self.config.samples_per_task)
+        )
+        return RealWorldDataset(
+            name=cfg.name,
+            data=data,
+            adjacency=adjacency,
+            seeds=self.config.seeds_test,
+            samples_per_task=samples_per_task,
         )
 
     def _family_samples_per_task(self, cfg: FamilyConfig) -> int:

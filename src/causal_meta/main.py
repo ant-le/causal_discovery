@@ -333,7 +333,6 @@ def run_pipeline(cfg: DictConfig) -> None:
                     model,
                     device_ids=[local_rank] if use_cuda_ddp else None,
                     output_device=local_rank if use_cuda_ddp else None,
-                    find_unused_parameters=True,
                 )
 
             # 5/6. Pre-training (amortized models only)

@@ -883,16 +883,29 @@ def generate_selective_prediction_pareto(
         ax.set_title(metric_label, fontsize=13, fontweight="bold")
         ax.set_xlim(0, 1.05)
         ax.grid(True, linestyle="--", alpha=0.4)
-        ax.legend(title="Run/Model", fontsize=9)
+
+    # Shared legend on top.
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            title="Model",
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncol=len(labels),
+            fontsize=10,
+            frameon=False,
+        )
 
     fig.suptitle(
         "Selective Prediction: Accuracy vs Coverage",
         fontsize=14,
         fontweight="bold",
-        y=1.02,
+        y=1.06,
     )
 
-    plt.tight_layout()
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     log.info("Saved selective prediction Pareto to %s", output_path)

@@ -43,6 +43,13 @@ class RandomModel(BaseModel):
         self.p_edge = float(p_edge)
         self.randomize_topological_order = bool(randomize_topological_order)
 
+    def set_num_nodes(self, num_nodes: int) -> None:
+        """Update the active node count for the next explicit inference call."""
+        resolved = int(num_nodes)
+        if resolved <= 0:
+            raise ValueError("num_nodes must be positive.")
+        self.num_nodes = resolved
+
     @property
     def needs_pretraining(self) -> bool:
         """Random baseline has no trainable inference procedure."""

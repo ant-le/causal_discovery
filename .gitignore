@@ -49,6 +49,9 @@ pnpm-debug.log*
 # Keep YAML inputs under `experiments/`, but ignore generated run artifacts.
 experiments/runs/
 
+# --- Real-world dataset cache ---
+src/causal_meta/datasets/real_world/_cache/
+
 # Compiled Python files
 __pycache__/
 *.py[cod]

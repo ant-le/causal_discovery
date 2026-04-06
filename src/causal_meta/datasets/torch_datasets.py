@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Sequence, Set, Tuple
 
 import torch
@@ -7,6 +9,8 @@ from torch.utils.data import Dataset, IterableDataset, get_worker_info
 
 from causal_meta.datasets.scm import SCMFamily
 from causal_meta.datasets.utils import compute_graph_hash
+
+log = logging.getLogger(__name__)
 
 
 def _distributed_context() -> Tuple[int, int]:
@@ -326,3 +330,94 @@ class MetaInterventionalDataset(Dataset):
         }
 
         return result
+
+
+# ---------------------------------------------------------------------------
+# Real-world datasets
+# ---------------------------------------------------------------------------
+
+
+class RealWorldDataset(Dataset):
+    """Fixed real-world observational dataset with a known ground-truth DAG.
+
+    Each ``__getitem__`` call returns a dict in exactly the same format as
+    :class:`MetaFixedDataset`, making it a drop-in replacement for the
+    evaluation pipeline.
+
+    The dataset stores *one* observational matrix and *one* adjacency matrix.
+    Because there is only a single graph, ``__len__`` returns the number of
+    bootstrap resamples requested (``n_resamples``).  Each resample draws
+    ``samples_per_task`` rows *with replacement* from the original data using a
+    deterministic seed derived from ``seeds[idx]``, so repeated evaluation is
+    reproducible.  When ``n_resamples`` is 1 (default), the dataset returns the
+    full observational matrix without resampling.
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        data: torch.Tensor,
+        adjacency: torch.Tensor,
+        seeds: Sequence[int],
+        samples_per_task: int | None = None,
+    ) -> None:
+        """
+        Args:
+            name: Family/dataset name (e.g. ``"sachs"``).
+            data: Observational data matrix, shape ``(N, d)``.
+            adjacency: Ground-truth adjacency, shape ``(d, d)``, float32.
+            seeds: Seed list — length determines ``__len__``.
+            samples_per_task: Number of rows per resample.  If ``None`` or
+                equal to ``data.shape[0]``, the full dataset is returned for
+                every index (no resampling).
+        """
+        if data.ndim != 2:
+            raise ValueError(f"data must be 2-D, got shape {data.shape}")
+        if adjacency.ndim != 2 or adjacency.shape[0] != adjacency.shape[1]:
+            raise ValueError(f"adjacency must be square, got shape {adjacency.shape}")
+        if data.shape[1] != adjacency.shape[0]:
+            raise ValueError(
+                f"data has {data.shape[1]} variables but adjacency is "
+                f"{adjacency.shape[0]}×{adjacency.shape[1]}"
+            )
+        self.family_name = name
+        self._data = data.to(dtype=torch.float32)
+        self._adjacency = adjacency.to(dtype=torch.float32)
+        self._seeds = list(seeds)
+        self._n_nodes = int(data.shape[1])
+
+        # Decide whether to resample.
+        full_n = int(data.shape[0])
+        if samples_per_task is None or int(samples_per_task) == full_n:
+            self._samples_per_task = full_n
+            self._resample = False
+        else:
+            self._samples_per_task = int(samples_per_task)
+            self._resample = True
+
+    def __len__(self) -> int:
+        return len(self._seeds)
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        seed = int(self._seeds[idx])
+
+        if self._resample:
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(seed)
+                row_indices = torch.randint(
+                    0, self._data.shape[0], (self._samples_per_task,)
+                )
+            data = self._data[row_indices]
+        else:
+            data = self._data
+
+        return {
+            "seed": seed,
+            "family_name": self.family_name,
+            "data": data,
+            "intervention_mask": torch.zeros_like(data),
+            "adjacency": self._adjacency,
+            "n_nodes": self._n_nodes,
+            "samples_per_task": int(data.shape[0]),
+        }

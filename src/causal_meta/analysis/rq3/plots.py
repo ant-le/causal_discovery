@@ -88,6 +88,8 @@ def generate_uncertainty_scatter(
                 edgecolors="white",
                 linewidths=0.5,
             )
+        # Grey reference line at E-SID = 0 (perfect causal discovery).
+        ax.axhline(y=0, color="grey", linestyle="--", linewidth=1, alpha=0.6)
         if len(model_df) >= 3:
             rho, p_val = spearmanr(model_df[score_metric], model_df["e-sid"])
             if np.isfinite(rho):
@@ -104,9 +106,28 @@ def generate_uncertainty_scatter(
         ax.set_ylabel(r"$\mathbb{E}$-SID")
         ax.set_title(model, fontsize=13, fontweight="bold")
         ax.grid(True, linestyle="--", alpha=0.4)
-        if ax_idx == 0:
-            ax.legend(title="Category", fontsize=8, title_fontsize=9, loc="lower right")
-    fig.tight_layout(pad=1.0, w_pad=1.0)
+
+    # Shared legend on top.
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            title="Category",
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncol=len(labels),
+            fontsize=9,
+            frameon=False,
+        )
+
+    suptitle = (
+        "Edge Entropy vs. Structural Error"
+        if score_metric == "edge_entropy"
+        else "Graph NLL / Edge vs. Structural Error"
+    )
+    fig.suptitle(suptitle, fontsize=14, fontweight="bold", y=1.06)
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
     fig.savefig(output_path, bbox_inches="tight")
     plt.close(fig)
     return pivot

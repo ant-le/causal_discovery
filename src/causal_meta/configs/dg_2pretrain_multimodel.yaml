@@ -19,7 +19,7 @@ data:
   # Global default; individual validation/test families can override this.
   samples_per_task: 500
 
-  seeds_val: [1000, 1001, 1002]
+  seeds_val: [1000, 1001, 1002, 1003, 1004]
   seeds_test:
     [
       2000,

@@ -10,4 +10,8 @@
 !.venv*
 
 # Be able to investigate experiments
-!experiments/runs/
+!experiments/thesis_runs/avici
+!experiments/thesis_runs/bcnp
+!experiments/thesis_runs/bayesdag
+!experiments/thesis_runs/dibs
+

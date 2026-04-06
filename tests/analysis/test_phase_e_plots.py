@@ -16,7 +16,8 @@ from causal_meta.analysis.plots.results import (
     generate_density_stratified_figure,
     generate_distance_degradation_scatter,
 )
-from causal_meta.analysis.tables.results import generate_distance_regression_table
+from causal_meta.analysis.rq1.plots import generate_shift_figure
+from causal_meta.analysis.rq1.tables import generate_distance_regression_table
 
 
 def _make_synthetic_df() -> pd.DataFrame:
@@ -84,6 +85,15 @@ class TestOODCategory:
     def test_ood_both(self) -> None:
         assert _ood_category("ood_both_sbm_periodic") == "OOD-Both"
 
+    def test_ood_noise(self) -> None:
+        assert _ood_category("ood_noise_laplace_linear_er20") == "OOD-Noise"
+
+    def test_ood_nodes(self) -> None:
+        assert _ood_category("ood_nodes_linear_er20_d40_n500") == "OOD-Nodes"
+
+    def test_ood_samples(self) -> None:
+        assert _ood_category("ood_samples_linear_er20_d20_n1000") == "OOD-Samples"
+
 
 # ── _pivot_metrics ───────────────────────────────────────────────────────
 
@@ -150,6 +160,48 @@ def test_density_stratified_creates_file(tmp_path: Path) -> None:
     generate_density_stratified_figure(df, out)
     assert out.exists()
     assert out.stat().st_size > 0
+
+
+def test_compound_shift_figure_uses_multi_panel_layout(tmp_path: Path) -> None:
+    rows = []
+    models = ["AviCi", "BCNP"]
+    dataset_keys = [
+        "id_linear_er20_d20_n500",
+        "id_neuralnet_sf2_d20_n500",
+        "id_gpcde_er60_d20_n500",
+        "ood_both_sbm_periodic_d20_n500",
+        "ood_both_sbm_logistic_map_d20_n500",
+        "ood_both_ws_periodic_d20_n500",
+        "ood_both_ws_pnl_tanh_d20_n500",
+        "ood_both_grg_logistic_map_d20_n500",
+        "ood_both_grg_pnl_tanh_d20_n500",
+    ]
+
+    for model in models:
+        for dataset_key in dataset_keys:
+            rows.append(
+                {
+                    "Model": model,
+                    "DatasetKey": dataset_key,
+                    "Dataset": dataset_key,
+                    "AxisCategory": "id"
+                    if dataset_key.startswith("id_")
+                    else "compound",
+                    "Metric": "ne-sid",
+                    "Value": 1.0 + hash((model, dataset_key)) % 10 / 10.0,
+                    "NNodes": 20,
+                    "SamplesPerTask": 500,
+                }
+            )
+
+    df = pd.DataFrame(rows)
+    out = tmp_path / "compound_shift.pdf"
+    agg = generate_shift_figure(df, shift_axis="compound", output_path=out)
+
+    assert out.exists()
+    assert out.stat().st_size > 0
+    assert not agg.empty
+    assert set(agg["FixedConcept"].dropna().unique()) == {"SBM", "WS", "GRG"}
 
 
 # ── Distance regression table (E.5) ─────────────────────────────────────

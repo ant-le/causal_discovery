@@ -21,6 +21,8 @@ from typing import Sequence
 
 import pandas as pd
 
+from causal_meta.analysis.common.thesis import axis_category
+
 log = logging.getLogger(__name__)
 
 # ── Thresholds (tunable) ───────────────────────────────────────────────
@@ -212,24 +214,25 @@ def failure_mode_fractions(
 
 
 def ood_category(dataset_key: str, *, binary: bool = False) -> str:
-    """Classify a dataset key as ID, OOD-Graph, OOD-Mech, or OOD-Both.
+    """Classify a dataset key using the canonical thesis shift taxonomy.
 
     Args:
         dataset_key: The dataset key string to classify.
         binary: If ``True``, return only ``"ID"`` or ``"OOD"``
             (coarse classification for tables).
     """
-    dk = dataset_key.lower()
-    if dk.startswith("id_") or dk == "id_test":
+    category = axis_category(dataset_key)
+    if category == "id":
         return "ID"
     if binary:
         return "OOD"
-    if "both" in dk:
-        return "OOD-Both"
-    if "noise" in dk:
-        return "OOD-Noise"
-    if "graph" in dk or "sbm" in dk:
-        return "OOD-Graph"
-    if "mech" in dk or any(t in dk for t in ("periodic", "square", "logistic", "pnl")):
-        return "OOD-Mech"
-    return "OOD"
+
+    label_map = {
+        "graph": "OOD-Graph",
+        "mechanism": "OOD-Mech",
+        "noise": "OOD-Noise",
+        "compound": "OOD-Both",
+        "nodes": "OOD-Nodes",
+        "samples": "OOD-Samples",
+    }
+    return label_map.get(category, "OOD")

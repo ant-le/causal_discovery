@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from causal_meta.analysis.failure_modes import (
+from causal_meta.analysis.rq1.failure_modes import (
     FAILURE_MODE_CATEGORIES,
     classify_failure_modes,
     failure_mode_fractions,
@@ -121,6 +121,15 @@ class TestOODCategory:
 
     def test_ood_both(self) -> None:
         assert ood_category("ood_both_sbm_periodic") == "OOD-Both"
+
+    def test_ood_noise(self) -> None:
+        assert ood_category("ood_noise_laplace_linear_er20") == "OOD-Noise"
+
+    def test_ood_nodes(self) -> None:
+        assert ood_category("ood_nodes_linear_er20_d40_n500") == "OOD-Nodes"
+
+    def test_ood_samples(self) -> None:
+        assert ood_category("ood_samples_linear_er20_d20_n1000") == "OOD-Samples"
 
     def test_fallback(self) -> None:
         assert ood_category("something_unknown") == "OOD"

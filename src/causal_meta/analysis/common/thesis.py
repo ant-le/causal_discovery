@@ -74,13 +74,149 @@ def axis_category(dataset_key: str) -> str:
     return "other"
 
 
+# ── Mechanism and graph-family extraction ──────────────────────────────
+
+ID_MECHANISM_LABELS: dict[str, str] = {
+    "linear": "Linear",
+    "neuralnet": "MLP",
+    "gpcde": "GP",
+}
+"""Display names for the three in-distribution mechanism families."""
+
+
+def id_mechanism_of(dataset_key: str) -> str | None:
+    """Return the in-distribution mechanism family, or *None* for OOD-mechanism datasets.
+
+    For datasets whose functional mechanism is one of the three ID families
+    (``linear``, ``neuralnet``, ``gpcde``) this returns the canonical key.
+    For OOD-mechanism and compound-shift datasets the mechanism is
+    out-of-distribution and the function returns ``None``.
+    """
+    dk = dataset_key.lower()
+    body = re.sub(r"_d\d+_n\d+$", "", dk)
+    # OOD-mechanism and compound datasets have no ID mechanism
+    if body.startswith("ood_mech_") or body.startswith("ood_both_"):
+        return None
+    for mech in ("neuralnet", "gpcde", "linear"):  # longest first
+        if f"_{mech}" in body:
+            return mech
+    return None
+
+
+def graph_family_of(dataset_key: str) -> str | None:
+    """Return the broad graph topology family (``'er'``, ``'sf'``, ``'sbm'``, ``'ws'``, ``'grg'``)."""
+    dk = dataset_key.lower()
+    body = re.sub(r"_d\d+_n\d+$", "", dk)
+    for graph in ("sbm", "ws", "grg"):
+        if f"_{graph}" in body:
+            return graph
+    if re.search(r"_er\d+", body):
+        return "er"
+    if re.search(r"_sf\d+", body):
+        return "sf"
+    return None
+
+
+def graph_code_of(dataset_key: str) -> str | None:
+    """Return the specific graph code (e.g. ``'er20'``, ``'sf2'``, ``'sbm'``) from a dataset key.
+
+    Unlike :func:`graph_family_of`, this returns the full code including
+    any numeric suffix (``er20`` instead of ``er``).
+    """
+    dk = dataset_key.lower()
+    body = re.sub(r"_d\d+_n\d+$", "", dk)
+    # OOD graphs (no numeric suffix)
+    for graph in ("sbm", "ws", "grg"):
+        if f"_{graph}" in body:
+            return graph
+    # ER/SF with numeric suffix
+    m = re.search(r"_(er\d+|sf\d+)", body)
+    return m.group(1) if m else None
+
+
+def mech_shift_graph_anchor(dataset_key: str) -> str | None:
+    """Return the graph anchor code for a mechanism-shift dataset.
+
+    For keys like ``ood_mech_periodic_er20_d20_n500`` returns ``'er20'``.
+    For non-mechanism-shift datasets, returns ``None``.
+    """
+    dk = dataset_key.lower()
+    if not dk.startswith("ood_mech_"):
+        return None
+    return graph_code_of(dk)
+
+
+def noise_shift_anchor(dataset_key: str) -> tuple[str, str] | None:
+    """Return the ``(mechanism, graph_code)`` anchor for a noise-shift dataset.
+
+    For keys like ``ood_noise_laplace_linear_er20_d20_n500`` returns
+    ``('linear', 'er20')``.  For non-noise-shift datasets, returns ``None``.
+    """
+    dk = dataset_key.lower()
+    if not dk.startswith("ood_noise_"):
+        return None
+    mech = id_mechanism_of(dk)
+    graph = graph_code_of(dk)
+    if mech is None or graph is None:
+        return None
+    return (mech, graph)
+
+
+def transfer_anchor(dataset_key: str) -> tuple[str, str] | None:
+    """Return the ``(mechanism, graph_code)`` anchor for a node/sample transfer dataset.
+
+    For keys like ``ood_nodes_linear_er20_d40_n500`` returns ``('linear', 'er20')``.
+    For non-transfer datasets, returns ``None``.
+    """
+    dk = dataset_key.lower()
+    if not (dk.startswith("ood_nodes_") or dk.startswith("ood_samples_")):
+        return None
+    mech = id_mechanism_of(dk)
+    graph = graph_code_of(dk)
+    if mech is None or graph is None:
+        return None
+    return (mech, graph)
+
+
+# ── Anchor display labels ─────────────────────────────────────────────
+
+GRAPH_ANCHOR_LABELS: dict[str, str] = {
+    "er20": "ER-20",
+    "er40": "ER-40",
+    "er60": "ER-60",
+    "sf1": "SF-1",
+    "sf2": "SF-2",
+    "sf3": "SF-3",
+    "sbm": "SBM",
+    "ws": "WS",
+    "grg": "GRG",
+}
+"""Display names for graph anchor codes."""
+
+TRANSFER_ANCHOR_LABELS: dict[tuple[str, str], str] = {
+    ("linear", "er20"): "ER-20 × Linear",
+    ("neuralnet", "sf2"): "SF-2 × MLP",
+}
+"""Display names for the two transfer ladder anchors."""
+
+
 def is_fixed_size_task_frame(df: pd.DataFrame) -> pd.Series:
     return df["NNodes"].eq(20) & df["SamplesPerTask"].eq(500)
 
 
 def thesis_dataset_label(dataset_key: str, dataset_label: str) -> str:
     label = dataset_label
-    for prefix in ("ID ", "OOD-G ", "OOD-M ", "OOD-N ", "OOD-Both "):
+    # Longest prefixes first so "OOD-Graph " is tried before "OOD-G ".
+    for prefix in (
+        "OOD-Graph ",
+        "OOD-Mech ",
+        "OOD-Noise ",
+        "OOD-Both ",
+        "OOD-G ",
+        "OOD-M ",
+        "OOD-N ",
+        "ID ",
+    ):
         if label.startswith(prefix):
             label = label[len(prefix) :]
             break
@@ -241,6 +377,10 @@ def prepare_raw_dataframe(run_dirs: Sequence[Path]) -> pd.DataFrame:
         "orientation_accuracy",
         "valid_dag_pct",
         "threshold_valid_dag_pct",
+        "fp_count",
+        "fn_count",
+        "reversed_count",
+        "correct_count",
     ]
     raw_df = load_raw_task_dataframe(
         run_dirs,

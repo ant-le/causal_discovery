@@ -44,6 +44,7 @@ PAPER_MODEL_LABELS: dict[str, str] = {
     "bcnp": "BCNP",
     "dibs": "DiBS",
     "bayesdag": "BayesDAG",
+    "random": "Random",
 }
 
 # ── Unified plot styling constants ─────────────────────────────────────
@@ -59,6 +60,7 @@ MODEL_COLORS: dict[str, str] = {
     "BCNP": "#ff7f0e",  # orange
     "DiBS": "#7f7f7f",  # medium grey
     "BayesDAG": "#bfbfbf",  # light grey
+    "Random": "#2ca02c",  # green
 }
 """Consistent per-model colours: amortised in colour, explicit in grey."""
 
@@ -67,6 +69,7 @@ MODEL_MARKERS: dict[str, str] = {
     "BCNP": "s",
     "DiBS": "D",
     "BayesDAG": "^",
+    "Random": "X",
 }
 """Consistent per-model markers for scatter/line plots."""
 
@@ -96,16 +99,48 @@ DATASET_DESCRIPTION_MAP: dict[str, str] = {
     "ood_graph_sbm_linear": "OOD-G SBM Linear",
     "ood_graph_sbm_neuralnet": "OOD-G SBM MLP",
     "ood_graph_sbm_gpcde": "OOD-G SBM GP",
-    # ── OOD Mechanism: ER-40 × {Periodic, Square, LogisticMap, PNL} ───
-    "ood_mech_periodic_er40": "OOD-M Periodic",
-    "ood_mech_square_er40": "OOD-M Square",
-    "ood_mech_logistic_map_er40": "OOD-M Logistic Map",
-    "ood_mech_pnl_tanh_er40": "OOD-M PNL (tanh)",
-    # ── OOD Noise: ER-40 × Linear × {Laplace, Uniform} ────────────────
-    "ood_noise_laplace_linear_er40": "OOD-N Laplace Linear",
-    "ood_noise_uniform_linear_er40": "OOD-N Uniform Linear",
+    # ── OOD Graph: WS × {Linear, MLP, GP} ─────────────────────────────
+    "ood_graph_ws_linear": "OOD-G WS Linear",
+    "ood_graph_ws_neuralnet": "OOD-G WS MLP",
+    "ood_graph_ws_gpcde": "OOD-G WS GP",
+    # ── OOD Graph: GRG × {Linear, MLP, GP} ────────────────────────────
+    "ood_graph_grg_linear": "OOD-G GRG Linear",
+    "ood_graph_grg_neuralnet": "OOD-G GRG MLP",
+    "ood_graph_grg_gpcde": "OOD-G GRG GP",
+    # ── OOD Mechanism: ER-20 × {Periodic, Square, LogisticMap, PNL} ───
+    "ood_mech_periodic_er20": "OOD-M Periodic (ER-20)",
+    "ood_mech_square_er20": "OOD-M Square (ER-20)",
+    "ood_mech_logistic_map_er20": "OOD-M Logistic Map (ER-20)",
+    "ood_mech_pnl_tanh_er20": "OOD-M PNL-tanh (ER-20)",
+    # ── OOD Mechanism: ER-60 × {Periodic, Square, LogisticMap, PNL} ───
+    "ood_mech_periodic_er60": "OOD-M Periodic (ER-60)",
+    "ood_mech_square_er60": "OOD-M Square (ER-60)",
+    "ood_mech_logistic_map_er60": "OOD-M Logistic Map (ER-60)",
+    "ood_mech_pnl_tanh_er60": "OOD-M PNL-tanh (ER-60)",
+    # ── OOD Mechanism: SF-2 × {Periodic, Square, LogisticMap, PNL} ────
+    "ood_mech_periodic_sf2": "OOD-M Periodic (SF-2)",
+    "ood_mech_square_sf2": "OOD-M Square (SF-2)",
+    "ood_mech_logistic_map_sf2": "OOD-M Logistic Map (SF-2)",
+    "ood_mech_pnl_tanh_sf2": "OOD-M PNL-tanh (SF-2)",
+    # ── OOD Noise: Linear × ER-20 × {Laplace, Uniform} ────────────────
+    "ood_noise_laplace_linear_er20": "OOD-N Laplace (Linear/ER-20)",
+    "ood_noise_uniform_linear_er20": "OOD-N Uniform (Linear/ER-20)",
+    # ── OOD Noise: MLP × SF-2 × {Laplace, Uniform} ───────────────────
+    "ood_noise_laplace_neuralnet_sf2": "OOD-N Laplace (MLP/SF-2)",
+    "ood_noise_uniform_neuralnet_sf2": "OOD-N Uniform (MLP/SF-2)",
     # ── OOD Both: SBM × Periodic ──────────────────────────────────────
     "ood_both_sbm_periodic": "OOD-Both SBM Periodic",
+    "ood_both_sbm_pnl_tanh": "OOD-Both SBM PNL (tanh)",
+    # ── OOD Both: WS/GRG × Periodic ───────────────────────────────────
+    "ood_both_ws_periodic": "OOD-Both WS Periodic",
+    "ood_both_grg_periodic": "OOD-Both GRG Periodic",
+    # ── OOD Both: WS/GRG × PNL (tanh) ─────────────────────────────────
+    "ood_both_ws_pnl_tanh": "OOD-Both WS PNL (tanh)",
+    "ood_both_grg_pnl_tanh": "OOD-Both GRG PNL (tanh)",
+    # ── OOD Both: SBM/WS/GRG × Logistic Map ───────────────────────────
+    "ood_both_sbm_logistic_map": "OOD-Both SBM Logistic Map",
+    "ood_both_ws_logistic_map": "OOD-Both WS Logistic Map",
+    "ood_both_grg_logistic_map": "OOD-Both GRG Logistic Map",
 }
 
 GRAPH_DESCRIPTION_MAP: dict[str, str] = {
@@ -116,6 +151,8 @@ GRAPH_DESCRIPTION_MAP: dict[str, str] = {
     "sf2": "SF-2",
     "sf3": "SF-3",
     "sbm": "SBM",
+    "ws": "WS",
+    "grg": "GRG",
 }
 
 MECH_DESCRIPTION_MAP: dict[str, str] = {

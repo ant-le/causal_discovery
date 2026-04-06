@@ -443,3 +443,19 @@ test_families:
     mech_cfg:
       type: periodic
       weight_scale: 1.0
+
+  # ── Real-world benchmarks ────────────────────────────────────────────
+  # These use fixed observational data with known ground-truth DAGs.
+  # No generative SCM — evaluation only.
+
+  real_sachs:
+    name: real_sachs
+    type: real_world
+    loader: sachs
+    n_nodes: 11
+
+  real_syntren:
+    name: real_syntren
+    type: real_world
+    loader: syntren
+    n_nodes: 20

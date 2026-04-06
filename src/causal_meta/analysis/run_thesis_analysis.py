@@ -22,7 +22,7 @@ from causal_meta.analysis.rq2.transfer import generate_transfer_figure
 from causal_meta.analysis.rq3 import diagnostics as rq3_diagnostics
 from causal_meta.analysis.rq3 import ood_detection as rq3_ood
 from causal_meta.analysis.rq3 import plots as rq3_plots
-from causal_meta.analysis.utils import AMORTISED_MODELS, EmptyAnalysisDataError
+from causal_meta.analysis.utils import EmptyAnalysisDataError, PAPER_MODEL_LABELS
 
 log = logging.getLogger(__name__)
 
@@ -86,6 +86,47 @@ def run_thesis_analysis(
                 if strict:
                     raise
                 log.warning("Shift figure for '%s' skipped (no data).", shift_key)
+
+        # ── Valid DAG % shift figure ──────────────────────────────────
+        try:
+            valid_dag_df = rq1_plots.generate_valid_dag_shift_figure(
+                raw_df,
+                run_dirs,
+                output_path=figures_dir / "valid_dag_shift.pdf",
+            )
+            if not valid_dag_df.empty:
+                valid_dag_df.to_csv(data_dir / "valid_dag_shift.csv", index=False)
+                generated_files.extend(
+                    [
+                        "figures/valid_dag_shift.pdf",
+                        "data/valid_dag_shift.csv",
+                    ]
+                )
+        except Exception:
+            if strict:
+                raise
+            log.warning("Valid DAG shift figure failed.", exc_info=True)
+
+        # ── Error decomposition (FP/FN/Reversed) figure ──────────────
+        try:
+            error_decomp_df = rq1_plots.generate_error_decomposition_figure(
+                raw_df,
+                output_path=figures_dir / "error_decomposition.pdf",
+            )
+            if not error_decomp_df.empty:
+                error_decomp_df.to_csv(
+                    data_dir / "error_decomposition.csv", index=False
+                )
+                generated_files.extend(
+                    [
+                        "figures/error_decomposition.pdf",
+                        "data/error_decomposition.csv",
+                    ]
+                )
+        except Exception:
+            if strict:
+                raise
+            log.warning("Error decomposition figure failed.", exc_info=True)
 
         for score_metric in ("edge_entropy", "graph_nll_per_edge"):
             fig_name = f"uncertainty_scatter_{score_metric}.pdf"
@@ -182,7 +223,7 @@ def run_thesis_analysis(
                         "data/failure_modes.csv",
                     ]
                 )
-                for model_name in sorted(AMORTISED_MODELS):
+                for model_name in sorted(PAPER_MODEL_LABELS.values()):
                     safe_name = model_name.lower().replace("-", "_")
                     fig_name = f"failure_modes_{safe_name}.pdf"
                     generate_per_model_failure_mode_bar(

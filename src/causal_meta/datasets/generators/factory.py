@@ -153,15 +153,51 @@ def load_family_config(
     *,
     default_n_nodes: int | None = None,
     expected_name: str | None = None,
-) -> configs.FamilyConfig:
+) -> configs.FamilyConfig | configs.RealWorldFamilyConfig:
     cfg = _coerce_dict(cfg)
 
-    if isinstance(cfg, configs.FamilyConfig):
+    if isinstance(cfg, (configs.FamilyConfig, configs.RealWorldFamilyConfig)):
         return cfg
 
     if not isinstance(cfg, Mapping):
         raise TypeError("Family config must be a dict or FamilyConfig object.")
 
+    # ---------- real-world branch ----------
+    family_type = cfg.get("type")
+    if family_type == "real_world":
+        loader = cfg.get("loader")
+        if not loader:
+            raise ValueError("Real-world family config must provide a 'loader' key.")
+        name = str(cfg.get("name", "")).strip()
+        if not name:
+            raise ValueError("Family config must provide a non-empty 'name'.")
+        if expected_name is not None and name != expected_name:
+            raise ValueError(
+                f"Family config name mismatch: expected '{expected_name}', got '{name}'."
+            )
+        n_nodes_raw = cfg.get("n_nodes", default_n_nodes)
+        if n_nodes_raw is None:
+            raise ValueError(
+                "Real-world family config must provide 'n_nodes' or a top-level "
+                "data.n_nodes must be set."
+            )
+        samples_per_task_raw = cfg.get("samples_per_task")
+        loader_kwargs_raw = cfg.get("loader_kwargs")
+        rw_cfg = configs.RealWorldFamilyConfig(
+            name=name,
+            loader=str(loader),
+            n_nodes=int(n_nodes_raw),
+            samples_per_task=(
+                int(samples_per_task_raw) if samples_per_task_raw is not None else None
+            ),
+            loader_kwargs=(
+                dict(loader_kwargs_raw) if loader_kwargs_raw is not None else None
+            ),
+        )
+        rw_cfg.validate()
+        return rw_cfg
+
+    # ---------- generative SCM branch (existing logic) ----------
     graph_cfg = cfg.get("graph_cfg", cfg.get("graph"))
     mech_cfg = cfg.get("mech_cfg", cfg.get("mech"))
 
@@ -219,7 +255,7 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
     if not isinstance(test_families_raw, Mapping):
         raise TypeError("'test_families' must be a dictionary of configs.")
 
-    test_families: Dict[str, configs.FamilyConfig] = {}
+    test_families: Dict[str, configs.AnyFamilyConfig] = {}
     for name, sub_cfg in test_families_raw.items():
         if str(name).startswith("_"):
             continue
