@@ -64,7 +64,12 @@ data:
   samples_per_task_int: 0
   train_p_obs_only: 1.0
 
+  # ════════════════════════════════════════════════════════════════════
+  #  Anchor definitions (YAML aliases reused across families)
+  # ════════════════════════════════════════════════════════════════════
+
   _graphs:
+    # ── ID graphs (part of training mixture) ──────────────────────────
     er20: &graph_er20
       type: er
       sparsity: 0.0526
@@ -83,6 +88,7 @@ data:
     sf3: &graph_sf3
       type: sf
       m: 3
+    # ── OOD graphs ────────────────────────────────────────────────────
     sbm: &graph_sbm
       type: sbm
       n_blocks: 4
@@ -98,6 +104,7 @@ data:
       dim: 2
 
   _mechanisms:
+    # ── ID mechanisms (part of training mixture) ──────────────────────
     linear: &mech_linear
       type: linear
       weight_scale: 10.0
@@ -113,6 +120,7 @@ data:
       num_kernels: 4
       length_scale_range: [0.1, 10.0]
       variance_range: [0.1, 10.0]
+    # ── OOD mechanisms ────────────────────────────────────────────────
     periodic: &mech_periodic
       type: periodic
       weight_scale: 1.0
@@ -128,6 +136,10 @@ data:
       nonlinearity_type: tanh
       inner_config:
         type: linear
+
+  # ════════════════════════════════════════════════════════════════════
+  #  Training family
+  # ════════════════════════════════════════════════════════════════════
 
   train_family:
     name: source_mixed_all_d10_40_n500
@@ -149,64 +161,12 @@ data:
         - *mech_neuralnet
         - *mech_gpcde
 
+  # ════════════════════════════════════════════════════════════════════
+  #  Validation families
+  # ════════════════════════════════════════════════════════════════════
+
   val_families:
-    id_linear_er20_d20_n500:
-      name: id_linear_er20_d20_n500
-      n_nodes: 20
-      samples_per_task: 500
-      graph_cfg: *graph_er20
-      mech_cfg: *mech_linear
-
-    id_neuralnet_sf2_d30_n500:
-      name: id_neuralnet_sf2_d30_n500
-      n_nodes: 30
-      samples_per_task: 500
-      graph_cfg: *graph_sf2
-      mech_cfg: *mech_neuralnet
-
-    ood_graph_sbm_linear_d20_n500:
-      name: ood_graph_sbm_linear_d20_n500
-      n_nodes: 20
-      samples_per_task: 500
-      graph_cfg: *graph_sbm
-      mech_cfg: *mech_linear
-
-    ood_graph_ws_linear_d20_n500:
-      name: ood_graph_ws_linear_d20_n500
-      n_nodes: 20
-      samples_per_task: 500
-      graph_cfg: *graph_ws
-      mech_cfg: *mech_linear
-
-    ood_graph_grg_linear_d20_n500:
-      name: ood_graph_grg_linear_d20_n500
-      n_nodes: 20
-      samples_per_task: 500
-      graph_cfg: *graph_grg
-      mech_cfg: *mech_linear
-
-    ood_mech_periodic_er40_d20_n500:
-      name: ood_mech_periodic_er40_d20_n500
-      n_nodes: 20
-      samples_per_task: 500
-      graph_cfg: *graph_er40
-      mech_cfg: *mech_periodic
-
-    ood_nodes_linear_sf2_d60_n500:
-      name: ood_nodes_linear_sf2_d60_n500
-      n_nodes: 60
-      samples_per_task: 500
-      graph_cfg: *graph_sf2
-      mech_cfg: *mech_linear
-
-    ood_samples_linear_er40_d20_n1000:
-      name: ood_samples_linear_er40_d20_n1000
-      n_nodes: 20
-      samples_per_task: 1000
-      graph_cfg: *graph_er40
-      mech_cfg: *mech_linear
-
-  test_families:
+    # ID probes (one per mechanism)
     id_linear_er20_d20_n500:
       name: id_linear_er20_d20_n500
       n_nodes: 20
@@ -228,6 +188,188 @@ data:
       graph_cfg: *graph_er60
       mech_cfg: *mech_gpcde
 
+    # OOD probes (one per shift axis)
+    ood_graph_sbm_linear_d20_n500:
+      name: ood_graph_sbm_linear_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sbm
+      mech_cfg: *mech_linear
+
+    ood_mech_periodic_er20_d20_n500:
+      name: ood_mech_periodic_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_periodic
+
+    ood_noise_laplace_linear_er20_d20_n500:
+      name: ood_noise_laplace_linear_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+      noise_type: laplace
+
+    ood_both_sbm_periodic_d20_n500:
+      name: ood_both_sbm_periodic_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sbm
+      mech_cfg: *mech_periodic
+
+    ood_nodes_linear_er20_d40_n500:
+      name: ood_nodes_linear_er20_d40_n500
+      n_nodes: 40
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+    ood_samples_linear_er20_d20_n1000:
+      name: ood_samples_linear_er20_d20_n1000
+      n_nodes: 20
+      samples_per_task: 1000
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+  # ════════════════════════════════════════════════════════════════════
+  #  Test families
+  # ════════════════════════════════════════════════════════════════════
+
+  test_families:
+    # RQ1 anchor: in-distribution variability grid used as the primary
+    # robustness baseline and as the ID pool for OOD detection.
+    # ── A. ID Variability Grid (6 graphs × 3 mechanisms, d=20, n=500) ─
+    #    Full factorial over all training-domain graph × mechanism combos.
+    id_linear_er20_d20_n500:
+      name: id_linear_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+    id_linear_er40_d20_n500:
+      name: id_linear_er40_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_linear
+
+    id_linear_er60_d20_n500:
+      name: id_linear_er60_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er60
+      mech_cfg: *mech_linear
+
+    id_linear_sf1_d20_n500:
+      name: id_linear_sf1_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf1
+      mech_cfg: *mech_linear
+
+    id_linear_sf2_d20_n500:
+      name: id_linear_sf2_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_linear
+
+    id_linear_sf3_d20_n500:
+      name: id_linear_sf3_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf3
+      mech_cfg: *mech_linear
+
+    id_neuralnet_er20_d20_n500:
+      name: id_neuralnet_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_neuralnet
+
+    id_neuralnet_er40_d20_n500:
+      name: id_neuralnet_er40_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_neuralnet
+
+    id_neuralnet_er60_d20_n500:
+      name: id_neuralnet_er60_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er60
+      mech_cfg: *mech_neuralnet
+
+    id_neuralnet_sf1_d20_n500:
+      name: id_neuralnet_sf1_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf1
+      mech_cfg: *mech_neuralnet
+
+    id_neuralnet_sf2_d20_n500:
+      name: id_neuralnet_sf2_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    id_neuralnet_sf3_d20_n500:
+      name: id_neuralnet_sf3_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf3
+      mech_cfg: *mech_neuralnet
+
+    id_gpcde_er20_d20_n500:
+      name: id_gpcde_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_gpcde
+
+    id_gpcde_er40_d20_n500:
+      name: id_gpcde_er40_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_gpcde
+
+    id_gpcde_er60_d20_n500:
+      name: id_gpcde_er60_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er60
+      mech_cfg: *mech_gpcde
+
+    id_gpcde_sf1_d20_n500:
+      name: id_gpcde_sf1_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf1
+      mech_cfg: *mech_gpcde
+
+    id_gpcde_sf2_d20_n500:
+      name: id_gpcde_sf2_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_gpcde
+
+    id_gpcde_sf3_d20_n500:
+      name: id_gpcde_sf3_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf3
+      mech_cfg: *mech_gpcde
+
+    # RQ1: graph-topology shift.
+    # ── B. Graph Shift (3 OOD graphs × 3 ID mechanisms, d=20, n=500) ──
+    #    Mechanism held constant per column; only graph changes.
     ood_graph_sbm_linear_d20_n500:
       name: ood_graph_sbm_linear_d20_n500
       n_nodes: 20
@@ -291,40 +433,152 @@ data:
       graph_cfg: *graph_grg
       mech_cfg: *mech_gpcde
 
-    ood_mech_periodic_er40_d20_n500:
-      name: ood_mech_periodic_er40_d20_n500
+    # RQ1: mechanism shift.
+    # ── C. Mechanism Shift (4 OOD mechs × 3 graph anchors, d=20, n=500)
+    #    Graph held constant per anchor; only mechanism changes.
+    #    Anchors: ER-20, ER-60, SF-2
+    #
+    #    C1. Anchor: ER-20
+    ood_mech_periodic_er20_d20_n500:
+      name: ood_mech_periodic_er20_d20_n500
       n_nodes: 20
       samples_per_task: 500
-      graph_cfg: *graph_er40
+      graph_cfg: *graph_er20
       mech_cfg: *mech_periodic
 
-    ood_mech_square_er40_d20_n500:
-      name: ood_mech_square_er40_d20_n500
+    ood_mech_square_er20_d20_n500:
+      name: ood_mech_square_er20_d20_n500
       n_nodes: 20
       samples_per_task: 500
-      graph_cfg: *graph_er40
+      graph_cfg: *graph_er20
       mech_cfg: *mech_square
 
-    ood_mech_logistic_map_er40_d20_n500:
-      name: ood_mech_logistic_map_er40_d20_n500
+    ood_mech_logistic_map_er20_d20_n500:
+      name: ood_mech_logistic_map_er20_d20_n500
       n_nodes: 20
       samples_per_task: 500
-      graph_cfg: *graph_er40
+      graph_cfg: *graph_er20
       mech_cfg: *mech_logistic_map
 
-    ood_mech_pnl_tanh_er40_d20_n500:
-      name: ood_mech_pnl_tanh_er40_d20_n500
+    ood_mech_pnl_tanh_er20_d20_n500:
+      name: ood_mech_pnl_tanh_er20_d20_n500
       n_nodes: 20
       samples_per_task: 500
-      graph_cfg: *graph_er40
+      graph_cfg: *graph_er20
       mech_cfg: *mech_pnl_tanh
 
+    #    C2. Anchor: ER-60
+    ood_mech_periodic_er60_d20_n500:
+      name: ood_mech_periodic_er60_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er60
+      mech_cfg: *mech_periodic
+
+    ood_mech_square_er60_d20_n500:
+      name: ood_mech_square_er60_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er60
+      mech_cfg: *mech_square
+
+    ood_mech_logistic_map_er60_d20_n500:
+      name: ood_mech_logistic_map_er60_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er60
+      mech_cfg: *mech_logistic_map
+
+    ood_mech_pnl_tanh_er60_d20_n500:
+      name: ood_mech_pnl_tanh_er60_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er60
+      mech_cfg: *mech_pnl_tanh
+
+    #    C3. Anchor: SF-2
+    ood_mech_periodic_sf2_d20_n500:
+      name: ood_mech_periodic_sf2_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_periodic
+
+    ood_mech_square_sf2_d20_n500:
+      name: ood_mech_square_sf2_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_square
+
+    ood_mech_logistic_map_sf2_d20_n500:
+      name: ood_mech_logistic_map_sf2_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_logistic_map
+
+    ood_mech_pnl_tanh_sf2_d20_n500:
+      name: ood_mech_pnl_tanh_sf2_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_pnl_tanh
+
+    # RQ1: observation-noise shift.
+    # ── D. Noise Shift (2 OOD noise × 2 anchors, d=20, n=500) ────────
+    #    Anchor 1: Linear × ER-20
+    ood_noise_laplace_linear_er20_d20_n500:
+      name: ood_noise_laplace_linear_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+      noise_type: laplace
+
+    ood_noise_uniform_linear_er20_d20_n500:
+      name: ood_noise_uniform_linear_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+      noise_type: uniform
+
+    #    Anchor 2: MLP × SF-2
+    ood_noise_laplace_neuralnet_sf2_d20_n500:
+      name: ood_noise_laplace_neuralnet_sf2_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+      noise_type: laplace
+
+    ood_noise_uniform_neuralnet_sf2_d20_n500:
+      name: ood_noise_uniform_neuralnet_sf2_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+      noise_type: uniform
+
+    # RQ1 and RQ3: compound OOD shift used both for robustness and for
+    # harder uncertainty / OOD-detection stress cases.
+    # ── E. Compound Shift (3 OOD graphs × 3 OOD mechs, d=20, n=500) ──
+    #    Both graph and mechanism are OOD simultaneously.
+    #    Mechanisms: periodic, logistic_map, pnl_tanh (square dropped).
     ood_both_sbm_periodic_d20_n500:
       name: ood_both_sbm_periodic_d20_n500
       n_nodes: 20
       samples_per_task: 500
       graph_cfg: *graph_sbm
       mech_cfg: *mech_periodic
+
+    ood_both_sbm_logistic_map_d20_n500:
+      name: ood_both_sbm_logistic_map_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sbm
+      mech_cfg: *mech_logistic_map
 
     ood_both_sbm_pnl_tanh_d20_n500:
       name: ood_both_sbm_pnl_tanh_d20_n500
@@ -340,6 +594,20 @@ data:
       graph_cfg: *graph_ws
       mech_cfg: *mech_periodic
 
+    ood_both_ws_logistic_map_d20_n500:
+      name: ood_both_ws_logistic_map_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_ws
+      mech_cfg: *mech_logistic_map
+
+    ood_both_ws_pnl_tanh_d20_n500:
+      name: ood_both_ws_pnl_tanh_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_ws
+      mech_cfg: *mech_pnl_tanh
+
     ood_both_grg_periodic_d20_n500:
       name: ood_both_grg_periodic_d20_n500
       n_nodes: 20
@@ -347,19 +615,131 @@ data:
       graph_cfg: *graph_grg
       mech_cfg: *mech_periodic
 
-    ood_nodes_linear_sf2_d50_n500:
-      name: ood_nodes_linear_sf2_d50_n500
+    ood_both_grg_logistic_map_d20_n500:
+      name: ood_both_grg_logistic_map_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_grg
+      mech_cfg: *mech_logistic_map
+
+    ood_both_grg_pnl_tanh_d20_n500:
+      name: ood_both_grg_pnl_tanh_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_grg
+      mech_cfg: *mech_pnl_tanh
+
+    # RQ2: node-count transfer.
+    # ── F. Node-Count Transfer (2 ladders) ────────────────────────────
+    #    d ∈ {10, 15, 20*, 25, 30, 35, 40, 50, 60}
+    #    * d=20 overlaps with the ID grid (not repeated here).
+    #
+    #    F1. Ladder 1: ER-20 × Linear
+    ood_nodes_linear_er20_d10_n500:
+      name: ood_nodes_linear_er20_d10_n500
+      n_nodes: 10
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+    ood_nodes_linear_er20_d15_n500:
+      name: ood_nodes_linear_er20_d15_n500
+      n_nodes: 15
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+    ood_nodes_linear_er20_d25_n500:
+      name: ood_nodes_linear_er20_d25_n500
+      n_nodes: 25
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+    ood_nodes_linear_er20_d30_n500:
+      name: ood_nodes_linear_er20_d30_n500
+      n_nodes: 30
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+    ood_nodes_linear_er20_d35_n500:
+      name: ood_nodes_linear_er20_d35_n500
+      n_nodes: 35
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+    ood_nodes_linear_er20_d40_n500:
+      name: ood_nodes_linear_er20_d40_n500
+      n_nodes: 40
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+    ood_nodes_linear_er20_d50_n500:
+      name: ood_nodes_linear_er20_d50_n500
+      n_nodes: 50
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+    ood_nodes_linear_er20_d60_n500:
+      name: ood_nodes_linear_er20_d60_n500
+      n_nodes: 60
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+    #    F2. Ladder 2: SF-2 × MLP
+    ood_nodes_neuralnet_sf2_d10_n500:
+      name: ood_nodes_neuralnet_sf2_d10_n500
+      n_nodes: 10
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    ood_nodes_neuralnet_sf2_d15_n500:
+      name: ood_nodes_neuralnet_sf2_d15_n500
+      n_nodes: 15
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    ood_nodes_neuralnet_sf2_d25_n500:
+      name: ood_nodes_neuralnet_sf2_d25_n500
+      n_nodes: 25
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    ood_nodes_neuralnet_sf2_d30_n500:
+      name: ood_nodes_neuralnet_sf2_d30_n500
+      n_nodes: 30
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    ood_nodes_neuralnet_sf2_d35_n500:
+      name: ood_nodes_neuralnet_sf2_d35_n500
+      n_nodes: 35
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    ood_nodes_neuralnet_sf2_d40_n500:
+      name: ood_nodes_neuralnet_sf2_d40_n500
+      n_nodes: 40
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    ood_nodes_neuralnet_sf2_d50_n500:
+      name: ood_nodes_neuralnet_sf2_d50_n500
       n_nodes: 50
       samples_per_task: 500
       graph_cfg: *graph_sf2
-      mech_cfg: *mech_linear
-
-    ood_nodes_linear_sf2_d60_n500:
-      name: ood_nodes_linear_sf2_d60_n500
-      n_nodes: 60
-      samples_per_task: 500
-      graph_cfg: *graph_sf2
-      mech_cfg: *mech_linear
+      mech_cfg: *mech_neuralnet
 
     ood_nodes_neuralnet_sf2_d60_n500:
       name: ood_nodes_neuralnet_sf2_d60_n500
@@ -368,42 +748,155 @@ data:
       graph_cfg: *graph_sf2
       mech_cfg: *mech_neuralnet
 
-    ood_samples_linear_er40_d20_n100:
-      name: ood_samples_linear_er40_d20_n100
+    # RQ2: sample-count transfer.
+    # ── G. Sample-Count Transfer (2 ladders) ──────────────────────────
+    #    n ∈ {50, 100, 150, 200, 300, 500*, 750, 1000, 1500, 2000}
+    #    * n=500 overlaps with the ID grid (not repeated here).
+    #
+    #    G1. Ladder 1: ER-20 × Linear × d=20
+    ood_samples_linear_er20_d20_n50:
+      name: ood_samples_linear_er20_d20_n50
+      n_nodes: 20
+      samples_per_task: 50
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+    ood_samples_linear_er20_d20_n100:
+      name: ood_samples_linear_er20_d20_n100
       n_nodes: 20
       samples_per_task: 100
-      graph_cfg: *graph_er40
+      graph_cfg: *graph_er20
       mech_cfg: *mech_linear
 
-    ood_samples_linear_er40_d20_n200:
-      name: ood_samples_linear_er40_d20_n200
+    ood_samples_linear_er20_d20_n150:
+      name: ood_samples_linear_er20_d20_n150
+      n_nodes: 20
+      samples_per_task: 150
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+    ood_samples_linear_er20_d20_n200:
+      name: ood_samples_linear_er20_d20_n200
       n_nodes: 20
       samples_per_task: 200
-      graph_cfg: *graph_er40
+      graph_cfg: *graph_er20
       mech_cfg: *mech_linear
 
-    ood_samples_linear_er40_d20_n1000:
-      name: ood_samples_linear_er40_d20_n1000
+    ood_samples_linear_er20_d20_n300:
+      name: ood_samples_linear_er20_d20_n300
+      n_nodes: 20
+      samples_per_task: 300
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+    ood_samples_linear_er20_d20_n750:
+      name: ood_samples_linear_er20_d20_n750
+      n_nodes: 20
+      samples_per_task: 750
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_linear
+
+    ood_samples_linear_er20_d20_n1000:
+      name: ood_samples_linear_er20_d20_n1000
       n_nodes: 20
       samples_per_task: 1000
-      graph_cfg: *graph_er40
+      graph_cfg: *graph_er20
       mech_cfg: *mech_linear
 
-    ood_noise_laplace_linear_er40_d20_n500:
-      name: ood_noise_laplace_linear_er40_d20_n500
+    ood_samples_linear_er20_d20_n1500:
+      name: ood_samples_linear_er20_d20_n1500
       n_nodes: 20
-      samples_per_task: 500
-      graph_cfg: *graph_er40
+      samples_per_task: 1500
+      graph_cfg: *graph_er20
       mech_cfg: *mech_linear
-      noise_type: laplace
 
-    ood_noise_uniform_linear_er40_d20_n500:
-      name: ood_noise_uniform_linear_er40_d20_n500
+    ood_samples_linear_er20_d20_n2000:
+      name: ood_samples_linear_er20_d20_n2000
       n_nodes: 20
-      samples_per_task: 500
-      graph_cfg: *graph_er40
+      samples_per_task: 2000
+      graph_cfg: *graph_er20
       mech_cfg: *mech_linear
-      noise_type: uniform
+
+    #    G2. Ladder 2: SF-2 × MLP × d=20
+    ood_samples_neuralnet_sf2_d20_n50:
+      name: ood_samples_neuralnet_sf2_d20_n50
+      n_nodes: 20
+      samples_per_task: 50
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    ood_samples_neuralnet_sf2_d20_n100:
+      name: ood_samples_neuralnet_sf2_d20_n100
+      n_nodes: 20
+      samples_per_task: 100
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    ood_samples_neuralnet_sf2_d20_n150:
+      name: ood_samples_neuralnet_sf2_d20_n150
+      n_nodes: 20
+      samples_per_task: 150
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    ood_samples_neuralnet_sf2_d20_n200:
+      name: ood_samples_neuralnet_sf2_d20_n200
+      n_nodes: 20
+      samples_per_task: 200
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    ood_samples_neuralnet_sf2_d20_n300:
+      name: ood_samples_neuralnet_sf2_d20_n300
+      n_nodes: 20
+      samples_per_task: 300
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    ood_samples_neuralnet_sf2_d20_n750:
+      name: ood_samples_neuralnet_sf2_d20_n750
+      n_nodes: 20
+      samples_per_task: 750
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    ood_samples_neuralnet_sf2_d20_n1000:
+      name: ood_samples_neuralnet_sf2_d20_n1000
+      n_nodes: 20
+      samples_per_task: 1000
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    ood_samples_neuralnet_sf2_d20_n1500:
+      name: ood_samples_neuralnet_sf2_d20_n1500
+      n_nodes: 20
+      samples_per_task: 1500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    ood_samples_neuralnet_sf2_d20_n2000:
+      name: ood_samples_neuralnet_sf2_d20_n2000
+      n_nodes: 20
+      samples_per_task: 2000
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_neuralnet
+
+    # RQ3 appendix / stress-test families: extreme compound OOD settings for
+    # posterior diagnostics and uncertainty failure analysis.
+    # ── H. Extreme Stress Tests (appendix) ────────────────────────────
+    ood_both_grg_logistic_map_d60_n50:
+      name: ood_both_grg_logistic_map_d60_n50
+      n_nodes: 60
+      samples_per_task: 50
+      graph_cfg: *graph_grg
+      mech_cfg: *mech_logistic_map
+
+    ood_both_ws_pnl_tanh_d60_n50:
+      name: ood_both_ws_pnl_tanh_d60_n50
+      n_nodes: 60
+      samples_per_task: 50
+      graph_cfg: *graph_ws
+      mech_cfg: *mech_pnl_tanh
 
     ood_both_sbm_periodic_d60_n100:
       name: ood_both_sbm_periodic_d60_n100
@@ -412,26 +905,20 @@ data:
       graph_cfg: *graph_sbm
       mech_cfg: *mech_periodic
 
-    ood_both_ws_periodic_d60_n100:
-      name: ood_both_ws_periodic_d60_n100
-      n_nodes: 60
-      samples_per_task: 100
-      graph_cfg: *graph_ws
-      mech_cfg: *mech_periodic
-
-    ood_both_grg_periodic_d60_n100:
-      name: ood_both_grg_periodic_d60_n100
-      n_nodes: 60
-      samples_per_task: 100
-      graph_cfg: *graph_grg
-      mech_cfg: *mech_periodic
-
 trainer:
   accumulate_grad_batches: 4
   validation_n_samples: 16
   validation_metrics: [e-edgef1, ne-sid, ne-shd, valid_dag_pct]
   validation_log_per_family: false
   validation_selection_metric: mean_id_e-edgef1
+  validation_group_prefixes:
+    id: [id_]
+    ood_graph: [ood_graph_]
+    ood_mech: [ood_mech_]
+    ood_noise: [ood_noise_]
+    ood_both: [ood_both_]
+    ood_nodes: [ood_nodes_]
+    ood_samples: [ood_samples_]
 
 inference:
   n_samples: 100
