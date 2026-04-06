@@ -113,8 +113,8 @@ if [[ "${EVAL_ONLY}" == "true" ]]; then
   rm -f "${TARGET_DIR}/metrics.json"
   rm -rf "${TARGET_DIR}/inference"
   PIPELINE_ARGS=(
-    "inference.output_dir=${TARGET_DIR}"
-    "inference.use_best_checkpoint_for_eval=true"
+    "++inference.output_dir=${TARGET_DIR}"
+    "++inference.use_best_checkpoint_for_eval=true"
   )
 fi
 
