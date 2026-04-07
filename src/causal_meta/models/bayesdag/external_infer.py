@@ -5,14 +5,16 @@ import json
 import logging
 import os
 import time
+from types import MethodType
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import torch
-from causica.datasets.dataset import CausalDataset
+from causica.datasets.dataset import Dataset
 from causica.datasets.variables import Variables
 from causica.models.bayesdag.bayesdag_linear import BayesDAGLinear
 from causica.models.bayesdag.bayesdag_nonlinear import BayesDAGNonLinear
+from causica.preprocessing.data_processor import DataProcessor
 
 log = logging.getLogger(__name__)
 
@@ -22,25 +24,19 @@ def _build_dataset(
     train_mask: np.ndarray,
     variables: Variables,
     seed: int,
-) -> CausalDataset:
+) -> Dataset:
     num_nodes = train_data.shape[1]
-    adjacency = np.zeros((num_nodes, num_nodes), dtype=np.float32)
-    subgraph_mask = np.ones((num_nodes, num_nodes), dtype=np.float32)
     graph_args: Dict[str, Any] = {
         "num_variables": int(num_nodes),
-        "exp_edges": float(adjacency.sum()),
-        "exp_edges_per_node": float(adjacency.sum()) / max(1, num_nodes),
+        "exp_edges": float("nan"),
+        "exp_edges_per_node": float("nan"),
         "graph_type": "unknown",
         "seed": int(seed),
     }
 
-    return CausalDataset(
+    return Dataset(
         train_data=train_data,
         train_mask=train_mask,
-        adjacency_data=adjacency,
-        subgraph_data=subgraph_mask,
-        intervention_data=None,
-        counterfactual_data=None,
         val_data=None,
         val_mask=None,
         test_data=train_data,
@@ -191,6 +187,34 @@ def _build_model(
     return model_cls(**kwargs)
 
 
+def _patch_model_for_unknown_graph_inference(model: Any) -> None:
+    """Disable ground-truth graph dependencies for fair explicit inference."""
+
+    def _process_dataset_without_ground_truth(
+        inner_self: Any,
+        dataset: Any,
+        train_config_dict: Dict[str, Any] | None = None,
+        variables: Variables | None = None,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        if train_config_dict is None:
+            train_config_dict = {}
+        if variables is None:
+            variables = inner_self.variables
+
+        inner_self.data_processor = DataProcessor(
+            variables,
+            unit_scale_continuous=False,
+            standardize_data_mean=train_config_dict.get("standardize_data_mean", False),
+            standardize_data_std=train_config_dict.get("standardize_data_std", False),
+        )
+        processed_dataset = inner_self.data_processor.process_dataset(dataset)
+        data, mask = processed_dataset.train_data_and_mask
+        return data.astype(np.float32), mask
+
+    model.process_dataset = MethodType(_process_dataset_without_ground_truth, model)
+    model.evaluate_metrics = lambda *args, **kwargs: None
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser()
@@ -238,6 +262,7 @@ def main() -> None:
     )
 
     model = _build_model(config["model"], variables, device=resolved_device)
+    _patch_model_for_unknown_graph_inference(model)
     if bool(config.get("train", {}).get("skip_evaluation", False)):
         model.evaluate_metrics = lambda *args, **kwargs: None
 

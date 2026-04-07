@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import tempfile
+from types import MethodType
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple
 
@@ -74,6 +75,7 @@ class BayesDAGModel(BaseModel):
         self.norm_layers = norm_layers
         self.res_connection = res_connection
         self.external_python = external_python
+        self.external_process = bool(external_python)
         self.external_timeout_s = external_timeout_s
         self.device = device
         self.skip_evaluation = skip_evaluation
@@ -162,7 +164,7 @@ class BayesDAGModel(BaseModel):
         if self.external_python:
             return self._sample_external(x, num_samples)
 
-        CausalDataset, Variables, model_cls = self._require_causica()
+        Dataset, Variables, model_cls, DataProcessor = self._require_causica()
 
         if x.ndim != 3:
             raise ValueError("Input data must have shape (Batch, Samples, Variables).")
@@ -205,7 +207,7 @@ class BayesDAGModel(BaseModel):
             variables = Variables.create_from_data_and_dict(x_np, mask_np, None)
 
             dataset = self._build_dataset(
-                CausalDataset=CausalDataset,
+                Dataset=Dataset,
                 train_data=x_np,
                 train_mask=mask_np,
                 variables=variables,
@@ -216,6 +218,10 @@ class BayesDAGModel(BaseModel):
                 model_cls=model_cls,
                 variables=variables,
                 device=x.device,
+            )
+            self._patch_model_for_unknown_graph_inference(
+                model=model,
+                DataProcessor=DataProcessor,
             )
             model.run_train(dataset, train_config_dict=train_config)
 
@@ -376,33 +382,64 @@ class BayesDAGModel(BaseModel):
 
         return torch.stack(samples_per_batch, dim=0)
 
+    def _patch_model_for_unknown_graph_inference(
+        self,
+        *,
+        model: Any,
+        DataProcessor: Any,
+    ) -> None:
+        """Disable ground-truth graph dependencies for fair explicit inference."""
+
+        def _process_dataset_without_ground_truth(
+            inner_self: Any,
+            dataset: Any,
+            train_config_dict: Dict[str, Any] | None = None,
+            variables: Any | None = None,
+        ) -> tuple[np.ndarray, np.ndarray]:
+            if train_config_dict is None:
+                train_config_dict = {}
+            if variables is None:
+                variables = inner_self.variables
+
+            inner_self.data_processor = DataProcessor(
+                variables,
+                unit_scale_continuous=False,
+                standardize_data_mean=train_config_dict.get(
+                    "standardize_data_mean", False
+                ),
+                standardize_data_std=train_config_dict.get(
+                    "standardize_data_std", False
+                ),
+            )
+            processed_dataset = inner_self.data_processor.process_dataset(dataset)
+            data, mask = processed_dataset.train_data_and_mask
+            data = data.astype(np.float32)
+            return data, mask
+
+        model.process_dataset = MethodType(_process_dataset_without_ground_truth, model)
+        model.evaluate_metrics = lambda *args, **kwargs: None
+
     def _build_dataset(
         self,
         *,
-        CausalDataset: Any,
+        Dataset: Any,
         train_data: np.ndarray,
         train_mask: np.ndarray,
         variables: Any,
         seed: int,
     ) -> Any:
         num_nodes = train_data.shape[1]
-        adjacency = np.zeros((num_nodes, num_nodes), dtype=np.float32)
-        subgraph_mask = np.ones((num_nodes, num_nodes), dtype=np.float32)
         graph_args: Dict[str, Any] = {
             "num_variables": int(num_nodes),
-            "exp_edges": float(adjacency.sum()),
-            "exp_edges_per_node": float(adjacency.sum()) / max(1, num_nodes),
+            "exp_edges": float("nan"),
+            "exp_edges_per_node": float("nan"),
             "graph_type": "unknown",
             "seed": int(seed),
         }
 
-        return CausalDataset(
+        return Dataset(
             train_data=train_data,
             train_mask=train_mask,
-            adjacency_data=adjacency,
-            subgraph_data=subgraph_mask,
-            intervention_data=None,
-            counterfactual_data=None,
             val_data=None,
             val_mask=None,
             test_data=train_data,
@@ -419,10 +456,11 @@ class BayesDAGModel(BaseModel):
             raise ValueError("BayesDAG variant must be 'linear' or 'nonlinear'.")
 
         try:
-            from causica.datasets.dataset import CausalDataset  # type: ignore[import-not-found]
+            from causica.datasets.dataset import Dataset  # type: ignore[import-not-found]
             from causica.datasets.variables import Variables  # type: ignore[import-not-found]
             from causica.models.bayesdag.bayesdag_linear import BayesDAGLinear  # type: ignore[import-not-found]
             from causica.models.bayesdag.bayesdag_nonlinear import BayesDAGNonLinear  # type: ignore[import-not-found]
+            from causica.preprocessing.data_processor import DataProcessor  # type: ignore[import-not-found]
         except Exception as exc:  # pragma: no cover - exercised via tests
             raise RuntimeError(
                 "BayesDAG requires the 'causica' package from Project-BayesDAG. "
@@ -431,7 +469,7 @@ class BayesDAGModel(BaseModel):
             ) from exc
 
         model_cls = BayesDAGLinear if self.variant == "linear" else BayesDAGNonLinear
-        return CausalDataset, Variables, model_cls
+        return Dataset, Variables, model_cls, DataProcessor
 
     def _resolve_external_python(self) -> str:
         if not self.external_python:
