@@ -207,8 +207,12 @@ def _patch_model_for_unknown_graph_inference(model: Any) -> None:
             standardize_data_mean=train_config_dict.get("standardize_data_mean", False),
             standardize_data_std=train_config_dict.get("standardize_data_std", False),
         )
-        processed_dataset = inner_self.data_processor.process_dataset(dataset)
-        data, mask = processed_dataset.train_data_and_mask
+        # Process raw arrays directly instead of calling
+        # data_processor.process_dataset(), which reconstructs a Dataset
+        # object without forwarding graph_args and crashes in the
+        # upstream causica Dataset.__init__.
+        data, mask = dataset.train_data_and_mask
+        data, mask = inner_self.data_processor.process_data_and_masks(data, mask)
         return data.astype(np.float32), mask
 
     model.process_dataset = MethodType(_process_dataset_without_ground_truth, model)
