@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import textwrap
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict
 
 import pytest
 import torch
@@ -319,3 +319,260 @@ def test_syntren_npz_roundtrip(tmp_path: Path) -> None:
     assert data.dtype == torch.float32
     assert adj.dtype == torch.float32
     assert torch.allclose(data, torch.from_numpy(data_np))
+
+
+# ---------------------------------------------------------------------------
+# End-to-end evaluation integration tests
+# ---------------------------------------------------------------------------
+
+
+def _make_sachs_like_dataset(
+    n_obs: int = 100,
+    n_nodes: int = 11,
+    n_seeds: int = 3,
+) -> RealWorldDataset:
+    """Create a small synthetic dataset mimicking the Sachs format."""
+    torch.manual_seed(7)
+    data = torch.randn(n_obs, n_nodes)
+    # Simple chain: 0→1→2→...→(n_nodes-1)
+    adj = torch.zeros(n_nodes, n_nodes)
+    for i in range(n_nodes - 1):
+        adj[i, i + 1] = 1.0
+    return RealWorldDataset(
+        name="real_sachs_test",
+        data=data,
+        adjacency=adj,
+        seeds=list(range(n_seeds)),
+    )
+
+
+class _ExplicitDummyModel(torch.nn.Module):
+    """Minimal explicit (non-amortized) model for testing."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._num_nodes: int | None = None
+
+    @property
+    def needs_pretraining(self) -> bool:
+        return False
+
+    def set_num_nodes(self, num_nodes: int) -> None:
+        self._num_nodes = num_nodes
+
+    def sample(
+        self, x: torch.Tensor, num_samples: int = 1, mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        b, _, n = x.shape
+        # Return random binary adjacency samples (upper triangular for DAG).
+        samples = torch.zeros(b, num_samples, n, n)
+        for s in range(num_samples):
+            triu = torch.triu(torch.bernoulli(torch.full((n, n), 0.3)), diagonal=1)
+            samples[0, s] = triu
+        return samples
+
+    def forward(self, x: torch.Tensor, mask: torch.Tensor | None = None) -> Any:
+        raise RuntimeError("Use sample()")
+
+    def calculate_loss(
+        self, output: Any, target: torch.Tensor, **kwargs
+    ) -> torch.Tensor:
+        raise RuntimeError("No loss")
+
+
+class _AmortizedDummyModel(torch.nn.Module):
+    """Minimal amortized model for testing."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        # Need at least one parameter so device inference works.
+        self._dummy = torch.nn.Parameter(torch.zeros(1))
+
+    @property
+    def needs_pretraining(self) -> bool:
+        return True
+
+    def sample(
+        self, x: torch.Tensor, num_samples: int = 1, mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        if x.ndim == 4:
+            # (B, S, N, 2) with intervention channel
+            b, _, n, _ = x.shape
+        else:
+            b, _, n = x.shape
+        samples = torch.zeros(b, num_samples, n, n)
+        for s in range(num_samples):
+            triu = torch.triu(torch.bernoulli(torch.full((n, n), 0.3)), diagonal=1)
+            samples[0, s] = triu
+        return samples
+
+    def forward(self, x: torch.Tensor, mask: torch.Tensor | None = None) -> Any:
+        raise RuntimeError("Use sample()")
+
+    def calculate_loss(
+        self, output: Any, target: torch.Tensor, **kwargs
+    ) -> torch.Tensor:
+        raise RuntimeError("No loss")
+
+
+class _RealWorldDataModule:
+    """Lightweight data module that exposes a RealWorldDataset for evaluation."""
+
+    def __init__(self, dataset: RealWorldDataset) -> None:
+        from functools import partial
+
+        from torch.utils.data import DataLoader
+
+        from causal_meta.datasets.utils.collate import collate_fn_scm
+
+        self._dataset = dataset
+        self._loader = DataLoader(
+            dataset,
+            batch_size=1,
+            shuffle=False,
+            collate_fn=partial(collate_fn_scm, normalize=True),
+        )
+        # Real-world families are NOT in test_families (only generative ones).
+        self.test_families: Dict = {}
+        self.config = None
+        self.family_distances: Dict = {}
+
+    def test_dataloader(self) -> Dict:
+        return {self._dataset.family_name: self._loader}
+
+    def test_interventional_dataloader(self) -> Dict:
+        return {}
+
+
+def test_real_world_explicit_evaluation_produces_metrics(tmp_path: Path) -> None:
+    """RealWorldDataset → explicit model → evaluation.run() → metrics.json."""
+    from omegaconf import OmegaConf
+
+    from causal_meta.runners.tasks.evaluation import run as evaluation_run
+
+    dataset = _make_sachs_like_dataset(n_obs=50, n_nodes=5, n_seeds=2)
+    data_module = _RealWorldDataModule(dataset)
+    model = _ExplicitDummyModel()
+
+    cfg = OmegaConf.create(
+        {
+            "name": "test_rw_explicit",
+            "inference": {
+                "n_samples": 3,
+                "inil_graph_samples": 1,
+            },
+        }
+    )
+
+    evaluation_run(cfg, model, data_module, output_dir=tmp_path)
+
+    metrics_path = tmp_path / "metrics.json"
+    assert metrics_path.exists(), "metrics.json was not written"
+
+    import json
+
+    with open(metrics_path) as f:
+        result = json.load(f)
+
+    # The dataset should appear under its family name.
+    assert "real_sachs_test" in result["summary"], (
+        f"Expected 'real_sachs_test' in summary keys, got {list(result['summary'].keys())}"
+    )
+    summary = result["summary"]["real_sachs_test"]
+
+    # Core metrics should be present.
+    for metric in ("e-shd_mean", "e-edgef1_mean", "valid_dag_pct_mean"):
+        assert metric in summary, f"Missing metric {metric} in summary"
+
+    # Raw per-task values should exist.
+    assert "real_sachs_test" in result["raw"]
+    raw = result["raw"]["real_sachs_test"]
+    assert "e-shd" in raw
+    assert len(raw["e-shd"]) == 2, "Expected 2 raw values (one per seed)"
+
+    # Inference artifacts should be saved.
+    inference_dir = tmp_path / "inference" / "real_sachs_test"
+    assert inference_dir.exists(), "Inference artifact directory not created"
+
+
+def test_real_world_amortized_evaluation_produces_metrics(tmp_path: Path) -> None:
+    """RealWorldDataset → amortized model → evaluation.run() → metrics.json."""
+    from omegaconf import OmegaConf
+
+    from causal_meta.runners.tasks.evaluation import run as evaluation_run
+
+    dataset = _make_sachs_like_dataset(n_obs=50, n_nodes=5, n_seeds=2)
+    data_module = _RealWorldDataModule(dataset)
+    model = _AmortizedDummyModel()
+
+    cfg = OmegaConf.create(
+        {
+            "name": "test_rw_amortized",
+            "inference": {
+                "n_samples": 3,
+                "inil_graph_samples": 1,
+            },
+        }
+    )
+
+    evaluation_run(cfg, model, data_module, output_dir=tmp_path)
+
+    metrics_path = tmp_path / "metrics.json"
+    assert metrics_path.exists(), "metrics.json was not written"
+
+    import json
+
+    with open(metrics_path) as f:
+        result = json.load(f)
+
+    assert "real_sachs_test" in result["summary"]
+    summary = result["summary"]["real_sachs_test"]
+
+    for metric in ("e-shd_mean", "e-edgef1_mean", "valid_dag_pct_mean"):
+        assert metric in summary, f"Missing metric {metric} in summary"
+
+    assert "real_sachs_test" in result["raw"]
+    raw = result["raw"]["real_sachs_test"]
+    assert len(raw["e-shd"]) == 2
+
+
+def test_real_world_evaluation_metrics_are_plausible(tmp_path: Path) -> None:
+    """Sanity-check that metric values are in valid ranges."""
+    from omegaconf import OmegaConf
+
+    from causal_meta.runners.tasks.evaluation import run as evaluation_run
+
+    dataset = _make_sachs_like_dataset(n_obs=50, n_nodes=5, n_seeds=1)
+    data_module = _RealWorldDataModule(dataset)
+    model = _ExplicitDummyModel()
+
+    cfg = OmegaConf.create(
+        {
+            "name": "test_rw_plausible",
+            "inference": {
+                "n_samples": 5,
+                "inil_graph_samples": 1,
+            },
+        }
+    )
+
+    evaluation_run(cfg, model, data_module, output_dir=tmp_path)
+
+    import json
+
+    with open(tmp_path / "metrics.json") as f:
+        result = json.load(f)
+
+    summary = result["summary"]["real_sachs_test"]
+
+    # E-SHD should be non-negative.
+    assert summary["e-shd_mean"] >= 0
+
+    # Edge F1 should be in [0, 1].
+    assert 0.0 <= summary["e-edgef1_mean"] <= 1.0
+
+    # Valid DAG pct should be in [0, 100] (stored as percentage).
+    assert 0.0 <= summary["valid_dag_pct_mean"] <= 100.0
+
+    # ne-SHD (normalized) should be in [0, 1] or close.
+    assert summary["ne-shd_mean"] >= 0

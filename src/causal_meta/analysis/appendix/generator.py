@@ -173,18 +173,36 @@ def _family_label(name: str) -> str:
         if "uniform" in name:
             return "Noise: Uniform"
     if name.startswith("ood_both_"):
-        if "periodic" in name and "d60" in name:
-            return "Compound: SBM + Periodic (60,100)"
-        if "periodic" in name:
-            return "Compound: SBM + Periodic"
-        if "pnl_tanh" in name:
-            return "Compound: SBM + PNL"
+        # Extract graph type: ood_both_<graph>_<mech>_d<nodes>_n<samples>
+        graph_codes = {"sbm": "SBM", "ws": "WS", "grg": "GRG"}
+        graph_label = "SBM"
+        for code, label in graph_codes.items():
+            if f"ood_both_{code}_" in name:
+                graph_label = label
+                break
+        mech_codes = {
+            "periodic": "Periodic",
+            "logistic_map": "Logistic map",
+            "pnl_tanh": "PNL",
+        }
+        for code, mech_label in mech_codes.items():
+            if code in name:
+                suffix = ""
+                if "d60" in name:
+                    # Include node/sample info for large-graph variants
+                    d = name.split("_d")[-1].split("_")[0]
+                    n = name.split("_n")[-1]
+                    suffix = f" ({d},{n})"
+                return f"Compound: {graph_label} + {mech_label}{suffix}"
     if name.startswith("ood_nodes_"):
         if "neuralnet" in name:
             return f"Nodes: NN SF2 ({name.split('_d')[-1].split('_')[0]})"
         return f"Nodes: Linear SF2 ({name.split('_d')[-1].split('_')[0]})"
     if name.startswith("ood_samples_"):
-        return f"Samples: Linear ER40 ({name.split('_n')[-1]})"
+        n_samples = name.split("_n")[-1]
+        if "neuralnet" in name:
+            return f"Samples: NN SF2 ({n_samples})"
+        return f"Samples: Linear ER20 ({n_samples})"
     return name
 
 

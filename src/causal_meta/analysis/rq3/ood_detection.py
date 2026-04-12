@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 def _is_ood(dataset_key: str) -> bool:
     """Return True if the dataset key is OOD (not in-distribution)."""
     dk = dataset_key.lower()
-    return not (dk.startswith("id_") or dk == "id_test")
+    return not dk.startswith("id_")
 
 
 def _pivot_raw_wide(

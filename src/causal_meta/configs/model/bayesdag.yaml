@@ -4,21 +4,35 @@ type: "bayesdag"
 id: "bayesdag"
 
 # BayesDAG explicit inference parameters.
+# Aligned with the official Project-BayesDAG base configs:
+#   bayesdag_nonlinear.json  (search grid for custom data)
+#   bayesdag_nonlinear_train_syntren.json  (tuned for SynTReN, d=20, N=500)
+#   bayesdag_nonlinear_er_20_40.json  (tuned for ER, d=20)
+# See https://github.com/microsoft/Project-BayesDAG
 variant: "nonlinear"
-lambda_sparse: 10.0
+lambda_sparse: 300.0
 
 # Long-run settings for explicit comparisons.
+# sinkhorn_n_iter=300 matches the official base config default.
 num_chains: 10
 sinkhorn_n_iter: 300
 
-scale_noise: 0.001
-scale_noise_p: 0.01
-batch_size: 64
-max_epochs: 100
+# Noise scale parameters — matched to official SynTReN config.
+scale_noise: 0.01
+scale_noise_p: 0.1
+batch_size: 256
+max_epochs: 400
 
 standardize_data_mean: false
 standardize_data_std: false
 skip_evaluation: true
+
+# Architecture flags — matched to official nonlinear base config.
+norm_layers: true
+res_connection: true
+vi_norm: true
+input_perm: false
+sparse_init: false
 
 # Keep BayesDAG's internal logs/artifacts inside the run folder.
 save_dir: ${hydra:runtime.output_dir}/bayesdag_output
@@ -27,20 +41,19 @@ external_python: ${oc.env:CAUSAL_META_BAYESDAG_PYTHON,null}
 external_timeout_s: 3600
 device: "auto"
 
-# Paper-aligned per-family profiles (Appendix B.3, Table 6).
-# Families not listed here fall back to the top-level defaults above.
+# Per-family profiles.  Families not listed here fall back to the
+# top-level defaults above.  Only variant, lambda_sparse, num_chains,
+# scale_noise, and scale_noise_p are overridable per profile.
 profile_overrides:
   linear:
     variant: "linear"
-    # Keep a sparsity preference for linear SEMs without making the prior so
-    # strong that denser ID families are penalized by construction.
-    lambda_sparse: 50.0
+    lambda_sparse: 300.0
     num_chains: 20
-    scale_noise: 0.001
+    scale_noise: 0.01
     scale_noise_p: 1.0
   gpcde:
     variant: "nonlinear"
-    lambda_sparse: 1.0
+    lambda_sparse: 300.0
     num_chains: 10
-    scale_noise: 0.1
-    scale_noise_p: 0.001
+    scale_noise: 0.01
+    scale_noise_p: 0.1

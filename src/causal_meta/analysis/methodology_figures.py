@@ -100,9 +100,9 @@ _MECH_SPECS: list[tuple[str, object, bool]] = [
         ),
         True,
     ),
-    ("Periodic", PeriodicMechanismConfig(weight_scale=1.0, noise_scale=0.1), False),
-    ("Square", SquareMechanismConfig(weight_scale=1.0, noise_scale=0.1), False),
-    ("Logistic Map", LogisticMapMechanismConfig(weight_scale=1.0), False),
+    ("Periodic", PeriodicMechanismConfig(weight_scale=10.0, noise_scale=0.1), False),
+    ("Square", SquareMechanismConfig(weight_scale=10.0, noise_scale=0.1), False),
+    ("Logistic Map", LogisticMapMechanismConfig(weight_scale=5.0), False),
     (
         "PNL (tanh)",
         PNLMechanismConfig(
@@ -280,6 +280,19 @@ def generate_mechanism_comparison_figure(
         data = scm.sample(n_samples).cpu().numpy()
         parent_vals = data[:, 0]
         child_vals = data[:, 1]
+
+        # Handle degenerate root nodes (e.g., LogisticMap with noise_scale=0
+        # produces a single constant value for the root).  Fall back to
+        # directly visualising the child mechanism over a synthetic parent
+        # range so the functional shape is visible.
+        if np.std(parent_vals) < 1e-6:
+            torch_gen_fb = torch.Generator().manual_seed(_SEED)
+            synth_parent = torch.randn(n_samples, generator=torch_gen_fb) * 2.0
+            noise_fb = torch.randn(n_samples, 1, generator=torch_gen_fb)
+            with torch.no_grad():
+                child_out = mechanisms[1](synth_parent.unsqueeze(1), noise_fb)
+            parent_vals = synth_parent.numpy()
+            child_vals = child_out.cpu().numpy().flatten()
 
         color = _ID_COLOR if is_id else _OOD_COLOR
         tag = "ID" if is_id else "OOD"

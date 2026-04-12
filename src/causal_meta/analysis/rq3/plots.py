@@ -68,6 +68,8 @@ def generate_uncertainty_scatter(
         "OOD-Mech": "#9467bd",
         "OOD-Noise": "#8c564b",
         "OOD-Both": "#e377c2",
+        "OOD-Nodes": "#ff7f0e",
+        "OOD-Samples": "#1f77b4",
         "OOD": "#17becf",
     }
     all_categories = sorted(pivot["OODCategory"].unique())
