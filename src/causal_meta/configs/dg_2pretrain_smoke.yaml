@@ -27,7 +27,7 @@ inference:
   bayesdag:
     max_epochs: 5
     num_chains: 2
-    batch_size: 256
+    batch_size: 512
     external_timeout_s: 600
 
 hydra:
