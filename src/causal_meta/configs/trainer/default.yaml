@@ -22,7 +22,7 @@ scheduler_warmup_ratio: 0.02
 scheduler_warmup_start_factor: 0.001
 
 # AVICI acyclicity dual update cadence (paper style).
-regulariser_update_interval: 100
+regulariser_update_interval: 500
 
 # Validation controls.
 validation_n_samples: 16

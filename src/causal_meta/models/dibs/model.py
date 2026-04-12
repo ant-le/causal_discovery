@@ -227,6 +227,12 @@ class DiBSModel(BaseModel):
                 num_samples=int(num_samples),
                 match_seed=self.seed + batch_idx,
                 device=x.device,
+                inference_kwargs=self._build_inference_kwargs(
+                    alpha=self.alpha,
+                    gamma_z=self.gamma_z,
+                    gamma_theta=self.gamma_theta,
+                    use_marginal=self.use_marginal,
+                ),
             )
             samples_per_batch.append(graphs_t)
 
@@ -405,6 +411,43 @@ class DiBSModel(BaseModel):
         return int(batch_size), int(num_nodes)
 
     @staticmethod
+    def _build_inference_kwargs(
+        *,
+        alpha: float | None,
+        gamma_z: float | None,
+        gamma_theta: float | None,
+        use_marginal: bool,
+    ) -> dict[str, Any]:
+        """Build kwargs for the ``JointDiBS`` / ``MarginalDiBS`` constructor.
+
+        Maps config-level inference parameters to the library's constructor
+        keyword arguments:
+
+        - ``alpha``       → ``alpha_linear``
+        - ``gamma_z``     → ``kernel_param["h_latent"]`` (Joint) or
+                            ``kernel_param["h"]`` (Marginal)
+        - ``gamma_theta`` → ``kernel_param["h_theta"]`` (Joint only)
+        """
+        kwargs: dict[str, Any] = {}
+        if alpha is not None:
+            kwargs["alpha_linear"] = float(alpha)
+
+        kernel_param: dict[str, float] = {}
+        if use_marginal:
+            if gamma_z is not None:
+                kernel_param["h"] = float(gamma_z)
+        else:
+            if gamma_z is not None:
+                kernel_param["h_latent"] = float(gamma_z)
+            if gamma_theta is not None:
+                kernel_param["h_theta"] = float(gamma_theta)
+
+        if kernel_param:
+            kwargs["kernel_param"] = kernel_param
+
+        return kwargs
+
+    @staticmethod
     def _sample_from_dibs(
         *,
         x_jax: Any,
@@ -417,12 +460,14 @@ class DiBSModel(BaseModel):
         num_samples: int,
         match_seed: int,
         device: torch.device,
+        inference_kwargs: dict[str, Any] | None = None,
     ) -> torch.Tensor:
         dibs = dibs_cls(
             x=x_jax,
             interv_mask=None,
             graph_model=graph_model,
             likelihood_model=likelihood_model,
+            **(inference_kwargs or {}),
         )
 
         graphs, _ = dibs.sample(
@@ -487,6 +532,12 @@ class DiBSModel(BaseModel):
             num_samples=int(num_samples),
             match_seed=int(seed),
             device=torch.device("cpu"),
+            inference_kwargs=cls._build_inference_kwargs(
+                alpha=alpha,
+                gamma_z=gamma_z,
+                gamma_theta=gamma_theta,
+                use_marginal=use_marginal,
+            ),
         )
         return graphs_t.cpu().numpy()
 

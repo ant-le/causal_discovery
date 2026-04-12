@@ -5,7 +5,7 @@ id: "dibs"
 
 # DiBS explicit inference parameters.
 mode: "nonlinear"
-steps: 1000
+steps: 3000
 seed: 0
 use_marginal: false
 xla_preallocate: false
@@ -13,10 +13,14 @@ external_process: true
 external_python: ${oc.env:CAUSAL_META_DIBS_PYTHON,null}
 external_timeout_s: 3600
 
-# Default profile (used when dataset family cannot be mapped).
-alpha: 0.02
+# Default profile — JointDiBS nonlinear (used when dataset family
+# cannot be mapped to a more specific profile).
+# alpha_linear controls sigmoid inverse-temperature annealing: α(t) = alpha * t.
+# gamma_z  → SVGD kernel bandwidth for latent Z particles (h_latent).
+# gamma_theta → SVGD kernel bandwidth for Θ particles (h_theta).
+alpha: 0.05
 gamma_z: 5.0
-gamma_theta: 1000.0
+gamma_theta: 500.0
 n_particles: 32
 
 # Paper-aligned per-family profiles (Appendix B.3, Table 5).
@@ -24,7 +28,7 @@ n_particles: 32
 profile_overrides:
   linear:
     mode: "linear"
-    alpha: 0.2
+    alpha: 0.05
     gamma_z: 5.0
     gamma_theta: 500.0
     n_particles: 64
