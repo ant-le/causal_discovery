@@ -262,9 +262,15 @@ def generate_appendix_artifacts(output_dir: Path, configs_root: Path) -> list[st
             "Workers / pin memory",
             f"{benchmark_cfg['data'].get('num_workers')} / {benchmark_cfg['data'].get('pin_memory')}",
         ],
-        ["Max steps", _fmt(trainer_cfg.get("max_steps"))],
-        ["Validation interval", _fmt(trainer_cfg.get("val_check_interval"))],
-        ["Checkpoint interval", _fmt(trainer_cfg.get("checkpoint_every_n_steps"))],
+        ["Max tasks seen", _fmt(trainer_cfg.get("max_tasks_seen"))],
+        [
+            "Validation interval (tasks)",
+            _fmt(trainer_cfg.get("val_check_interval_tasks")),
+        ],
+        [
+            "Checkpoint interval (tasks)",
+            _fmt(trainer_cfg.get("checkpoint_every_n_tasks")),
+        ],
         ["Learning rate", _fmt(trainer_cfg.get("lr"))],
         ["Weight decay", _fmt(trainer_cfg.get("weight_decay"))],
         [

@@ -77,9 +77,9 @@ def _make_cfg() -> OmegaConf:
                 "num_nodes": 3,
             },
             "trainer": {
-                "max_steps": 1,
-                "log_every_n_steps": 1,
-                "val_check_interval": 1,
+                "max_tasks_seen": 1,
+                "log_every_n_tasks": 1,
+                "val_check_interval_tasks": 1,
                 "lr": 0.001,
                 "tf32": False,
             },

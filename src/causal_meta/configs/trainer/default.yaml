@@ -5,17 +5,19 @@ weight_decay: 1e-4
 accumulate_grad_batches: 1
 
 # Paper reproduction defaults (section 4.2).
-max_steps: 500000
-log_every_n_steps: 100
-val_check_interval: 5000
-checkpoint_every_n_steps: 50000
+# This preserves the historical single-GPU effective budget for the default
+# full-data setup (32 tasks/step for 500,000 optimizer steps).
+max_tasks_seen: 16000000
+log_every_n_tasks: 3200
+val_check_interval_tasks: 160000
+checkpoint_every_n_tasks: 1600000
 
 amp: true
 amp_dtype: bf16
 grad_clip_norm: 1.0
 
 scheduler: cosine
-scheduler_t_max: ${trainer.max_steps}
+scheduler_t_max_tasks: ${trainer.max_tasks_seen}
 scheduler_eta_min: 0.0
 # Shorter warmup improves stability for long BCNP runs.
 scheduler_warmup_ratio: 0.02

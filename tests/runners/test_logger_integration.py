@@ -27,6 +27,14 @@ class TestLocalLogger:
         assert entry["train/loss"] == 0.5
         assert entry["val/acc"] == 0.9
 
+    def test_log_metrics_uses_task_prefix(self, caplog):
+        logger = LocalLogger()
+
+        with caplog.at_level(logging.INFO):
+            logger.log_metrics({"train/loss": 0.5}, step=12)
+
+        assert "Tasks 12: train/loss: 0.5000" in caplog.text
+
     def test_log_hyperparams(self, caplog):
         logger = LocalLogger()
         params = {"lr": 0.01, "batch_size": 32}
@@ -81,9 +89,9 @@ def test_pipeline_integration_smoke(tmp_path):
                 "dropout": 0.0,
             },
             "trainer": {
-                "max_steps": 2,  # Very short run
-                "log_every_n_steps": 1,
-                "val_check_interval": 2,
+                "max_tasks_seen": 2,  # Very short run
+                "log_every_n_tasks": 1,
+                "val_check_interval_tasks": 2,
                 "lr": 0.001,
                 "tf32": False,
             },
@@ -166,9 +174,9 @@ def test_pipeline_falls_back_to_local_logger_when_wandb_init_fails(
                 "dropout": 0.0,
             },
             "trainer": {
-                "max_steps": 2,
-                "log_every_n_steps": 1,
-                "val_check_interval": 2,
+                "max_tasks_seen": 2,
+                "log_every_n_tasks": 1,
+                "val_check_interval_tasks": 2,
                 "lr": 0.001,
                 "tf32": False,
             },
@@ -235,7 +243,7 @@ def test_pipeline_rejects_multiple_models(tmp_path) -> None:
                     "num_layers": 2,
                 },
             },
-            "trainer": {"max_steps": 1, "lr": 0.001},
+            "trainer": {"max_tasks_seen": 1, "lr": 0.001},
             "inference": {"n_samples": 1},
         }
     )

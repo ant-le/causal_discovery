@@ -12,12 +12,12 @@ defaults:
 # `causal-meta` or `python -m causal_meta.main`).
 name: "smoke_test"
 
-# Smoke overrides: fast iteration with fewer steps.
+# Smoke overrides: fast iteration with fewer tasks.
 trainer:
-  max_steps: 30
-  log_every_n_steps: 1
-  val_check_interval: 10
-  checkpoint_every_n_steps: 0
+  max_tasks_seen: 240
+  log_every_n_tasks: 8
+  val_check_interval_tasks: 80
+  checkpoint_every_n_tasks: 0
 
 inference:
   n_samples: 8

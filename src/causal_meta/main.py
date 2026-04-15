@@ -150,7 +150,24 @@ def run_pipeline(cfg: DictConfig) -> None:
                     "Missing required config key for amortized models: trainer"
                 )
             trainer = cfg_obj.trainer
-            for key in ["lr", "max_steps"]:
+            legacy_step_keys = [
+                "max_steps",
+                "log_every_n_steps",
+                "val_check_interval",
+                "checkpoint_every_n_steps",
+                "scheduler_t_max",
+                "scheduler_warmup_steps",
+            ]
+            present_legacy_keys = [
+                key for key in legacy_step_keys if hasattr(trainer, key)
+            ]
+            if present_legacy_keys:
+                raise ValueError(
+                    "Legacy step-based trainer keys are no longer supported: "
+                    f"{present_legacy_keys}. Use max_tasks_seen/log_every_n_tasks/"
+                    "val_check_interval_tasks/checkpoint_every_n_tasks and task-based scheduler keys instead."
+                )
+            for key in ["lr", "max_tasks_seen"]:
                 if not hasattr(trainer, key):
                     raise ValueError(f"Missing required trainer key: trainer.{key}")
 

@@ -133,7 +133,16 @@ def run(
         optimizer_kwargs["fused"] = bool(cfg.trainer.get("optimizer_fused", True))
     optimizer = optim.AdamW(model.parameters(), **optimizer_kwargs)
 
-    scheduler = _build_scheduler(optimizer, cfg)
+    global_tasks_per_step = _global_tasks_per_step(
+        train_batch_size=train_batch_size,
+        accumulate_grad_batches=accumulate_grad_batches,
+        world_size=world_size,
+    )
+    scheduler = _build_scheduler(
+        optimizer,
+        cfg,
+        global_tasks_per_step=global_tasks_per_step,
+    )
 
     amp_enabled = bool(cfg.trainer.get("amp", False)) and device.type == "cuda"
     amp_dtype_name = str(cfg.trainer.get("amp_dtype", "bf16")).lower()
@@ -147,9 +156,11 @@ def run(
         raise ValueError("trainer.amp_dtype must be one of: bf16, fp16")
 
     # 4. Training Loop
-    max_steps = int(cfg.trainer.max_steps)
-    log_every_n_steps = int(cfg.trainer.get("log_every_n_steps", 100))
-    val_check_interval = int(cfg.trainer.get("val_check_interval", 1000))
+    max_tasks_seen = int(cfg.trainer.max_tasks_seen)
+    if max_tasks_seen < 1:
+        raise ValueError("trainer.max_tasks_seen must be >= 1")
+    log_every_n_tasks = int(cfg.trainer.get("log_every_n_tasks", 100))
+    val_check_interval_tasks = int(cfg.trainer.get("val_check_interval_tasks", 1000))
     regulariser_update_interval = int(cfg.trainer.get("regulariser_update_interval", 0))
     grad_clip_norm = float(cfg.trainer.get("grad_clip_norm", 1.0))
     validation_n_samples = int(
@@ -169,6 +180,7 @@ def run(
 
     best_val_metric = float("-inf")
     step = 0
+    tasks_seen = 0
 
     if rank == 0:
         log.info("Starting training loop...")
@@ -198,7 +210,7 @@ def run(
         if "scaler_state_dict" in checkpoint:
             scaler.load_state_dict(checkpoint["scaler_state_dict"])
 
-        start_step = checkpoint["step"]
+        start_step = int(checkpoint["step"])
         step = start_step
 
         train_stream_initial_base_seed = int(
@@ -243,6 +255,15 @@ def run(
                 "the data stream may differ from the original run."
             )
 
+        tasks_seen = int(
+            checkpoint.get(
+                "tasks_seen",
+                start_step * saved_world_size * saved_batch_size * saved_accum,
+            )
+        )
+        if rank == 0:
+            log.info("Resumed at tasks_seen=%d", tasks_seen)
+
     # Deterministic-ish resume for the streaming dataset when DataLoader uses num_workers=0.
     # With num_workers=0, MetaIterableDataset uses a single stream per rank with stride=world_size.
     # If batch_size_train or gradient accumulation is used, each optimizer step consumes
@@ -253,23 +274,25 @@ def run(
         and getattr(cfg.data, "num_workers", 0) == 0
     ):
         data_module.train_dataset.base_seed = (
-            train_stream_initial_base_seed
-            + step * world_size * train_batch_size * accumulate_grad_batches
+            train_stream_initial_base_seed + tasks_seen
         )
         if rank == 0 and start_step > 0:
             log.info(
                 f"Resumed train stream base_seed={data_module.train_dataset.base_seed} "
-                f"(initial={train_stream_initial_base_seed}, step={step}, world_size={world_size}, "
+                f"(initial={train_stream_initial_base_seed}, tasks_seen={tasks_seen}, world_size={world_size}, "
                 f"batch_size_train={train_batch_size}, accumulate_grad_batches={accumulate_grad_batches})."
             )
 
-    checkpoint_every_n_steps = int(
-        cfg.trainer.get("checkpoint_every_n_steps", val_check_interval)
+    checkpoint_every_n_tasks = int(
+        cfg.trainer.get("checkpoint_every_n_tasks", val_check_interval_tasks)
     )
+    next_log_tasks = _next_task_threshold(tasks_seen, log_every_n_tasks)
+    next_val_tasks = _next_task_threshold(tasks_seen, val_check_interval_tasks)
+    next_checkpoint_tasks = _next_task_threshold(tasks_seen, checkpoint_every_n_tasks)
 
     train_iter = iter(train_loader)
 
-    while step < max_steps:
+    while tasks_seen < max_tasks_seen:
         model.train()
         optimizer.zero_grad(set_to_none=True)
 
@@ -345,9 +368,14 @@ def run(
         if scheduler is not None:
             scheduler.step()
         step += 1
+        tasks_seen += global_tasks_per_step
 
         # Logging
-        if log_every_n_steps > 0 and step % log_every_n_steps == 0:
+        if (
+            log_every_n_tasks > 0
+            and next_log_tasks is not None
+            and tasks_seen >= next_log_tasks
+        ):
             loss_value = _reduce_loss_for_logging(loss_accum, world_size)
             if rank == 0:
                 current_lr = _current_learning_rate(optimizer)
@@ -357,7 +385,7 @@ def run(
                     else "nan"
                 )
                 log_str = (
-                    f"Step {step}/{max_steps} | Loss: {loss_value:.4f} | "
+                    f"Tasks {tasks_seen:,}/{max_tasks_seen:,} | Step {step} | Loss: {loss_value:.4f} | "
                     f"LR: {current_lr:.6g} | GradNorm: {grad_norm_str}"
                 )
                 log.info(log_str)
@@ -372,12 +400,24 @@ def run(
                                 if grad_norm_value is not None
                                 else float("nan")
                             ),
+                            "train/tasks_seen": float(tasks_seen),
+                            "train/global_tasks_per_step": float(global_tasks_per_step),
+                            "train/optimizer_step": float(step),
                         },
-                        step=step,
+                        step=tasks_seen,
                     )
+            next_log_tasks = _advance_task_threshold(
+                next_log_tasks,
+                log_every_n_tasks,
+                tasks_seen,
+            )
 
         # Validation
-        if val_check_interval > 0 and step % val_check_interval == 0:
+        if (
+            val_check_interval_tasks > 0
+            and next_val_tasks is not None
+            and tasks_seen >= next_val_tasks
+        ):
             val_metrics = validate(
                 model_unwrapped,
                 data_module,
@@ -388,7 +428,12 @@ def run(
             )
 
             if rank == 0:
-                log.info(f"Validation at step {step}: {val_metrics}")
+                log.info(
+                    "Validation at tasks_seen=%d (step=%d): %s",
+                    tasks_seen,
+                    step,
+                    val_metrics,
+                )
 
                 if logger:
                     if validation_log_per_family:
@@ -398,7 +443,7 @@ def run(
                             if "/" in k
                         }
                         if per_family_payload:
-                            logger.log_metrics(per_family_payload, step=step)
+                            logger.log_metrics(per_family_payload, step=tasks_seen)
 
                     aggregate_payload = {
                         f"val/{k}": v
@@ -406,7 +451,7 @@ def run(
                         if k.startswith("mean_") and "/" not in k
                     }
                     if aggregate_payload:
-                        logger.log_metrics(aggregate_payload, step=step)
+                        logger.log_metrics(aggregate_payload, step=tasks_seen)
 
                 current_metric = val_metrics.get(
                     validation_selection_metric,
@@ -425,16 +470,27 @@ def run(
                         scaler,
                         step,
                         path / "best.pt",
+                        tasks_seen=tasks_seen,
                         train_stream_initial_base_seed=train_stream_initial_base_seed,
+                        global_tasks_per_step=global_tasks_per_step,
                         world_size=world_size,
                         train_batch_size=train_batch_size,
                         accumulate_grad_batches=accumulate_grad_batches,
                         wandb_run_id=logger.run_id if logger else None,
                     )
                     log.info(f"New best model saved! E-F1: {best_val_metric:.4f}")
+            next_val_tasks = _advance_task_threshold(
+                next_val_tasks,
+                val_check_interval_tasks,
+                tasks_seen,
+            )
 
         # Periodic "last" checkpoint (rank 0 only)
-        if checkpoint_every_n_steps > 0 and step % checkpoint_every_n_steps == 0:
+        if (
+            checkpoint_every_n_tasks > 0
+            and next_checkpoint_tasks is not None
+            and tasks_seen >= next_checkpoint_tasks
+        ):
             if rank == 0:
                 save_checkpoint(
                     cfg,
@@ -444,12 +500,19 @@ def run(
                     scaler,
                     step,
                     path / "last.pt",
+                    tasks_seen=tasks_seen,
                     train_stream_initial_base_seed=train_stream_initial_base_seed,
+                    global_tasks_per_step=global_tasks_per_step,
                     world_size=world_size,
                     train_batch_size=train_batch_size,
                     accumulate_grad_batches=accumulate_grad_batches,
                     wandb_run_id=logger.run_id if logger else None,
                 )
+            next_checkpoint_tasks = _advance_task_threshold(
+                next_checkpoint_tasks,
+                checkpoint_every_n_tasks,
+                tasks_seen,
+            )
 
     if rank == 0:
         log.info("Training finished.")
@@ -461,7 +524,9 @@ def run(
             scaler,
             step,
             path / "last.pt",
+            tasks_seen=tasks_seen,
             train_stream_initial_base_seed=train_stream_initial_base_seed,
+            global_tasks_per_step=global_tasks_per_step,
             world_size=world_size,
             train_batch_size=train_batch_size,
             accumulate_grad_batches=accumulate_grad_batches,
@@ -644,7 +709,9 @@ def save_checkpoint(
     step: int,
     filepath: Path,
     *,
+    tasks_seen: int,
     train_stream_initial_base_seed: int,
+    global_tasks_per_step: int,
     world_size: int,
     train_batch_size: int,
     accumulate_grad_batches: int,
@@ -655,17 +722,18 @@ def save_checkpoint(
     )
     state: dict[str, Any] = {
         "step": step,
+        "tasks_seen": int(tasks_seen),
         "experiment_seed": int(experiment_seed),
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "scaler_state_dict": scaler.state_dict(),
         "train_stream_initial_base_seed": int(train_stream_initial_base_seed),
+        "train_stream_global_tasks_per_step": int(global_tasks_per_step),
         "train_stream_world_size": int(world_size),
         "train_stream_batch_size_train": int(train_batch_size),
         "train_stream_accumulate_grad_batches": int(accumulate_grad_batches),
         "train_stream_next_base_seed_if_num_workers_0": int(
-            train_stream_initial_base_seed
-            + step * world_size * train_batch_size * accumulate_grad_batches
+            train_stream_initial_base_seed + tasks_seen
         ),
     }
     if scheduler is not None:
@@ -678,7 +746,12 @@ def save_checkpoint(
     )
 
 
-def _build_scheduler(optimizer: optim.Optimizer, cfg: DictConfig) -> Any | None:
+def _build_scheduler(
+    optimizer: optim.Optimizer,
+    cfg: DictConfig,
+    *,
+    global_tasks_per_step: int = 1,
+) -> Any | None:
     scheduler_type = str(cfg.trainer.get("scheduler", "cosine")).lower()
     if scheduler_type in {"none", "off", "false"}:
         return None
@@ -687,16 +760,27 @@ def _build_scheduler(optimizer: optim.Optimizer, cfg: DictConfig) -> Any | None:
             f"trainer.scheduler must be one of: cosine, none. Got '{scheduler_type}'."
         )
 
-    max_steps = int(cfg.trainer.max_steps)
-    t_max = int(cfg.trainer.get("scheduler_t_max", max_steps))
+    if global_tasks_per_step < 1:
+        raise ValueError("global_tasks_per_step must be >= 1")
+
+    max_tasks_seen = int(cfg.trainer.max_tasks_seen)
+    max_steps = max(1, math.ceil(max_tasks_seen / float(global_tasks_per_step)))
+    t_max_tasks = cfg.trainer.get("scheduler_t_max_tasks", None)
+    if t_max_tasks is None:
+        t_max = max_steps
+    else:
+        t_max = max(1, math.ceil(int(t_max_tasks) / float(global_tasks_per_step)))
     eta_min = float(cfg.trainer.get("scheduler_eta_min", 0.0))
 
-    warmup_steps_cfg = cfg.trainer.get("scheduler_warmup_steps", None)
-    if warmup_steps_cfg is None:
+    warmup_tasks_cfg = cfg.trainer.get("scheduler_warmup_tasks", None)
+    if warmup_tasks_cfg is None:
         warmup_ratio = float(cfg.trainer.get("scheduler_warmup_ratio", 0.0))
         warmup_steps = int(round(max_steps * max(0.0, warmup_ratio)))
     else:
-        warmup_steps = int(warmup_steps_cfg)
+        warmup_steps = max(
+            0,
+            math.ceil(int(warmup_tasks_cfg) / float(global_tasks_per_step)),
+        )
 
     warmup_steps = max(0, min(warmup_steps, max(0, max_steps - 1)))
     if warmup_steps <= 0:
@@ -774,6 +858,34 @@ def _reduce_loss_for_logging(loss: torch.Tensor, world_size: int) -> float:
         if world_size > 0:
             loss_value = loss_value / float(world_size)
     return float(loss_value.item())
+
+
+def _global_tasks_per_step(
+    *,
+    train_batch_size: int,
+    accumulate_grad_batches: int,
+    world_size: int,
+) -> int:
+    return int(train_batch_size) * int(accumulate_grad_batches) * int(world_size)
+
+
+def _next_task_threshold(current_tasks_seen: int, interval: int) -> int | None:
+    if interval <= 0:
+        return None
+    completed_intervals = current_tasks_seen // interval
+    return int((completed_intervals + 1) * interval)
+
+
+def _advance_task_threshold(
+    next_threshold: int | None,
+    interval: int,
+    current_tasks_seen: int,
+) -> int | None:
+    if next_threshold is None or interval <= 0:
+        return None
+    while next_threshold <= current_tasks_seen:
+        next_threshold += interval
+    return next_threshold
 
 
 def _maybe_parse_betas(value: Any) -> tuple[float, float] | None:
