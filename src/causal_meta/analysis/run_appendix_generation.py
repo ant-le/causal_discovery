@@ -19,7 +19,7 @@ def main() -> None:
         "--thesis-root",
         type=str,
         default="paper/final_thesis",
-        help="Thesis root containing the generated/ directory.",
+        help="Thesis root containing graphics/ chapter directories.",
     )
     parser.add_argument(
         "--configs-root",
@@ -31,9 +31,10 @@ def main() -> None:
 
     thesis_root = Path(args.thesis_root)
     configs_root = Path(args.configs_root)
-    output_dir = thesis_root / "generated" / "appendix"
-    generated = generate_appendix_artifacts(output_dir, configs_root)
-    log.info("Generated %d appendix snippet files under %s", len(generated), output_dir)
+    generated = generate_appendix_artifacts(thesis_root, configs_root)
+    log.info(
+        "Generated %d appendix snippet files under %s", len(generated), thesis_root
+    )
 
 
 if __name__ == "__main__":

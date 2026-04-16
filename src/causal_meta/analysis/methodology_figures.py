@@ -7,7 +7,7 @@ Three figures illustrating the data-generating process:
 
 Usage:
     uv run python -m causal_meta.analysis.methodology_figures \
-        --output-dir paper/final_thesis/generated/figures
+        --output-dir paper/final_thesis/graphics/4_Methodology
 """
 
 from __future__ import annotations
@@ -100,9 +100,9 @@ _MECH_SPECS: list[tuple[str, object, bool]] = [
         ),
         True,
     ),
-    ("Periodic", PeriodicMechanismConfig(weight_scale=10.0, noise_scale=0.1), False),
-    ("Square", SquareMechanismConfig(weight_scale=10.0, noise_scale=0.1), False),
-    ("Logistic Map", LogisticMapMechanismConfig(weight_scale=5.0), False),
+    ("Periodic", PeriodicMechanismConfig(weight_scale=1.0, noise_scale=0.1), False),
+    ("Square", SquareMechanismConfig(weight_scale=1.0, noise_scale=0.1), False),
+    ("Logistic Map", LogisticMapMechanismConfig(weight_scale=1.0), False),
     (
         "PNL (tanh)",
         PNLMechanismConfig(
@@ -466,7 +466,7 @@ def main() -> None:
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="paper/final_thesis/generated/figures",
+        default="paper/final_thesis/graphics/4_Methodology",
         help="Directory for generated figures.",
     )
     args = parser.parse_args()

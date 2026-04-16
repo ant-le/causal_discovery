@@ -27,6 +27,9 @@ def _model_color(model: str) -> str:
 _ID_NODE_COUNT = 20
 _ID_SAMPLE_COUNT = 500
 
+# Full training-support node counts used during DG pre-training.
+_TRAINING_NODE_COUNTS: set[int] = {10, 20, 30, 40}
+
 # Ordered list of transfer ladder anchors: (mechanism, graph_code).
 _TRANSFER_ANCHORS: list[tuple[str, str]] = [
     ("linear", "er20"),
@@ -57,7 +60,6 @@ def generate_transfer_figure(
         x_col = "NNodes"
         metric_specs = [
             ("ne-sid", "Normalized E-SID", False),
-            ("ne-shd", "Normalized E-SHD", False),
             ("e-edgef1", "E-Edge F1", True),
         ]
         xlabel = "Target node count"
@@ -68,7 +70,6 @@ def generate_transfer_figure(
         x_col = "SamplesPerTask"
         metric_specs = [
             ("ne-sid", "Normalized E-SID", False),
-            ("ne-shd", "Normalized E-SHD", False),
             ("e-edgef1", "E-Edge F1", True),
         ]
         xlabel = "Observational samples per task"
@@ -173,8 +174,31 @@ def generate_transfer_figure(
                     alpha=0.9,
                 )
 
-            # Shade the ID region in grey.
-            if id_value in x_to_idx:
+            # Shade training-support region(s) in grey.
+            if axis == "nodes":
+                # Shade each in-training-support node count individually.
+                support_indices = sorted(
+                    x_to_idx[v] for v in _TRAINING_NODE_COUNTS if v in x_to_idx
+                )
+                for si in support_indices:
+                    ax.axvspan(
+                        si - 0.5,
+                        si + 0.5,
+                        color="#f2f2f2",
+                        alpha=0.35,
+                        zorder=0,
+                    )
+                # Place a boundary line after the last in-support value.
+                if support_indices:
+                    boundary = max(support_indices)
+                    if boundary < n_x - 1:
+                        ax.axvline(
+                            boundary + 0.5,
+                            color="#999999",
+                            linestyle=":",
+                            linewidth=1.0,
+                        )
+            elif id_value in x_to_idx:
                 id_idx = x_to_idx[id_value]
                 ax.axvspan(
                     id_idx - 0.5,

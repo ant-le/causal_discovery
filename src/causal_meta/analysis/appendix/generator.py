@@ -226,8 +226,20 @@ def _hydra_template_summary(value: Any) -> str:
     return text
 
 
-def generate_appendix_artifacts(output_dir: Path, configs_root: Path) -> list[str]:
-    output_dir.mkdir(parents=True, exist_ok=True)
+def generate_appendix_artifacts(thesis_root: Path, configs_root: Path) -> list[str]:
+    from causal_meta.analysis.common.thesis import (
+        GRAPHICS_APPENDIX_A,
+        GRAPHICS_APPENDIX_B,
+        GRAPHICS_APPENDIX_C,
+        GRAPHICS_APPENDIX_F,
+    )
+
+    dir_a = thesis_root / GRAPHICS_APPENDIX_A
+    dir_b = thesis_root / GRAPHICS_APPENDIX_B
+    dir_c = thesis_root / GRAPHICS_APPENDIX_C
+    dir_f = thesis_root / GRAPHICS_APPENDIX_F
+    for d in (dir_a, dir_b, dir_c, dir_f):
+        d.mkdir(parents=True, exist_ok=True)
 
     default_cfg = _load_yaml(configs_root / "default.yaml")
     benchmark_cfg = _load_yaml(configs_root / "dg_2pretrain_multimodel.yaml")
@@ -294,14 +306,14 @@ def generate_appendix_artifacts(output_dir: Path, configs_root: Path) -> list[st
         ["Cache compression", _fmt(inference_cfg.get("cache_compress"))],
     ]
     _write_table(
-        output_dir / "experimental_settings_table.tex",
+        dir_a / "experimental_settings_table.tex",
         caption="Global experimental settings derived from the benchmark Hydra configurations.",
         label="tab:appendix_experimental_settings",
         headers=["Setting", "Value"],
         rows=exp_rows,
         colspec="lp{9cm}",
     )
-    generated.append("appendix/experimental_settings_table.tex")
+    generated.append(f"{GRAPHICS_APPENDIX_A}/experimental_settings_table.tex")
 
     eval_rows = [
         ["Validation sample count", _fmt(trainer_cfg.get("validation_n_samples"))],
@@ -331,14 +343,14 @@ def generate_appendix_artifacts(output_dir: Path, configs_root: Path) -> list[st
         ["AUC seed", _fmt(inference_cfg.get("auc_seed"))],
     ]
     _write_table(
-        output_dir / "evaluation_settings_table.tex",
+        dir_a / "evaluation_settings_table.tex",
         caption="Evaluation and validation settings used by the thesis analysis pipeline.",
         label="tab:appendix_evaluation_settings",
         headers=["Setting", "Value"],
         rows=eval_rows,
         colspec="lp{9cm}",
     )
-    generated.append("appendix/evaluation_settings_table.tex")
+    generated.append(f"{GRAPHICS_APPENDIX_A}/evaluation_settings_table.tex")
 
     model_rows = [
         [
@@ -363,14 +375,14 @@ def generate_appendix_artifacts(output_dir: Path, configs_root: Path) -> list[st
         ],
     ]
     _write_table(
-        output_dir / "model_configurations_table.tex",
+        dir_b / "model_configurations_table.tex",
         caption="Model-specific configurations derived from the Hydra model YAML files.",
         label="tab:appendix_model_configurations",
         headers=["Model", "Configuration summary"],
         rows=model_rows,
         colspec="lp{10cm}",
     )
-    generated.append("appendix/model_configurations_table.tex")
+    generated.append(f"{GRAPHICS_APPENDIX_B}/model_configurations_table.tex")
 
     source_rows = [
         [
@@ -381,7 +393,7 @@ def generate_appendix_artifacts(output_dir: Path, configs_root: Path) -> list[st
         ]
     ]
     _write_table(
-        output_dir / "source_distribution_table.tex",
+        dir_c / "source_distribution_table.tex",
         caption="Shared source distribution used for amortized pre-training.",
         label="tab:appendix_source_distribution",
         headers=[
@@ -394,7 +406,7 @@ def generate_appendix_artifacts(output_dir: Path, configs_root: Path) -> list[st
         colspec="p{2.4cm}p{4.0cm}p{4.0cm}p{2.2cm}",
         resize=True,
     )
-    generated.append("appendix/source_distribution_table.tex")
+    generated.append(f"{GRAPHICS_APPENDIX_C}/source_distribution_table.tex")
 
     val_rows: list[list[str]] = []
     for name, cfg in benchmark_cfg["data"].get("val_families", {}).items():
@@ -409,12 +421,12 @@ def generate_appendix_artifacts(output_dir: Path, configs_root: Path) -> list[st
             ]
         )
     _write_family_table(
-        output_dir / "validation_families_table.tex",
+        dir_c / "validation_families_table.tex",
         caption="Validation families used during benchmark training and selection.",
         label="tab:appendix_validation_families",
         rows=val_rows,
     )
-    generated.append("appendix/validation_families_table.tex")
+    generated.append(f"{GRAPHICS_APPENDIX_C}/validation_families_table.tex")
 
     test_rows: list[list[str]] = []
     for name, cfg in benchmark_cfg["data"].get("test_families", {}).items():
@@ -437,21 +449,21 @@ def generate_appendix_artifacts(output_dir: Path, configs_root: Path) -> list[st
         row for row in test_rows if row[1] in {"Node-count", "Sample-count"}
     ]
     _write_family_table(
-        output_dir / "test_families_fixed_table.tex",
+        dir_c / "test_families_fixed_table.tex",
         caption="Fixed-size test families used in the in-distribution and OOD benchmark suites.",
         label="tab:appendix_test_families_fixed",
         rows=fixed_rows,
     )
     _write_family_table(
-        output_dir / "test_families_transfer_table.tex",
+        dir_c / "test_families_transfer_table.tex",
         caption="Task-regime transfer families used for node-count and sample-count evaluation.",
         label="tab:appendix_test_families_transfer",
         rows=transfer_rows,
     )
     generated.extend(
         [
-            "appendix/test_families_fixed_table.tex",
-            "appendix/test_families_transfer_table.tex",
+            f"{GRAPHICS_APPENDIX_C}/test_families_fixed_table.tex",
+            f"{GRAPHICS_APPENDIX_C}/test_families_transfer_table.tex",
         ]
     )
 
@@ -486,13 +498,13 @@ def generate_appendix_artifacts(output_dir: Path, configs_root: Path) -> list[st
         ["Normalize data", _fmt(benchmark_cfg.get("data", {}).get("normalize_data"))],
     ]
     _write_table(
-        output_dir / "reproducibility_table.tex",
+        dir_f / "reproducibility_table.tex",
         caption="Hydra output conventions and reproducibility-relevant artifact settings.",
         label="tab:appendix_reproducibility",
         headers=["Setting", "Value"],
         rows=reproducibility_rows,
         colspec="lp{9cm}",
     )
-    generated.append("appendix/reproducibility_table.tex")
+    generated.append(f"{GRAPHICS_APPENDIX_F}/reproducibility_table.tex")
 
     return generated

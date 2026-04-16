@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from causal_meta.analysis.ood_detection import (
+from causal_meta.analysis.uncertainty.ood_detection import (
     _roc_auc_manual,
     _precision_recall_auc_manual,
     compute_ood_detection_metrics,

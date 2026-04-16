@@ -120,13 +120,13 @@ def _generate_graph_shift_panels(
     models = list(PAPER_MODEL_LABELS.values())
     n_models = len(models)
     fig, axes = plt.subplots(
-        n_panels, 1, figsize=(7.5, 3.8 * n_panels), sharex=True, squeeze=False
+        1, n_panels, figsize=(5.0 * n_panels, 4.5), sharey=True, squeeze=False
     )
 
     all_agg: list[pd.DataFrame] = []
 
     for panel_idx, (mech_key, mech_label) in enumerate(mech_families):
-        ax = axes[panel_idx, 0]
+        ax = axes[0, panel_idx]
         panel_data = subset[subset["MechFamily"] == mech_key]
 
         agg = (
@@ -180,18 +180,16 @@ def _generate_graph_shift_panels(
                 )
 
         ax.set_xticks(x_base)
-        if panel_idx == n_panels - 1:
-            ax.set_xticklabels(datasets, rotation=25, ha="right", fontsize=9)
-        else:
-            ax.tick_params(axis="x", labelbottom=False)
-        ax.set_title(mech_label, fontsize=12, fontweight="bold")
+        ax.set_xticklabels(datasets, rotation=30, ha="right", fontsize=8)
+        ax.set_title(mech_label, fontsize=11, fontweight="bold")
         ax.grid(True, axis="y", linestyle="--", alpha=0.4)
-        ylabel = (
-            r"Normalized $\mathbb{E}$-SID $\downarrow$"
-            if metric_name == "ne-sid"
-            else r"$\mathbb{E}$-SID $\downarrow$"
-        )
-        ax.set_ylabel(ylabel, fontsize=12)
+        if panel_idx == 0:
+            ylabel = (
+                r"Normalized $\mathbb{E}$-SID $\downarrow$"
+                if metric_name == "ne-sid"
+                else r"$\mathbb{E}$-SID $\downarrow$"
+            )
+            ax.set_ylabel(ylabel, fontsize=11)
 
         # Grey ID region
         id_count = sum(1 for ds in datasets if axis_lookup.get(ds) == "id")
@@ -209,12 +207,12 @@ def _generate_graph_shift_panels(
             loc="upper center",
             bbox_to_anchor=(0.5, 1.0),
             ncol=len(labels),
-            fontsize=10,
+            fontsize=9,
             frameon=False,
         )
 
-    fig.suptitle(axis_title, fontsize=14, fontweight="bold", y=0.995)
-    fig.tight_layout(rect=[0, 0, 1, 0.965])
+    fig.suptitle(axis_title, fontsize=13, fontweight="bold", y=1.02)
+    fig.tight_layout(rect=[0, 0, 1, 0.92])
     fig.savefig(output_path, bbox_inches="tight")
     plt.close(fig)
 
@@ -330,13 +328,13 @@ def _generate_mech_shift_panels(
     models = list(PAPER_MODEL_LABELS.values())
     n_models = len(models)
     fig, axes = plt.subplots(
-        n_panels, 1, figsize=(7.5, 3.8 * n_panels), sharex=True, squeeze=False
+        1, n_panels, figsize=(5.0 * n_panels, 4.5), sharey=True, squeeze=False
     )
 
     all_agg: list[pd.DataFrame] = []
 
     for panel_idx, anchor in enumerate(anchors):
-        ax = axes[panel_idx, 0]
+        ax = axes[0, panel_idx]
 
         # For each anchor panel, keep OOD-mech families with this anchor
         # plus ID families matching this graph code
@@ -404,19 +402,17 @@ def _generate_mech_shift_panels(
                 )
 
         ax.set_xticks(x_base)
-        if panel_idx == n_panels - 1:
-            ax.set_xticklabels(datasets, rotation=25, ha="right", fontsize=9)
-        else:
-            ax.tick_params(axis="x", labelbottom=False)
+        ax.set_xticklabels(datasets, rotation=30, ha="right", fontsize=8)
         anchor_label = GRAPH_ANCHOR_LABELS.get(anchor, anchor.upper())
-        ax.set_title(f"Graph: {anchor_label}", fontsize=12, fontweight="bold")
+        ax.set_title(f"Graph: {anchor_label}", fontsize=11, fontweight="bold")
         ax.grid(True, axis="y", linestyle="--", alpha=0.4)
-        ylabel = (
-            r"Normalized $\mathbb{E}$-SID $\downarrow$"
-            if metric_name == "ne-sid"
-            else r"$\mathbb{E}$-SID $\downarrow$"
-        )
-        ax.set_ylabel(ylabel, fontsize=12)
+        if panel_idx == 0:
+            ylabel = (
+                r"Normalized $\mathbb{E}$-SID $\downarrow$"
+                if metric_name == "ne-sid"
+                else r"$\mathbb{E}$-SID $\downarrow$"
+            )
+            ax.set_ylabel(ylabel, fontsize=11)
 
         # Grey ID region
         id_count = sum(1 for ds in datasets if axis_lookup.get(ds) == "id")
@@ -434,12 +430,12 @@ def _generate_mech_shift_panels(
             loc="upper center",
             bbox_to_anchor=(0.5, 1.0),
             ncol=len(labels),
-            fontsize=10,
+            fontsize=9,
             frameon=False,
         )
 
-    fig.suptitle(axis_title, fontsize=14, fontweight="bold", y=0.995)
-    fig.tight_layout(rect=[0, 0, 1, 0.965])
+    fig.suptitle(axis_title, fontsize=13, fontweight="bold", y=1.02)
+    fig.tight_layout(rect=[0, 0, 1, 0.92])
     fig.savefig(output_path, bbox_inches="tight")
     plt.close(fig)
 
@@ -509,13 +505,13 @@ def _generate_noise_shift_panels(
     models = list(PAPER_MODEL_LABELS.values())
     n_models = len(models)
     fig, axes = plt.subplots(
-        n_panels, 1, figsize=(7.5, 3.8 * n_panels), sharex=True, squeeze=False
+        1, n_panels, figsize=(5.0 * n_panels, 4.5), sharey=True, squeeze=False
     )
 
     all_agg: list[pd.DataFrame] = []
 
     for panel_idx, anchor in enumerate(present_anchors):
-        ax = axes[panel_idx, 0]
+        ax = axes[0, panel_idx]
         panel_data = subset[subset["_noise_anchor"] == anchor]
 
         if panel_data.empty:
@@ -573,20 +569,18 @@ def _generate_noise_shift_panels(
                 )
 
         ax.set_xticks(x_base)
-        if panel_idx == n_panels - 1:
-            ax.set_xticklabels(datasets, rotation=25, ha="right", fontsize=9)
-        else:
-            ax.tick_params(axis="x", labelbottom=False)
+        ax.set_xticklabels(datasets, rotation=30, ha="right", fontsize=8)
         mech_label = ID_MECHANISM_LABELS.get(anchor[0], anchor[0])
         graph_label = GRAPH_ANCHOR_LABELS.get(anchor[1], anchor[1].upper())
-        ax.set_title(f"{mech_label} / {graph_label}", fontsize=12, fontweight="bold")
+        ax.set_title(f"{mech_label} / {graph_label}", fontsize=11, fontweight="bold")
         ax.grid(True, axis="y", linestyle="--", alpha=0.4)
-        ylabel = (
-            r"Normalized $\mathbb{E}$-SID $\downarrow$"
-            if metric_name == "ne-sid"
-            else r"$\mathbb{E}$-SID $\downarrow$"
-        )
-        ax.set_ylabel(ylabel, fontsize=12)
+        if panel_idx == 0:
+            ylabel = (
+                r"Normalized $\mathbb{E}$-SID $\downarrow$"
+                if metric_name == "ne-sid"
+                else r"$\mathbb{E}$-SID $\downarrow$"
+            )
+            ax.set_ylabel(ylabel, fontsize=11)
 
         # Grey ID region
         id_count = sum(1 for ds in datasets if axis_lookup.get(ds) == "id")
@@ -604,12 +598,12 @@ def _generate_noise_shift_panels(
             loc="upper center",
             bbox_to_anchor=(0.5, 1.0),
             ncol=len(labels),
-            fontsize=10,
+            fontsize=9,
             frameon=False,
         )
 
-    fig.suptitle(axis_title, fontsize=14, fontweight="bold", y=0.995)
-    fig.tight_layout(rect=[0, 0, 1, 0.965])
+    fig.suptitle(axis_title, fontsize=13, fontweight="bold", y=1.02)
+    fig.tight_layout(rect=[0, 0, 1, 0.92])
     fig.savefig(output_path, bbox_inches="tight")
     plt.close(fig)
 
@@ -667,11 +661,17 @@ def _generate_compound_shift_panels(
     metric_name: str,
     axis_title: str,
     output_path: Path,
+    *,
+    stress_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Generate a multi-panel compound-shift figure, one column per OOD graph.
 
     Each panel fixes the OOD graph topology and compares different OOD
     mechanisms against the same small set of representative ID anchors.
+
+    When *stress_df* is provided the extreme stress-test families are appended
+    after a second vertical divider, showing the ID → compound → stress
+    progression in a single figure.
     """
     subset = subset.copy()
     id_mask = subset["AxisCategory"] == "id"
@@ -692,6 +692,16 @@ def _generate_compound_shift_panels(
     ]
     if not present_graphs:
         return pd.DataFrame()
+
+    # Build a lookup from graph_code → stress-test family key
+    stress_by_graph: dict[str, pd.DataFrame] = {}
+    if stress_df is not None and not stress_df.empty:
+        for fam_key in _EXTREME_FAMILIES:
+            gc = graph_code_of(fam_key)
+            if gc is not None:
+                fam_rows = stress_df[stress_df["DatasetKey"] == fam_key]
+                if not fam_rows.empty:
+                    stress_by_graph[gc] = fam_rows
 
     n_panels = len(present_graphs)
     models = list(PAPER_MODEL_LABELS.values())
@@ -723,6 +733,26 @@ def _generate_compound_shift_panels(
         agg["FixedConcept"] = GRAPH_ANCHOR_LABELS.get(graph_code, graph_code.upper())
         agg["SortKey"] = agg["DatasetKey"].map(_compound_shift_sort_key)
         agg = agg.sort_values("SortKey").drop(columns=["SortKey"])
+
+        # ── Append stress-test rows if present for this graph ─────────
+        stress_agg: pd.DataFrame | None = None
+        if graph_code in stress_by_graph:
+            stress_panel = stress_by_graph[graph_code]
+            stress_agg = (
+                stress_panel.groupby(["Model", "DatasetKey"], dropna=False)["Value"]
+                .agg(Mean="mean", SEM=metric_sem)
+                .reset_index()
+            )
+            stress_agg["AxisCategory"] = "stress"
+            stress_agg["Dataset"] = stress_agg["DatasetKey"]
+            stress_agg["DatasetLabel"] = stress_agg["DatasetKey"].map(
+                lambda dk: _EXTREME_LABELS.get(dk, dk)
+            )
+            stress_agg["FixedConcept"] = GRAPH_ANCHOR_LABELS.get(
+                graph_code, graph_code.upper()
+            )
+            agg = pd.concat([agg, stress_agg], ignore_index=True)
+
         all_agg.append(agg)
 
         datasets = list(agg["DatasetLabel"].unique())
@@ -780,10 +810,30 @@ def _generate_compound_shift_panels(
             )
             ax.set_ylabel(ylabel, fontsize=12)
 
+        # Grey ID region
         id_count = sum(1 for ds in datasets if axis_lookup.get(ds) == "id")
         if 0 < id_count < len(datasets):
             ax.axvspan(-0.5, id_count - 0.5, color="#f2f2f2", alpha=0.35, zorder=0)
             ax.axvline(id_count - 0.5, color="#999999", linestyle=":", linewidth=1.0)
+
+        # Stress-test region (light red tint + second divider)
+        if stress_agg is not None and not stress_agg.empty:
+            stress_count = sum(1 for ds in datasets if axis_lookup.get(ds) == "stress")
+            if stress_count > 0:
+                stress_start = n_datasets - stress_count
+                ax.axvspan(
+                    stress_start - 0.5,
+                    n_datasets - 0.5,
+                    color="#ffe0e0",
+                    alpha=0.35,
+                    zorder=0,
+                )
+                ax.axvline(
+                    stress_start - 0.5,
+                    color="#cc4444",
+                    linestyle=":",
+                    linewidth=1.0,
+                )
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
     if handles:
@@ -881,6 +931,134 @@ def generate_results_anchor_table(
     return grouped
 
 
+# ── RQ2: Degradation heatmap ──────────────────────────────────────────
+
+_DEGRADATION_SHIFT_AXES: dict[str, str] = {
+    "graph": "Graph",
+    "mechanism": "Mechanism",
+    "noise": "Noise",
+    "compound": "Compound",
+}
+"""Shift axes included in the RQ2 degradation heatmap."""
+
+
+def generate_degradation_heatmap(
+    raw_df: pd.DataFrame,
+    *,
+    output_path: Path,
+) -> pd.DataFrame:
+    """Generate a heatmap showing per-model degradation ratio across shift axes.
+
+    Each cell shows ``mean(OOD ne-SID) / mean(ID ne-SID)`` for a given model
+    and shift axis. A ratio of 1.0 means no degradation; higher values
+    indicate worse OOD performance relative to ID.
+
+    The colour scale encodes normalized degradation so models and axes can
+    be compared at a glance.
+
+    Args:
+        raw_df: Long-format raw task DataFrame.
+        output_path: Path for the output PDF figure.
+
+    Returns:
+        Pivot table (models x shift axes) of degradation ratios.
+    """
+    import matplotlib.colors as mcolors
+
+    metric_name = "ne-sid"
+    subset = raw_df[raw_df["Metric"].eq(metric_name)].copy()
+    subset = subset[is_fixed_size_task_frame(subset)]
+
+    if subset.empty:
+        log.warning("No ne-sid data for degradation heatmap; skipping.")
+        return pd.DataFrame()
+
+    models = list(PAPER_MODEL_LABELS.values())
+
+    # Compute mean ID score per model
+    id_data = subset[subset["AxisCategory"] == "id"]
+    id_means = id_data.groupby("Model")["Value"].mean().to_dict()
+
+    rows: list[dict[str, object]] = []
+    for shift_key, shift_label in _DEGRADATION_SHIFT_AXES.items():
+        ood_data = subset[subset["AxisCategory"] == shift_key]
+        ood_means = ood_data.groupby("Model")["Value"].mean().to_dict()
+        for model in models:
+            id_val = id_means.get(model)
+            ood_val = ood_means.get(model)
+            if id_val is not None and ood_val is not None and id_val > 0:
+                ratio = ood_val / id_val
+            else:
+                ratio = float("nan")
+            rows.append({"Model": model, "Shift": shift_label, "Ratio": ratio})
+
+    result_df = pd.DataFrame(rows)
+    if result_df.empty:
+        log.warning("No data for degradation heatmap; skipping.")
+        return pd.DataFrame()
+
+    pivot = result_df.pivot(index="Model", columns="Shift", values="Ratio")
+    # Reorder rows and columns
+    pivot = pivot.reindex(index=[m for m in models if m in pivot.index])
+    pivot = pivot.reindex(
+        columns=[v for v in _DEGRADATION_SHIFT_AXES.values() if v in pivot.columns]
+    )
+
+    fig, ax = plt.subplots(figsize=(6, 3.5))
+
+    # Diverging colormap around 1.0 (no degradation)
+    vmin = max(0.5, float(pivot.min().min()) - 0.1) if not pivot.empty else 0.5
+    vmax = max(float(pivot.max().max()) + 0.1, 1.5) if not pivot.empty else 2.0
+    norm = mcolors.TwoSlopeNorm(vmin=vmin, vcenter=1.0, vmax=vmax)
+    cmap = plt.cm.RdYlGn_r  # red = worse (high ratio), green = good (low ratio)
+
+    im = ax.imshow(
+        pivot.values,
+        aspect="auto",
+        cmap=cmap,
+        norm=norm,
+    )
+
+    ax.set_xticks(np.arange(len(pivot.columns)))
+    ax.set_xticklabels(pivot.columns, fontsize=11)
+    ax.set_yticks(np.arange(len(pivot.index)))
+    ax.set_yticklabels(pivot.index, fontsize=11)
+
+    # Annotate cells with ratio values
+    for i in range(len(pivot.index)):
+        for j in range(len(pivot.columns)):
+            val = pivot.values[i, j]
+            if np.isnan(val):
+                text = "--"
+            else:
+                text = f"{val:.2f}"
+            ax.text(
+                j,
+                i,
+                text,
+                ha="center",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
+                color="white" if val > (vmin + vmax) / 2 else "black",
+            )
+
+    cbar = fig.colorbar(im, ax=ax, shrink=0.8, pad=0.04)
+    cbar.set_label("OOD / ID ratio", fontsize=10)
+
+    ax.set_title(
+        "Normalized E-SID Degradation Ratio (OOD / ID)",
+        fontsize=12,
+        fontweight="bold",
+        pad=12,
+    )
+    fig.tight_layout()
+    fig.savefig(output_path, bbox_inches="tight")
+    plt.close(fig)
+
+    return pivot
+
+
 def generate_shift_figure(
     raw_df: pd.DataFrame, *, shift_axis: str, output_path: Path
 ) -> pd.DataFrame:
@@ -910,7 +1088,10 @@ def generate_shift_figure(
     # ── Compound shift: multi-panel by fixed OOD graph ────────────────
     if shift_axis == "compound":
         return _generate_compound_shift_panels(
-            subset, metric_name, axis_title, output_path
+            subset,
+            metric_name,
+            axis_title,
+            output_path,
         )
 
     agg = (
@@ -1004,6 +1185,47 @@ def generate_shift_figure(
     return agg
 
 
+def generate_compound_and_stress_figure(
+    raw_df: pd.DataFrame,
+    *,
+    output_path: Path,
+) -> pd.DataFrame:
+    """Generate a merged compound-shift + stress-test figure.
+
+    Each panel shows a single OOD graph topology with three zones:
+    ID baselines (grey) → fixed-size compound OOD → extreme stress-test
+    families (light red).
+
+    Args:
+        raw_df: Long-format raw task DataFrame.
+        output_path: Path for the output PDF figure.
+
+    Returns:
+        Aggregated DataFrame used for plotting.
+    """
+    metric_name = "ne-sid"
+
+    # Fixed-size compound data (same filter as generate_shift_figure compound)
+    compound_subset = raw_df[
+        raw_df["Metric"].eq(metric_name)
+        & raw_df["AxisCategory"].isin(["id", "compound"])
+    ].copy()
+    compound_subset = compound_subset[is_fixed_size_task_frame(compound_subset)]
+
+    # Stress-test data (extreme families, not fixed-size)
+    stress_subset = raw_df[
+        raw_df["Metric"].eq(metric_name) & raw_df["DatasetKey"].isin(_EXTREME_FAMILIES)
+    ].copy()
+
+    return _generate_compound_shift_panels(
+        compound_subset,
+        metric_name,
+        "Compound Shift",
+        output_path,
+        stress_df=stress_subset,
+    )
+
+
 # ── Valid DAG % shift figure ───────────────────────────────────────────
 
 _VALID_DAG_SHIFT_SPECS: dict[str, tuple[str, str]] = {
@@ -1044,7 +1266,7 @@ def _compute_dibs_valid_dag_pct(
     import json
     import torch
 
-    from causal_meta.analysis.rq3.diagnostics import _discover_artifacts
+    from causal_meta.analysis.diagnostics.posterior import _discover_artifacts
     from causal_meta.analysis.utils import (
         _as_mapping,
         map_dataset_description,
@@ -1235,12 +1457,25 @@ def generate_valid_dag_shift_figure(
 
     shift_keys = list(_VALID_DAG_SHIFT_SPECS.keys())
     n_panels = len(shift_keys)
-    fig, axes = plt.subplots(1, n_panels, figsize=(5.0 * n_panels, 5), squeeze=False)
+    # 2×3 grid: top row = graph/mechanism/compound, bottom = nodes/samples/empty
+    n_rows, n_cols = 2, 3
+    fig, axes = plt.subplots(
+        n_rows, n_cols, figsize=(5.0 * n_cols, 5.0 * n_rows), squeeze=False
+    )
+    # Map panel index to (row, col)
+    _panel_pos = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1)]
+
+    # Hide unused cell(s)
+    for r in range(n_rows):
+        for c in range(n_cols):
+            if (r, c) not in _panel_pos[:n_panels]:
+                axes[r, c].set_visible(False)
 
     all_agg_rows: list[pd.DataFrame] = []
 
     for panel_idx, shift_key in enumerate(shift_keys):
-        ax = axes[0, panel_idx]
+        r, c = _panel_pos[panel_idx]
+        ax = axes[r, c]
         axis_cat, axis_title = _VALID_DAG_SHIFT_SPECS[shift_key]
 
         # Filter to ID + this shift axis
@@ -1424,9 +1659,9 @@ def generate_valid_dag_shift_figure(
         "DAG Structural Validity Under Distribution Shift",
         fontsize=14,
         fontweight="bold",
-        y=1.07,
+        y=1.03,
     )
-    fig.tight_layout(rect=[0, 0, 1, 0.91])
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
     fig.savefig(output_path, bbox_inches="tight")
     plt.close(fig)
 
@@ -1436,13 +1671,7 @@ def generate_valid_dag_shift_figure(
     return combined
 
 
-# ── Error decomposition (FP / FN / Reversed) shift figure ─────────────
-
-_ERROR_COMPONENT_COLORS: dict[str, str] = {
-    "False Positive": "#d62728",
-    "False Negative": "#1f77b4",
-    "Reversed": "#ff7f0e",
-}
+# ── Error decomposition (FP / FN / Reversed) shift table ──────────────
 
 _ERROR_DECOMP_SHIFT_SPECS: dict[str, tuple[str, str]] = {
     "graph": ("graph", "Graph Shift"),
@@ -1451,30 +1680,29 @@ _ERROR_DECOMP_SHIFT_SPECS: dict[str, tuple[str, str]] = {
 }
 
 
-def generate_error_decomposition_figure(
+def generate_error_decomposition_table(
     raw_df: pd.DataFrame,
     *,
     output_path: Path,
 ) -> pd.DataFrame:
-    """Generate a multi-panel stacked-bar figure decomposing SHD into FP/FN/reversed.
+    """Generate a LaTeX table decomposing SHD into FP/FN/reversed per model per shift.
 
-    Layout: one row per shift axis, one column per model.  Each bar shows the
-    mean error decomposition for a dataset family, stacked as false-positive
-    (red), false-negative (blue), and reversed (orange).
+    Layout: rows = models, column groups = shift axes (graph, mechanism,
+    compound), sub-columns = mean FP / FN / Reversed counts.
 
     Args:
         raw_df: Long-format raw task DataFrame (must contain ``fp_count``,
             ``fn_count``, ``reversed_count``).
-        output_path: Path for the output PDF figure.
+        output_path: Path for the output ``.tex`` file.
 
     Returns:
-        Aggregated DataFrame used for plotting.
+        Aggregated DataFrame used for the table.
     """
     needed = {"fp_count", "fn_count", "reversed_count"}
     available = set(raw_df["Metric"].unique()) if not raw_df.empty else set()
     if not needed.issubset(available):
         log.warning(
-            "Missing error decomposition metrics %s; skipping.",
+            "Missing error decomposition metrics %s; skipping table.",
             needed - available,
         )
         return pd.DataFrame()
@@ -1483,11 +1711,10 @@ def generate_error_decomposition_figure(
     error_df = error_df[is_fixed_size_task_frame(error_df)]
 
     if error_df.empty:
-        log.warning("No fixed-size error decomposition data; skipping.")
+        log.warning("No fixed-size error decomposition data; skipping table.")
         return pd.DataFrame()
 
-    # Pivot to wide: one row per (Model, DatasetKey, TaskIdx)
-    from causal_meta.analysis.rq1.failure_modes import _pivot_raw_wide
+    from causal_meta.analysis.diagnostics.failure_modes import _pivot_raw_wide
 
     wide = _pivot_raw_wide(error_df)
     if wide.empty:
@@ -1495,58 +1722,33 @@ def generate_error_decomposition_figure(
 
     for col in needed:
         if col not in wide.columns:
-            log.warning("Column %s not found after pivot; skipping error decomp.", col)
+            log.warning(
+                "Column %s not found after pivot; skipping error decomp table.", col
+            )
             return pd.DataFrame()
 
     wide["AxisCategory"] = wide["DatasetKey"].map(axis_category)
 
-    # Compute dataset label
-    from causal_meta.analysis.utils import map_dataset_description
-
-    wide["Dataset_desc"] = wide["DatasetKey"].map(map_dataset_description)
-    wide["DatasetLabel"] = wide.apply(
-        lambda row: thesis_dataset_label(
-            str(row["DatasetKey"]), str(row["Dataset_desc"])
-        ),
-        axis=1,
-    )
-
-    shift_keys = list(_ERROR_DECOMP_SHIFT_SPECS.keys())
+    shift_specs = list(_ERROR_DECOMP_SHIFT_SPECS.items())
     models = [m for m in PAPER_MODEL_LABELS.values() if m in wide["Model"].unique()]
-    n_shifts = len(shift_keys)
-    n_models = len(models)
 
-    if n_models == 0:
+    if not models:
         return pd.DataFrame()
-
-    fig, axes = plt.subplots(
-        n_shifts,
-        n_models,
-        figsize=(max(6, 3) * n_models, 4.5 * n_shifts),
-        squeeze=False,
-        sharey="row",
-    )
 
     all_agg: list[pd.DataFrame] = []
 
-    for row_idx, shift_key in enumerate(shift_keys):
-        axis_cat, axis_title = _ERROR_DECOMP_SHIFT_SPECS[shift_key]
-
+    # Aggregate: mean FP / FN / reversed per (Model, ShiftAxis)
+    for shift_key, (axis_cat, axis_title) in shift_specs:
         panel = wide[wide["AxisCategory"].isin(["id", axis_cat])].copy()
 
-        # ── Isolate the shift axis ────────────────────────────────────
+        # Apply the same filtering as the figure version
         if shift_key == "graph":
             panel = panel[
                 panel["DatasetKey"].map(lambda dk: id_mechanism_of(dk) == "linear")
             ].copy()
-            # Use short graph-topology labels
-            panel["DatasetLabel"] = panel["DatasetKey"].map(_graph_shift_label)
         elif shift_key == "mechanism":
-            # Use ER-20 as representative graph anchor.
-            # Filter both ID and OOD-mech to ER-20 to avoid mixing anchors.
             panel = _restrict_to_graph_anchor(panel, "er20")
         elif shift_key == "compound":
-            # Restrict ID to the same 3 representatives as the main figure
             _COMPOUND_ID_REPS = {
                 ("linear", "er20"),
                 ("neuralnet", "sf2"),
@@ -1558,133 +1760,119 @@ def generate_error_decomposition_figure(
             )
             panel = panel[keep_id | ~id_mask].copy()
 
-        if panel.empty:
-            for col_idx in range(n_models):
-                axes[row_idx, col_idx].set_visible(False)
+        # Only OOD rows for the degradation summary (ID is reference)
+        ood_panel = panel[panel["AxisCategory"] == axis_cat]
+        if ood_panel.empty:
             continue
 
-        # Aggregate: mean FP / FN / reversed per (Model, DatasetLabel, AxisCategory)
         agg = (
-            panel.groupby(["Model", "DatasetKey", "DatasetLabel", "AxisCategory"])[
-                list(needed)
-            ]
-            .mean()
-            .reset_index()
+            ood_panel.groupby("Model")[list(needed)].agg(["mean", "sem"]).reset_index()
         )
-        agg["_sort"] = agg["AxisCategory"].map({"id": 0}).fillna(1)
-        agg = agg.sort_values(["_sort", "DatasetLabel"]).drop(columns=["_sort"])
+        agg.columns = [
+            f"{col[0]}_{col[1]}" if col[1] else col[0] for col in agg.columns
+        ]
+        agg["ShiftAxis"] = axis_title
         all_agg.append(agg)
 
-        for col_idx, model in enumerate(models):
-            ax = axes[row_idx, col_idx]
-            model_agg = agg[agg["Model"] == model]
-            datasets = list(model_agg["DatasetLabel"].unique())
-            n_ds = len(datasets)
+    if not all_agg:
+        return pd.DataFrame()
 
-            if n_ds == 0:
-                ax.set_visible(False)
-                continue
+    combined = pd.concat(all_agg, ignore_index=True)
 
-            x = np.arange(n_ds)
-            bar_width = 0.65
+    # Build LaTeX table
+    n_shifts = len(shift_specs)
+    comp_labels = [("FP", "fp_count"), ("FN", "fn_count"), ("Rev.", "reversed_count")]
+    n_sub = len(comp_labels)
 
-            bottoms = np.zeros(n_ds)
-            for comp_metric, comp_label in [
-                ("fn_count", "False Negative"),
-                ("fp_count", "False Positive"),
-                ("reversed_count", "Reversed"),
-            ]:
-                heights = np.array(
-                    [
-                        float(
-                            model_agg[model_agg["DatasetLabel"] == ds][
-                                comp_metric
-                            ].values[0]
-                        )
-                        if ds in model_agg["DatasetLabel"].values
-                        else 0.0
-                        for ds in datasets
-                    ]
-                )
-                ax.bar(
-                    x,
-                    heights,
-                    bar_width,
-                    bottom=bottoms,
-                    color=_ERROR_COMPONENT_COLORS[comp_label],
-                    label=comp_label if (row_idx == 0 and col_idx == 0) else None,
-                    edgecolor="white",
-                    linewidth=0.5,
-                )
-                bottoms += heights
-
-            ax.set_xticks(x)
-            ax.set_xticklabels(datasets, rotation=30, ha="right", fontsize=8)
-            if col_idx == 0:
-                ax.set_ylabel("Mean Edge Errors", fontsize=10)
-            if row_idx == 0:
-                ax.set_title(model, fontsize=12, fontweight="bold")
-            ax.grid(True, axis="y", linestyle="--", alpha=0.4)
-
-            # Grey ID region
-            axis_lookup = dict(
-                zip(model_agg["DatasetLabel"], model_agg["AxisCategory"])
-            )
-            id_count = sum(1 for ds in datasets if axis_lookup.get(ds) == "id")
-            if 0 < id_count < n_ds:
-                ax.axvspan(-0.5, id_count - 0.5, color="#f2f2f2", alpha=0.35, zorder=0)
-                ax.axvline(
-                    id_count - 0.5, color="#999999", linestyle=":", linewidth=1.0
-                )
-
-        # Row label on the far-left axis
-        if shift_key == "graph":
-            row_label = f"{axis_title} (Linear)"
-        elif shift_key == "mechanism":
-            row_label = f"{axis_title} (ER-20)"
-        else:
-            row_label = axis_title
-        axes[row_idx, 0].annotate(
-            row_label,
-            xy=(-0.35, 0.5),
-            xycoords="axes fraction",
-            fontsize=11,
-            fontweight="bold",
-            rotation=90,
-            ha="center",
-            va="center",
-        )
-
-    # Shared legend on top
-    handles, labels = [], []
-    for ax_row in axes:
-        for ax in ax_row:
-            h, l = ax.get_legend_handles_labels()
-            for hh, ll in zip(h, l):
-                if ll not in labels:
-                    handles.append(hh)
-                    labels.append(ll)
-    if handles:
-        fig.legend(
-            handles,
-            labels,
-            title="Error Type",
-            loc="upper center",
-            bbox_to_anchor=(0.5, 1.0),
-            ncol=len(labels),
-            fontsize=10,
-            frameon=False,
-        )
-
-    fig.suptitle(
-        "SHD Error Decomposition Under Distribution Shift",
-        fontsize=14,
-        fontweight="bold",
-        y=1.04,
+    lines: list[str] = []
+    lines.append(r"\begin{table}[t]")
+    lines.append(r"\centering")
+    lines.append(r"\footnotesize")
+    lines.append(
+        r"\caption{Mean SHD error decomposition (false positive, false negative,"
+        r" and reversed edges) per model under each OOD shift axis. Values are"
+        r" averaged over all OOD families in the respective shift axis.}"
     )
-    fig.tight_layout(rect=[0, 0.02, 1, 0.93])
-    fig.savefig(output_path, bbox_inches="tight")
-    plt.close(fig)
+    lines.append(r"\label{tab:error_decomposition}")
 
-    combined = pd.concat(all_agg, ignore_index=True) if all_agg else pd.DataFrame()
+    # Column spec: Model + 3 sub-cols per shift axis
+    col_spec = "l" + ("|" + "r" * n_sub) * n_shifts
+    lines.append(r"\begin{tabular}{" + col_spec + "}")
+    lines.append(r"\toprule")
+
+    # Header row 1: shift axis group headers
+    header1 = r"\textbf{Model}"
+    for _sk, (_ac, at) in shift_specs:
+        header1 += rf" & \multicolumn{{{n_sub}}}{{c}}{{\textbf{{{at}}}}}"
+    header1 += r" \\"
+    lines.append(header1)
+
+    # Cmidrules
+    cmidrules = ""
+    col_start = 2
+    for _ in shift_specs:
+        col_end = col_start + n_sub - 1
+        cmidrules += rf"\cmidrule(lr){{{col_start}-{col_end}}} "
+        col_start = col_end + 1
+    lines.append(cmidrules)
+
+    # Header row 2: sub-column labels
+    header2 = ""
+    for _ in shift_specs:
+        for label, _ in comp_labels:
+            header2 += rf" & \textbf{{{label}}}"
+    header2 += r" \\"
+    lines.append(header2)
+    lines.append(r"\midrule")
+
+    # Data rows
+    for model in models:
+        row_str = model
+        for _sk, (_ac, at) in shift_specs:
+            model_row = combined[
+                (combined["Model"] == model) & (combined["ShiftAxis"] == at)
+            ]
+            if model_row.empty:
+                for _ in comp_labels:
+                    row_str += " & --"
+            else:
+                r = model_row.iloc[0]
+                for _, metric_key in comp_labels:
+                    mean_val = r.get(f"{metric_key}_mean", float("nan"))
+                    sem_val = r.get(f"{metric_key}_sem", float("nan"))
+                    if np.isnan(mean_val):
+                        row_str += " & --"
+                    else:
+                        row_str += rf" & ${mean_val:.1f} \pm {sem_val:.1f}$"
+        row_str += r" \\"
+        lines.append(row_str)
+
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    lines.append(r"\end{table}")
+
+    output_path.write_text("\n".join(lines) + "\n")
+    log.info("Saved error decomposition table to %s", output_path)
     return combined
+
+
+# ── Extreme stress-test constants (used by compound+stress merge) ──────
+
+_EXTREME_FAMILIES: list[str] = [
+    "ood_both_sbm_periodic_d60_n100",
+    "ood_both_ws_pnl_tanh_d60_n50",
+    "ood_both_grg_logistic_map_d60_n50",
+]
+"""Dataset keys for the three extreme compound-shift stress-test families.
+
+These families combine OOD graph + OOD mechanism with large node counts and
+severely reduced sample budgets (d=60, n=50 or n=100), so they are excluded
+by :func:`is_fixed_size_task_frame` and do not appear in the standard
+fixed-size shift figures.
+"""
+
+_EXTREME_LABELS: dict[str, str] = {
+    "ood_both_sbm_periodic_d60_n100": "SBM × Periodic\n($d{=}60$, $n{=}100$)",
+    "ood_both_ws_pnl_tanh_d60_n50": "WS × PNL-tanh\n($d{=}60$, $n{=}50$)",
+    "ood_both_grg_logistic_map_d60_n50": "GRG × Logistic\n($d{=}60$, $n{=}50$)",
+}

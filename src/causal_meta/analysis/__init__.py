@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-"""Analysis package organized by purpose.
+"""Analysis package organized by thesis section.
 
 Subpackages:
 - ``common``: shared helpers for thesis analysis orchestration
-- ``rq1``: robustness and distribution-shift analysis
-- ``rq2``: task-regime transfer analysis
-- ``rq3``: uncertainty, OOD detection, and posterior diagnostics
+- ``generalisation``: robustness and distribution-shift analysis
+- ``transfer``: task-regime transfer analysis
+- ``uncertainty``: OOD detection and uncertainty quantification
+- ``diagnostics``: failure-mode classification and posterior diagnostics
 - ``appendix``: appendix table generation from configs
 """

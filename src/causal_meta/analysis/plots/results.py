@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.axes import Axes
 
-from causal_meta.analysis.rq1.failure_modes import ood_category as _ood_category
+from causal_meta.analysis.diagnostics.failure_modes import ood_category as _ood_category
 from causal_meta.analysis.plots.utils import draw_point_plot
 from causal_meta.analysis.utils import MODEL_COLORS, MODEL_MARKERS
 
@@ -475,7 +475,7 @@ def generate_failure_mode_bar(
             mode category (values in [0, 1]).
         output_path: Where to save the figure.
     """
-    from causal_meta.analysis.rq1.failure_modes import (
+    from causal_meta.analysis.diagnostics.failure_modes import (
         FAILURE_MODE_CATEGORIES,
         FAILURE_MODE_COLORS,
         ood_category,
@@ -615,7 +615,7 @@ def generate_per_model_failure_mode_bar(
     """
     from matplotlib.patches import Patch
 
-    from causal_meta.analysis.rq1.failure_modes import (
+    from causal_meta.analysis.diagnostics.failure_modes import (
         FAILURE_MODE_CATEGORIES,
         ood_category,
     )

@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 import torch
 
-from causal_meta.analysis.posterior_diagnostics import (
+from causal_meta.analysis.diagnostics.posterior import (
     DENSE_RATIO_THRESHOLD,
     EMPTY_DENSITY_THRESHOLD,
     ORIENTATION_WRONG_THRESHOLD,

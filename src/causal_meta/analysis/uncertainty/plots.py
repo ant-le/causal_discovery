@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 
 from causal_meta.analysis.common.thesis import format_value, metric_sem
-from causal_meta.analysis.rq1.failure_modes import ood_category
-from causal_meta.analysis.rq3.ood_detection import compute_ood_detection_metrics
+from causal_meta.analysis.diagnostics.failure_modes import ood_category
+from causal_meta.analysis.uncertainty.ood_detection import compute_ood_detection_metrics
 from causal_meta.analysis.utils import (
     EmptyAnalysisDataError,
     MODEL_COLORS,

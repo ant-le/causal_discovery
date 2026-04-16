@@ -16,8 +16,10 @@ from causal_meta.analysis.plots.results import (
     generate_density_stratified_figure,
     generate_distance_degradation_scatter,
 )
-from causal_meta.analysis.rq1.plots import generate_shift_figure
-from causal_meta.analysis.rq1.tables import generate_distance_regression_table
+from causal_meta.analysis.generalisation.plots import generate_shift_figure
+from causal_meta.analysis.generalisation.tables import (
+    generate_distance_regression_table,
+)
 
 
 def _make_synthetic_df() -> pd.DataFrame:

@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from causal_meta.analysis.rq1.failure_modes import ood_category as _ood_category
+from causal_meta.analysis.diagnostics.failure_modes import ood_category as _ood_category
 
 log = logging.getLogger(__name__)
 

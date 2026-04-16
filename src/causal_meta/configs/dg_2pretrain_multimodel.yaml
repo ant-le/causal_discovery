@@ -237,10 +237,9 @@ data:
   # ════════════════════════════════════════════════════════════════════
 
   test_families:
-    # RQ1 anchor: in-distribution variability grid used as the primary
-    # robustness baseline and as the ID pool for OOD detection.
-    # ── A. ID Variability Grid (6 graphs × 3 mechanisms, d=20, n=500) ─
-    #    Full factorial over all training-domain graph × mechanism combos.
+    # Shared benchmark test families.
+    # ── A. Fixed-Size Graph-Mechanism Benchmark (9 graphs × 7 mechanisms) ─
+    #    Full factorial at d=20, n=500.
     id_linear_er20_d20_n500:
       name: id_linear_er20_d20_n500
       n_nodes: 20
@@ -367,9 +366,7 @@ data:
       graph_cfg: *graph_sf3
       mech_cfg: *mech_gpcde
 
-    # RQ1: graph-topology shift.
-    # ── B. Graph Shift (3 OOD graphs × 3 ID mechanisms, d=20, n=500) ──
-    #    Mechanism held constant per column; only graph changes.
+    # ── B. OOD Graphs × ID Mechanisms (3 × 3) ──────────────────────────
     ood_graph_sbm_linear_d20_n500:
       name: ood_graph_sbm_linear_d20_n500
       n_nodes: 20
@@ -433,12 +430,8 @@ data:
       graph_cfg: *graph_grg
       mech_cfg: *mech_gpcde
 
-    # RQ1: mechanism shift.
-    # ── C. Mechanism Shift (4 OOD mechs × 3 graph anchors, d=20, n=500)
-    #    Graph held constant per anchor; only mechanism changes.
-    #    Anchors: ER-20, ER-60, SF-2
-    #
-    #    C1. Anchor: ER-20
+    # ── C. ID Graphs × OOD Mechanisms (6 × 4) ──────────────────────────
+    #    C1. Graph: ER-20
     ood_mech_periodic_er20_d20_n500:
       name: ood_mech_periodic_er20_d20_n500
       n_nodes: 20
@@ -467,7 +460,36 @@ data:
       graph_cfg: *graph_er20
       mech_cfg: *mech_pnl_tanh
 
-    #    C2. Anchor: ER-60
+    #    C2. Graph: ER-40
+    ood_mech_periodic_er40_d20_n500:
+      name: ood_mech_periodic_er40_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_periodic
+
+    ood_mech_square_er40_d20_n500:
+      name: ood_mech_square_er40_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_square
+
+    ood_mech_logistic_map_er40_d20_n500:
+      name: ood_mech_logistic_map_er40_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_logistic_map
+
+    ood_mech_pnl_tanh_er40_d20_n500:
+      name: ood_mech_pnl_tanh_er40_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er40
+      mech_cfg: *mech_pnl_tanh
+
+    #    C3. Graph: ER-60
     ood_mech_periodic_er60_d20_n500:
       name: ood_mech_periodic_er60_d20_n500
       n_nodes: 20
@@ -496,7 +518,36 @@ data:
       graph_cfg: *graph_er60
       mech_cfg: *mech_pnl_tanh
 
-    #    C3. Anchor: SF-2
+    #    C4. Graph: SF-1
+    ood_mech_periodic_sf1_d20_n500:
+      name: ood_mech_periodic_sf1_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf1
+      mech_cfg: *mech_periodic
+
+    ood_mech_square_sf1_d20_n500:
+      name: ood_mech_square_sf1_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf1
+      mech_cfg: *mech_square
+
+    ood_mech_logistic_map_sf1_d20_n500:
+      name: ood_mech_logistic_map_sf1_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf1
+      mech_cfg: *mech_logistic_map
+
+    ood_mech_pnl_tanh_sf1_d20_n500:
+      name: ood_mech_pnl_tanh_sf1_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf1
+      mech_cfg: *mech_pnl_tanh
+
+    #    C5. Graph: SF-2
     ood_mech_periodic_sf2_d20_n500:
       name: ood_mech_periodic_sf2_d20_n500
       n_nodes: 20
@@ -525,7 +576,35 @@ data:
       graph_cfg: *graph_sf2
       mech_cfg: *mech_pnl_tanh
 
-    # RQ1: observation-noise shift.
+    #    C6. Graph: SF-3
+    ood_mech_periodic_sf3_d20_n500:
+      name: ood_mech_periodic_sf3_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf3
+      mech_cfg: *mech_periodic
+
+    ood_mech_square_sf3_d20_n500:
+      name: ood_mech_square_sf3_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf3
+      mech_cfg: *mech_square
+
+    ood_mech_logistic_map_sf3_d20_n500:
+      name: ood_mech_logistic_map_sf3_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf3
+      mech_cfg: *mech_logistic_map
+
+    ood_mech_pnl_tanh_sf3_d20_n500:
+      name: ood_mech_pnl_tanh_sf3_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf3
+      mech_cfg: *mech_pnl_tanh
+
     # ── D. Noise Shift (2 OOD noise × 2 anchors, d=20, n=500) ────────
     #    Anchor 1: Linear × ER-20
     ood_noise_laplace_linear_er20_d20_n500:
@@ -561,11 +640,7 @@ data:
       mech_cfg: *mech_neuralnet
       noise_type: uniform
 
-    # RQ1 and RQ3: compound OOD shift used both for robustness and for
-    # harder uncertainty / OOD-detection stress cases.
-    # ── E. Compound Shift (3 OOD graphs × 3 OOD mechs, d=20, n=500) ──
-    #    Both graph and mechanism are OOD simultaneously.
-    #    Mechanisms: periodic, logistic_map, pnl_tanh (square dropped).
+    # ── E. OOD Graphs × OOD Mechanisms (3 × 4) ─────────────────────────
     ood_both_sbm_periodic_d20_n500:
       name: ood_both_sbm_periodic_d20_n500
       n_nodes: 20
@@ -579,6 +654,13 @@ data:
       samples_per_task: 500
       graph_cfg: *graph_sbm
       mech_cfg: *mech_logistic_map
+
+    ood_both_sbm_square_d20_n500:
+      name: ood_both_sbm_square_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sbm
+      mech_cfg: *mech_square
 
     ood_both_sbm_pnl_tanh_d20_n500:
       name: ood_both_sbm_pnl_tanh_d20_n500
@@ -601,6 +683,13 @@ data:
       graph_cfg: *graph_ws
       mech_cfg: *mech_logistic_map
 
+    ood_both_ws_square_d20_n500:
+      name: ood_both_ws_square_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_ws
+      mech_cfg: *mech_square
+
     ood_both_ws_pnl_tanh_d20_n500:
       name: ood_both_ws_pnl_tanh_d20_n500
       n_nodes: 20
@@ -622,6 +711,13 @@ data:
       graph_cfg: *graph_grg
       mech_cfg: *mech_logistic_map
 
+    ood_both_grg_square_d20_n500:
+      name: ood_both_grg_square_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_grg
+      mech_cfg: *mech_square
+
     ood_both_grg_pnl_tanh_d20_n500:
       name: ood_both_grg_pnl_tanh_d20_n500
       n_nodes: 20
@@ -629,7 +725,6 @@ data:
       graph_cfg: *graph_grg
       mech_cfg: *mech_pnl_tanh
 
-    # RQ2: node-count transfer.
     # ── F. Node-Count Transfer (2 ladders) ────────────────────────────
     #    d ∈ {10, 15, 20*, 25, 30, 35, 40, 50, 60}
     #    * d=20 overlaps with the ID grid (not repeated here).
@@ -748,7 +843,6 @@ data:
       graph_cfg: *graph_sf2
       mech_cfg: *mech_neuralnet
 
-    # RQ2: sample-count transfer.
     # ── G. Sample-Count Transfer (2 ladders) ──────────────────────────
     #    n ∈ {50, 100, 150, 200, 300, 500*, 750, 1000, 1500, 2000}
     #    * n=500 overlaps with the ID grid (not repeated here).
@@ -881,9 +975,7 @@ data:
       graph_cfg: *graph_sf2
       mech_cfg: *mech_neuralnet
 
-    # RQ3 appendix / stress-test families: extreme compound OOD settings for
-    # posterior diagnostics and uncertainty failure analysis.
-    # ── H. Extreme Stress Tests (appendix) ────────────────────────────
+    # ── H. Extreme Stress-Test Families ────────────────────────────────
     ood_both_grg_logistic_map_d60_n50:
       name: ood_both_grg_logistic_map_d60_n50
       n_nodes: 60

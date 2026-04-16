@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from causal_meta.analysis.rq1.failure_modes import (
+from causal_meta.analysis.diagnostics.failure_modes import (
     FAILURE_MODE_CATEGORIES,
     classify_failure_modes,
     failure_mode_fractions,

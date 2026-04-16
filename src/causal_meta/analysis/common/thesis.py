@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
-import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,16 +18,18 @@ from causal_meta.analysis.utils import (
 )
 
 EXPECTED_MODEL_DIRS: tuple[str, ...] = tuple(PAPER_MODEL_LABELS.keys())
-OUTPUT_SUBDIRS: tuple[str, ...] = (
-    "figures",
-    "tables",
-    "data",
-    "snippets",
-    "appendix",
-    "provenance",
-)
 REPO_ROOT = Path(__file__).resolve().parents[4]
 CONFIGS_ROOT = REPO_ROOT / "src" / "causal_meta" / "configs"
+
+# ── Graphics chapter directories (relative to thesis_root) ────────────
+GRAPHICS_ROOT = "graphics"
+GRAPHICS_RESULTS = f"{GRAPHICS_ROOT}/5_Results"
+GRAPHICS_METHODOLOGY = f"{GRAPHICS_ROOT}/4_Methodology"
+GRAPHICS_APPENDIX_A = f"{GRAPHICS_ROOT}/A_ExperimentalSettings"
+GRAPHICS_APPENDIX_B = f"{GRAPHICS_ROOT}/B_ModelConfigurations"
+GRAPHICS_APPENDIX_C = f"{GRAPHICS_ROOT}/C_BenchmarkFamilies"
+GRAPHICS_APPENDIX_E = f"{GRAPHICS_ROOT}/E_ExtendedResults"
+GRAPHICS_APPENDIX_F = f"{GRAPHICS_ROOT}/F_ReproducibilityArtifacts"
 
 
 @dataclass(frozen=True)
@@ -287,27 +287,6 @@ def resolve_thesis_run_directories(input_root: Path) -> list[SelectedRun]:
             )
         )
     return selected
-
-
-def prepare_generated_workspace(thesis_root: Path) -> Path:
-    thesis_root.mkdir(parents=True, exist_ok=True)
-    temp_root = Path(tempfile.mkdtemp(prefix="generated_tmp_", dir=thesis_root))
-    for subdir in OUTPUT_SUBDIRS:
-        (temp_root / subdir).mkdir(parents=True, exist_ok=True)
-    return temp_root
-
-
-def finalize_generated_workspace(temp_root: Path, thesis_root: Path) -> Path:
-    final_root = thesis_root / "generated"
-    backup_root = thesis_root / "generated_backup"
-    if backup_root.exists():
-        shutil.rmtree(backup_root)
-    if final_root.exists():
-        final_root.replace(backup_root)
-    temp_root.replace(final_root)
-    if backup_root.exists():
-        shutil.rmtree(backup_root)
-    return final_root
 
 
 def write_json(output_path: Path, payload: Mapping[str, Any]) -> None:
