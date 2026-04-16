@@ -113,6 +113,17 @@ def run_thesis_analysis(
             raise
         log.warning("Error decomposition figure failed.", exc_info=True)
 
+    # ── Cross-axis summary table (ne-SID, E-F1, ne-SHD) ─────────
+    try:
+        gen_plots.generate_cross_axis_summary_table(
+            raw_df,
+            output_path=results_dir / "cross_axis_summary.tex",
+        )
+    except Exception:
+        if strict:
+            raise
+        log.warning("Cross-axis summary table failed.", exc_info=True)
+
     for score_metric in ("edge_entropy", "graph_nll_per_edge"):
         fig_name = f"uncertainty_scatter_{score_metric}.pdf"
         try:

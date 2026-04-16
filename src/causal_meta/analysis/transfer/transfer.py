@@ -42,7 +42,7 @@ def generate_transfer_figure(
 ) -> pd.DataFrame:
     """Generate a dual-ladder transfer figure with one row per anchor.
 
-    Layout: 2 rows (one per transfer ladder) × 3 columns (metrics).
+    Layout: 2 rows (one per transfer ladder) × 2 columns (ne-SID, E-Edge F1).
     Each row shows a single anchor combination (e.g. ER-20 × Linear)
     with the x-axis representing the varying dimension (node count or
     sample count).

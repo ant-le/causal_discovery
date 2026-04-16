@@ -938,8 +938,56 @@ _DEGRADATION_SHIFT_AXES: dict[str, str] = {
     "mechanism": "Mechanism",
     "noise": "Noise",
     "compound": "Compound",
+    "nodes": "Nodes",
+    "samples": "Samples",
 }
 """Shift axes included in the RQ2 degradation heatmap."""
+
+
+def _degradation_id_subset(
+    full_df: pd.DataFrame,
+    shift_key: str,
+) -> pd.DataFrame:
+    """Return the ID rows that form the correct baseline for *shift_key*.
+
+    Each shift axis uses a different anchored ID subset so that the
+    degradation ratio isolates only the varied dimension:
+
+    * **graph** — ID families with Linear mechanism (graph is the only
+      variable in the graph-shift figure).
+    * **mechanism** — ID families on ER-20 (mechanism is the only variable).
+    * **noise** — all fixed-size ID families (both anchors participate).
+    * **compound** — the three representative ID anchor families.
+    * **nodes** — fixed-size ID families on the two transfer anchors.
+    * **samples** — same as *nodes*.
+    """
+    id_data = full_df[full_df["AxisCategory"] == "id"].copy()
+
+    if shift_key == "graph":
+        return id_data[
+            id_data["DatasetKey"].map(lambda dk: id_mechanism_of(dk) == "linear")
+        ]
+    if shift_key == "mechanism":
+        return _restrict_to_graph_anchor(id_data, "er20")
+    if shift_key == "compound":
+        return id_data[
+            id_data["DatasetKey"].map(
+                lambda dk: (
+                    (id_mechanism_of(dk), graph_code_of(dk))
+                    in _COMPOUND_ID_REPRESENTATIVES
+                )
+            )
+        ]
+    if shift_key in ("nodes", "samples"):
+        # Transfer anchors: (linear, er20), (neuralnet, sf2)
+        _TRANSFER_ANCHORS = {("linear", "er20"), ("neuralnet", "sf2")}
+        return id_data[
+            id_data["DatasetKey"].map(
+                lambda dk: (id_mechanism_of(dk), graph_code_of(dk)) in _TRANSFER_ANCHORS
+            )
+        ]
+    # noise and any other: all fixed-size ID
+    return id_data
 
 
 def generate_degradation_heatmap(
@@ -950,8 +998,11 @@ def generate_degradation_heatmap(
     """Generate a heatmap showing per-model degradation ratio across shift axes.
 
     Each cell shows ``mean(OOD ne-SID) / mean(ID ne-SID)`` for a given model
-    and shift axis. A ratio of 1.0 means no degradation; higher values
-    indicate worse OOD performance relative to ID.
+    and shift axis.  The ID baseline is *anchored per axis* so that each ratio
+    isolates only the varied distributional dimension.
+
+    A ratio of 1.0 means no degradation; higher values indicate worse OOD
+    performance relative to the relevant ID baseline.
 
     The colour scale encodes normalized degradation so models and axes can
     be compared at a glance.
@@ -967,21 +1018,30 @@ def generate_degradation_heatmap(
 
     metric_name = "ne-sid"
     subset = raw_df[raw_df["Metric"].eq(metric_name)].copy()
-    subset = subset[is_fixed_size_task_frame(subset)]
 
-    if subset.empty:
+    # For fixed-size axes, restrict to d=20 / n=500.
+    # For transfer axes (nodes, samples), keep all sizes.
+    fixed_subset = subset[is_fixed_size_task_frame(subset)]
+
+    if fixed_subset.empty:
         log.warning("No ne-sid data for degradation heatmap; skipping.")
         return pd.DataFrame()
 
     models = list(PAPER_MODEL_LABELS.values())
 
-    # Compute mean ID score per model
-    id_data = subset[subset["AxisCategory"] == "id"]
-    id_means = id_data.groupby("Model")["Value"].mean().to_dict()
-
     rows: list[dict[str, object]] = []
     for shift_key, shift_label in _DEGRADATION_SHIFT_AXES.items():
-        ood_data = subset[subset["AxisCategory"] == shift_key]
+        # Choose the right data pool for this axis
+        if shift_key in ("nodes", "samples"):
+            pool = subset  # transfer data is NOT fixed-size
+        else:
+            pool = fixed_subset
+
+        # Per-axis anchored ID baseline
+        id_data = _degradation_id_subset(fixed_subset, shift_key)
+        id_means = id_data.groupby("Model")["Value"].mean().to_dict()
+
+        ood_data = pool[pool["AxisCategory"] == shift_key]
         ood_means = ood_data.groupby("Model")["Value"].mean().to_dict()
         for model in models:
             id_val = id_means.get(model)
@@ -1004,7 +1064,7 @@ def generate_degradation_heatmap(
         columns=[v for v in _DEGRADATION_SHIFT_AXES.values() if v in pivot.columns]
     )
 
-    fig, ax = plt.subplots(figsize=(6, 3.5))
+    fig, ax = plt.subplots(figsize=(8, 3.5))
 
     # Diverging colormap around 1.0 (no degradation)
     vmin = max(0.5, float(pivot.min().min()) - 0.1) if not pivot.empty else 0.5
@@ -1676,6 +1736,7 @@ def generate_valid_dag_shift_figure(
 _ERROR_DECOMP_SHIFT_SPECS: dict[str, tuple[str, str]] = {
     "graph": ("graph", "Graph Shift"),
     "mechanism": ("mechanism", "Mechanism Shift"),
+    "noise": ("noise", "Noise Shift"),
     "compound": ("compound", "Compound Shift"),
 }
 
@@ -1688,7 +1749,7 @@ def generate_error_decomposition_table(
     """Generate a LaTeX table decomposing SHD into FP/FN/reversed per model per shift.
 
     Layout: rows = models, column groups = shift axes (graph, mechanism,
-    compound), sub-columns = mean FP / FN / Reversed counts.
+    noise, compound), sub-columns = mean FP / FN / Reversed counts.
 
     Args:
         raw_df: Long-format raw task DataFrame (must contain ``fp_count``,
@@ -1791,7 +1852,8 @@ def generate_error_decomposition_table(
     lines.append(
         r"\caption{Mean SHD error decomposition (false positive, false negative,"
         r" and reversed edges) per model under each OOD shift axis. Values are"
-        r" averaged over all OOD families in the respective shift axis.}"
+        r" averaged over all OOD families in the respective shift axis"
+        r" (graph, mechanism, noise, and compound).}"
     )
     lines.append(r"\label{tab:error_decomposition}")
 
@@ -1876,3 +1938,190 @@ _EXTREME_LABELS: dict[str, str] = {
     "ood_both_ws_pnl_tanh_d60_n50": "WS × PNL-tanh\n($d{=}60$, $n{=}50$)",
     "ood_both_grg_logistic_map_d60_n50": "GRG × Logistic\n($d{=}60$, $n{=}50$)",
 }
+
+
+# ── RQ1/RQ2 cross-axis summary table ──────────────────────────────────
+
+_SUMMARY_TABLE_AXES: dict[str, str] = {
+    "id": "ID",
+    "graph": "Graph",
+    "mechanism": "Mech.",
+    "noise": "Noise",
+    "compound": "Compound",
+    "nodes": "Nodes",
+    "samples": "Samples",
+}
+"""Column groups for the cross-axis summary table."""
+
+_SUMMARY_TABLE_METRICS: list[tuple[str, str, bool]] = [
+    ("ne-sid", r"ne-SID $\downarrow$", False),
+    ("e-edgef1", r"E-F1 $\uparrow$", True),
+    ("ne-shd", r"ne-SHD $\downarrow$", False),
+]
+"""(metric_key, display_label, higher_is_better) for the summary table."""
+
+
+def generate_cross_axis_summary_table(
+    raw_df: pd.DataFrame,
+    *,
+    output_path: Path,
+) -> pd.DataFrame:
+    """Generate a LaTeX table summarising three core metrics per model per shift axis.
+
+    Rows = models, column groups = shift axes (ID, Graph, Mechanism, Noise,
+    Compound, Nodes, Samples), sub-columns = ne-SID, E-F1, ne-SHD.
+    Per-column best values are bolded.
+
+    For the four fixed-size axes (graph, mechanism, noise, compound) only
+    ``d=20, n=500`` families are included.  Transfer axes (nodes, samples)
+    include all sizes.  The ID column always uses fixed-size families.
+
+    Args:
+        raw_df: Long-format raw task DataFrame.
+        output_path: Path for the output ``.tex`` file.
+
+    Returns:
+        Aggregated DataFrame used for the table.
+    """
+    metric_keys = [m for m, _, _ in _SUMMARY_TABLE_METRICS]
+    subset = raw_df[raw_df["Metric"].isin(metric_keys)].copy()
+    if subset.empty:
+        log.warning("No data for cross-axis summary table; skipping.")
+        return pd.DataFrame()
+
+    fixed = subset[is_fixed_size_task_frame(subset)]
+    models = [m for m in PAPER_MODEL_LABELS.values() if m in subset["Model"].unique()]
+    if not models:
+        log.warning("No models for cross-axis summary table; skipping.")
+        return pd.DataFrame()
+
+    # Aggregate: mean ± SEM per (Model, AxisCategory, Metric)
+    all_agg: list[pd.DataFrame] = []
+    for axis_key, axis_label in _SUMMARY_TABLE_AXES.items():
+        if axis_key in ("nodes", "samples"):
+            pool = subset[subset["AxisCategory"] == axis_key]
+        elif axis_key == "id":
+            pool = fixed[fixed["AxisCategory"] == "id"]
+        else:
+            pool = fixed[fixed["AxisCategory"] == axis_key]
+
+        if pool.empty:
+            continue
+
+        agg = (
+            pool.groupby(["Model", "Metric"], dropna=False)["Value"]
+            .agg(Mean="mean", SEM=metric_sem)
+            .reset_index()
+        )
+        agg["Axis"] = axis_label
+        all_agg.append(agg)
+
+    if not all_agg:
+        return pd.DataFrame()
+
+    combined = pd.concat(all_agg, ignore_index=True)
+
+    # Determine per-column best (best model for each axis × metric)
+    best_lookup: dict[tuple[str, str], float] = {}
+    for _, row in combined.iterrows():
+        key = (str(row["Axis"]), str(row["Metric"]))
+        mean = float(row["Mean"])
+        higher = next(
+            (hib for mk, _, hib in _SUMMARY_TABLE_METRICS if mk == row["Metric"]),
+            False,
+        )
+        current = best_lookup.get(key)
+        if current is None:
+            best_lookup[key] = mean
+        elif higher and mean > current:
+            best_lookup[key] = mean
+        elif not higher and mean < current:
+            best_lookup[key] = mean
+
+    # ── Build LaTeX ────────────────────────────────────────────────────
+    axes_list = [
+        (ak, al)
+        for ak, al in _SUMMARY_TABLE_AXES.items()
+        if al in combined["Axis"].unique()
+    ]
+    n_axes = len(axes_list)
+    n_sub = len(_SUMMARY_TABLE_METRICS)
+
+    lines: list[str] = []
+    lines.append(r"\begin{table}[t]")
+    lines.append(r"\centering")
+    lines.append(r"\footnotesize")
+    lines.append(
+        r"\caption{Cross-axis performance summary. Each cell reports the"
+        r" task-level mean $\pm$ SEM for the indicated metric and shift axis."
+        r" Per-column best values (excluding Random) are \textbf{bolded}.}"
+    )
+    lines.append(r"\label{tab:cross_axis_summary}")
+    lines.append(r"\resizebox{\textwidth}{!}{%")
+
+    # Column spec: Model + n_sub per axis
+    col_spec = "l" + ("|" + "r" * n_sub) * n_axes
+    lines.append(r"\begin{tabular}{" + col_spec + "}")
+    lines.append(r"\toprule")
+
+    # Header row 1: axis group headers
+    header1 = r"\textbf{Model}"
+    for _, axis_label in axes_list:
+        header1 += rf" & \multicolumn{{{n_sub}}}{{c}}{{\textbf{{{axis_label}}}}}"
+    header1 += r" \\"
+    lines.append(header1)
+
+    # Cmidrules
+    cmidrules = ""
+    col_start = 2
+    for _ in axes_list:
+        col_end = col_start + n_sub - 1
+        cmidrules += rf"\cmidrule(lr){{{col_start}-{col_end}}} "
+        col_start = col_end + 1
+    lines.append(cmidrules)
+
+    # Header row 2: metric sub-column labels
+    header2 = ""
+    for _ in axes_list:
+        for _, mlabel, _ in _SUMMARY_TABLE_METRICS:
+            header2 += rf" & \textbf{{{mlabel}}}"
+    header2 += r" \\"
+    lines.append(header2)
+    lines.append(r"\midrule")
+
+    # Data rows
+    for model in models:
+        row_str = model
+        for _, axis_label in axes_list:
+            for metric_key, _, higher_is_better in _SUMMARY_TABLE_METRICS:
+                cell_row = combined[
+                    (combined["Model"] == model)
+                    & (combined["Axis"] == axis_label)
+                    & (combined["Metric"] == metric_key)
+                ]
+                if cell_row.empty:
+                    row_str += " & --"
+                    continue
+                mean = float(cell_row.iloc[0]["Mean"])
+                sem = float(cell_row.iloc[0]["SEM"])
+                cell = format_value(mean, sem)
+                best_val = best_lookup.get((axis_label, metric_key))
+                # Exclude Random from bolding contest
+                if (
+                    best_val is not None
+                    and model != "Random"
+                    and abs(mean - best_val) < 1e-6
+                ):
+                    cell = _bold_if_best(cell, is_best=True)
+                row_str += f" & {cell}"
+        row_str += r" \\"
+        lines.append(row_str)
+
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    lines.append(r"}")
+    lines.append(r"\end{table}")
+
+    output_path.write_text("\n".join(lines) + "\n")
+    log.info("Saved cross-axis summary table to %s", output_path)
+    return combined

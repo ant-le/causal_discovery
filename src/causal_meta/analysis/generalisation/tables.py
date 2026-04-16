@@ -44,12 +44,15 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
     id_datasets = sorted([d for d in datasets if _row_ood_group(d) == "ID"])
     ood_datasets = sorted([d for d in datasets if _row_ood_group(d) != "ID"])
 
-    col_best: dict[str, float] = {}
+    col_best: dict[tuple[str, str], float] = {}
     for metric in metrics:
-        metric_vals = subset[subset["Metric"] == metric]["Mean"].dropna()
-        col_best[metric] = (
-            float(metric_vals.min()) if not metric_vals.empty else float("inf")
-        )
+        for ds in datasets:
+            metric_vals = subset[
+                (subset["Metric"] == metric) & (subset["Dataset"] == ds)
+            ]["Mean"].dropna()
+            col_best[(metric, ds)] = (
+                float(metric_vals.min()) if not metric_vals.empty else float("inf")
+            )
 
     # ── Build LaTeX ────────────────────────────────────────────────────
     lines = []
@@ -121,7 +124,7 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
                         & (subset["Metric"] == "ne-shd")
                     ]["SEM"].iloc[0]
                     cell = rf"${mean:.3f} \pm {sem:.3f}$"
-                    if abs(mean - col_best["ne-shd"]) < 1e-6:
+                    if abs(mean - col_best[("ne-shd", ds)]) < 1e-6:
                         cell = r"\textbf{" + cell + "}"
                     row_str += f" & {cell}"
                 except (IndexError, KeyError):
@@ -141,7 +144,7 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
                         & (subset["Metric"] == "ne-sid")
                     ]["SEM"].iloc[0]
                     cell = rf"${mean:.3f} \pm {sem:.3f}$"
-                    if abs(mean - col_best["ne-sid"]) < 1e-6:
+                    if abs(mean - col_best[("ne-sid", ds)]) < 1e-6:
                         cell = r"\textbf{" + cell + "}"
                     row_str += f" & {cell}"
                 except (IndexError, KeyError):

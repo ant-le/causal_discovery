@@ -30,7 +30,7 @@ def generate_uncertainty_scatter(
 ) -> pd.DataFrame:
     from scipy.stats import spearmanr
 
-    needed = {"e-sid", score_metric}
+    needed = {"ne-sid", score_metric}
     subset = raw_df[raw_df["Metric"].isin(needed)].copy()
     agg = (
         subset.groupby(["Model", "DatasetKey", "Dataset", "Metric"], dropna=False)[
@@ -43,11 +43,11 @@ def generate_uncertainty_scatter(
         index=["Model", "DatasetKey", "Dataset"], columns="Metric", values="Value"
     ).reset_index()
     pivot.columns.name = None
-    if score_metric not in pivot.columns or "e-sid" not in pivot.columns:
+    if score_metric not in pivot.columns or "ne-sid" not in pivot.columns:
         raise EmptyAnalysisDataError(
             f"Missing required columns for uncertainty scatter: {score_metric}."
         )
-    pivot = pivot.dropna(subset=["e-sid", score_metric])
+    pivot = pivot.dropna(subset=["ne-sid", score_metric])
     if pivot.empty:
         raise EmptyAnalysisDataError("No uncertainty scatter data available.")
     pivot["OODCategory"] = pivot["DatasetKey"].map(
@@ -82,7 +82,7 @@ def generate_uncertainty_scatter(
                 continue
             ax.scatter(
                 cat_df[score_metric],
-                cat_df["e-sid"],
+                cat_df["ne-sid"],
                 c=category_colors.get(cat, "#aaaaaa"),
                 label=cat,
                 s=60,
@@ -90,10 +90,10 @@ def generate_uncertainty_scatter(
                 edgecolors="white",
                 linewidths=0.5,
             )
-        # Grey reference line at E-SID = 0 (perfect causal discovery).
+        # Grey reference line at ne-SID = 0 (perfect causal discovery).
         ax.axhline(y=0, color="grey", linestyle="--", linewidth=1, alpha=0.6)
         if len(model_df) >= 3:
-            rho, p_val = spearmanr(model_df[score_metric], model_df["e-sid"])
+            rho, p_val = spearmanr(model_df[score_metric], model_df["ne-sid"])
             if np.isfinite(rho):
                 p_str = f"p={p_val:.3f}" if p_val >= 0.001 else "p<0.001"
                 ax.annotate(
@@ -105,7 +105,7 @@ def generate_uncertainty_scatter(
                     bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8),
                 )
         ax.set_xlabel(score_label)
-        ax.set_ylabel(r"$\mathbb{E}$-SID")
+        ax.set_ylabel(r"Normalized $\mathbb{E}$-SID")
         ax.set_title(model, fontsize=13, fontweight="bold")
         ax.grid(True, linestyle="--", alpha=0.4)
 
