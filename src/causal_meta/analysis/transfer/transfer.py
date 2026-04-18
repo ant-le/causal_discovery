@@ -29,6 +29,19 @@ def _model_color(model: str) -> str:
     return MODEL_COLORS.get(model, "#555555")
 
 
+# DiBS uses a distinct orange palette in DAG-validity rows so that the
+# two models (AviCi = blue, DiBS = orange) are easy to distinguish in the
+# bar chart even without reading the legend.
+_DAG_ROW_COLORS: dict[str, str] = {
+    "DiBS": "#e67e22",  # warm orange
+}
+
+
+def _dag_row_color(model: str) -> str:
+    """Return the colour for a model in the DAG-validity row."""
+    return _DAG_ROW_COLORS.get(model, _model_color(model))
+
+
 # ID anchor values for the transfer axes.
 _ID_NODE_COUNT = 20
 _ID_SAMPLE_COUNT = 500
@@ -446,7 +459,7 @@ def generate_rq2_transfer_figure(
                         dag_means,
                         yerr=dag_sems,
                         width=bar_width,
-                        color=_model_color(dag_model),
+                        color=_dag_row_color(dag_model),
                         alpha=m_alpha,
                         capsize=2,
                         label=lbl,
@@ -508,24 +521,16 @@ def generate_rq2_transfer_figure(
         for r in range(n_rows):
             axes[r, col_idx].grid(True, axis="y", linestyle="--", alpha=0.4)
 
-    # Shared legend on top — collect from metric row and error row.
-    all_handles: list = []
-    all_labels: list[str] = []
-    seen: set[str] = set()
-    for r in (metric_row, err_row):
-        h, l = axes[r, 0].get_legend_handles_labels()
-        for handle, label in zip(h, l):
-            if label not in seen:
-                all_handles.append(handle)
-                all_labels.append(label)
-                seen.add(label)
-    if all_handles:
+    # Shared legend on top — models only (from the metric row).
+    handles, labels = axes[metric_row, 0].get_legend_handles_labels()
+    if handles:
         fig.legend(
-            all_handles,
-            all_labels,
+            handles,
+            labels,
+            title="Model",
             loc="upper center",
             bbox_to_anchor=(0.5, 1.0),
-            ncol=min(len(all_labels), 8),
+            ncol=len(labels),
             fontsize=9,
             frameon=False,
         )

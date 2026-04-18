@@ -291,6 +291,15 @@
         "widening_factor": "widening_factor",
         "dropout": "dropout"
       },
+      "our_config_overrides": {
+        "training_steps": "500k (16M tasks / batch 32)",
+        "training_d_range": "10--40",
+        "training_n": 500,
+        "training_graph_types": "ER (20/40/60) + SF (m=1,2,3)",
+        "training_mechanisms": "Linear, MLP, GP-CDE",
+        "inference_type": "100 posterior samples",
+        "parameters": "~4.2M"
+      },
       "known_config_differences": [
         "num_heads: paper=4, ours=8",
         "training_steps: paper=300k, ours=500k (16M tasks / 32 batch)",
@@ -355,6 +364,13 @@
         "dropout": "dropout",
         "n_perm_samples": "n_perm_samples",
         "sinkhorn_iter": "sinkhorn_iter"
+      },
+      "our_config_overrides": {
+        "training_n": 500,
+        "training_d": "10--40 mixed",
+        "training_graph_types": "ER (20/40/60) + SF (m=1,2,3)",
+        "training_mechanisms": "Linear, MLP, GP-CDE",
+        "variant": "All Data (ER + SF mixed)"
       },
       "known_config_differences": [
         "training_n: paper=1000, ours=500",
@@ -429,6 +445,17 @@
         "gamma_z_nonlinear_d20": "gamma_z",
         "gamma_theta_nonlinear_d20": "gamma_theta"
       },
+      "our_config_overrides": {
+        "latent_dim": "k=d (same)",
+        "alpha_linear_d20": 0.05,
+        "gamma_z_linear_d20": 5.0,
+        "gamma_theta_linear_d20": 500,
+        "n_particles_linear": 64,
+        "training_n": 500,
+        "training_d": 20,
+        "training_graph_types": "per-dataset (ER + SF)",
+        "training_mechanisms": "per-dataset"
+      },
       "known_config_differences": [
         "n_particles: paper=30, ours=32 (nonlinear) / 64 (linear)",
         "alpha (nonlinear): paper=0.02, ours=0.05",
@@ -489,6 +516,15 @@
         "norm_layers": "norm_layers",
         "res_connection": "res_connection",
         "sparse_init": "sparse_init"
+      },
+      "our_config_overrides": {
+        "scale_noise_p_d20_er": 0.1,
+        "scale_noise_theta_d20_er": 0.01,
+        "training_d_range": 20,
+        "training_n_d5": 500,
+        "training_n_d30_plus": 500,
+        "training_graph_types": "per-dataset (ER + SF)",
+        "training_mechanisms": "nonlinear (per-dataset)"
       },
       "known_config_differences": [
         "training_n: paper uses N=5000 for d>=30, N=500 for d=5; ours=500 for all",

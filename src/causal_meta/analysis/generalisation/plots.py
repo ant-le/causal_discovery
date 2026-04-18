@@ -114,6 +114,7 @@ def _plot_dag_row_panel(
     *,
     panel_idx: int = 0,
     id_count: int = 0,
+    stress_count: int = 0,
 ) -> None:
     """Plot AviCi DAG validity (sampled + thresholded) in a single panel axis."""
     if dag_panel_data is None or dag_panel_data.empty:
@@ -180,6 +181,16 @@ def _plot_dag_row_panel(
         dag_ax.axvspan(-0.5, id_count - 0.5, color="#f2f2f2", alpha=0.35, zorder=0)
         dag_ax.axvline(id_count - 0.5, color="#999999", linestyle=":", linewidth=1.0)
 
+    if stress_count > 0:
+        n_ds = len(datasets)
+        stress_start = n_ds - stress_count
+        dag_ax.axvspan(
+            stress_start - 0.5, n_ds - 0.5, color="#ffe0e0", alpha=0.35, zorder=0
+        )
+        dag_ax.axvline(
+            stress_start - 0.5, color="#cc4444", linestyle=":", linewidth=1.0
+        )
+
 
 def _plot_error_row_panel(
     err_ax: plt.Axes,
@@ -191,6 +202,7 @@ def _plot_error_row_panel(
     *,
     panel_idx: int = 0,
     id_count: int = 0,
+    stress_count: int = 0,
 ) -> None:
     """Plot stacked error decomposition (FP/FN/Reversed) in a single panel axis."""
     if error_panel_data is None or error_panel_data.empty:
@@ -252,6 +264,16 @@ def _plot_error_row_panel(
     if 0 < id_count < len(datasets):
         err_ax.axvspan(-0.5, id_count - 0.5, color="#f2f2f2", alpha=0.35, zorder=0)
         err_ax.axvline(id_count - 0.5, color="#999999", linestyle=":", linewidth=1.0)
+
+    if stress_count > 0:
+        n_ds = len(datasets)
+        stress_start = n_ds - stress_count
+        err_ax.axvspan(
+            stress_start - 0.5, n_ds - 0.5, color="#ffe0e0", alpha=0.35, zorder=0
+        )
+        err_ax.axvline(
+            stress_start - 0.5, color="#cc4444", linestyle=":", linewidth=1.0
+        )
 
 
 def _generate_graph_shift_panels(
@@ -441,8 +463,14 @@ def _generate_graph_shift_panels(
     # X tick labels on the bottom row only (sharex handles the rest).
     bottom_row = n_rows - 1
     for pi in range(n_panels):
-        axes[bottom_row, pi].set_xticks(np.arange(len(datasets)))
-        # tick labels are set automatically by sharex on the bottom row
+        if pi < len(all_agg) and not all_agg[pi].empty:
+            panel_datasets = list(all_agg[pi]["DatasetLabel"].unique())
+        else:
+            panel_datasets = []
+        axes[bottom_row, pi].set_xticks(np.arange(len(panel_datasets)))
+        axes[bottom_row, pi].set_xticklabels(
+            panel_datasets, rotation=30, ha="right", fontsize=9
+        )
 
     # Shared legend on top
     handles, labels = axes[metric_row, 0].get_legend_handles_labels()
@@ -755,6 +783,18 @@ def _generate_mech_shift_panels(
                 id_count=id_count,
             )
 
+    # X tick labels on the bottom row only.
+    bottom_row = n_rows - 1
+    for pi in range(n_panels):
+        if pi < len(all_agg) and not all_agg[pi].empty:
+            panel_datasets = list(all_agg[pi]["DatasetLabel"].unique())
+        else:
+            panel_datasets = []
+        axes[bottom_row, pi].set_xticks(np.arange(len(panel_datasets)))
+        axes[bottom_row, pi].set_xticklabels(
+            panel_datasets, rotation=30, ha="right", fontsize=9
+        )
+
     # Shared legend on top
     handles, labels = axes[metric_row, 0].get_legend_handles_labels()
     if handles:
@@ -1009,6 +1049,18 @@ def _generate_noise_shift_panels(
                 id_count=id_count,
             )
 
+    # X tick labels on the bottom row only.
+    bottom_row = n_rows - 1
+    for pi in range(n_panels):
+        if pi < len(all_agg) and not all_agg[pi].empty:
+            panel_datasets = list(all_agg[pi]["DatasetLabel"].unique())
+        else:
+            panel_datasets = []
+        axes[bottom_row, pi].set_xticks(np.arange(len(panel_datasets)))
+        axes[bottom_row, pi].set_xticklabels(
+            panel_datasets, rotation=30, ha="right", fontsize=9
+        )
+
     # Shared legend on top
     handles, labels = axes[metric_row, 0].get_legend_handles_labels()
     if handles:
@@ -1041,8 +1093,13 @@ def _compound_shift_label(dataset_key: str) -> str:
 
     OOD-compound datasets show only the OOD mechanism label because the OOD graph
     is fixed by the panel title. ID representatives show their graph/mechanism
-    anchor with an ``(ID)`` suffix.
+    anchor with an ``(ID)`` suffix. Extreme stress-test families get their
+    special multi-line labels from :data:`_EXTREME_LABELS`.
     """
+    # Stress-test families have dedicated rich labels.
+    if dataset_key in _EXTREME_LABELS:
+        return _EXTREME_LABELS[dataset_key]
+
     dk = dataset_key.lower()
     body = re.sub(r"_d\d+_n\d+$", "", dk)
 
@@ -1291,6 +1348,7 @@ def _generate_compound_shift_panels(
             ax.axvline(id_count - 0.5, color="#999999", linestyle=":", linewidth=1.0)
 
         # Stress-test region (light red tint + second divider)
+        stress_count = 0
         if stress_agg is not None and not stress_agg.empty:
             stress_count = sum(1 for ds in datasets if axis_lookup.get(ds) == "stress")
             if stress_count > 0:
@@ -1337,6 +1395,7 @@ def _generate_compound_shift_panels(
                 _compound_shift_label,
                 panel_idx=panel_idx,
                 id_count=id_count,
+                stress_count=stress_count,
             )
 
         # ── Error row (bottom) ────────────────────────────────────────
@@ -1361,7 +1420,20 @@ def _generate_compound_shift_panels(
                 _compound_shift_label,
                 panel_idx=panel_idx,
                 id_count=id_count,
+                stress_count=stress_count,
             )
+
+    # X tick labels on the bottom row only.
+    bottom_row = n_rows - 1
+    for pi in range(n_panels):
+        if pi < len(all_agg) and not all_agg[pi].empty:
+            panel_datasets = list(all_agg[pi]["DatasetLabel"].unique())
+        else:
+            panel_datasets = []
+        axes[bottom_row, pi].set_xticks(np.arange(len(panel_datasets)))
+        axes[bottom_row, pi].set_xticklabels(
+            panel_datasets, rotation=30, ha="right", fontsize=9
+        )
 
     # Shared legend on top
     handles, labels = axes[metric_row, 0].get_legend_handles_labels()
@@ -2230,25 +2302,36 @@ def generate_compound_and_stress_figure(
         compound_subset = compound_subset[compound_subset["Model"].isin(model_filter)]
         stress_subset = stress_subset[stress_subset["Model"].isin(model_filter)]
 
-    # Prepare AviCi DAG validity + error decomposition data
+    # Prepare AviCi DAG validity + error decomposition data.
+    # Include stress-test families alongside id/compound so that the DAG
+    # and error rows in _generate_compound_shift_panels can display them.
     avici_dag_df: pd.DataFrame | None = None
     error_df: pd.DataFrame | None = None
+    _stress_key_set = set(_EXTREME_FAMILIES)
     if with_avici_dag_row:
-        avici_dag_df = raw_df[
+        _dag_base = raw_df[
             raw_df["Metric"].isin(["valid_dag_pct", "threshold_valid_dag_pct"])
-            & raw_df["AxisCategory"].isin(["id", "compound"])
             & raw_df["Model"].eq("AviCi")
         ].copy()
-        avici_dag_df = avici_dag_df[is_fixed_size_task_frame(avici_dag_df)]
+        _dag_fixed = _dag_base[
+            _dag_base["AxisCategory"].isin(["id", "compound"])
+            & is_fixed_size_task_frame(_dag_base)
+        ]
+        _dag_stress = _dag_base[_dag_base["DatasetKey"].isin(_stress_key_set)]
+        avici_dag_df = pd.concat([_dag_fixed, _dag_stress], ignore_index=True)
+        avici_dag_df = avici_dag_df.drop_duplicates()
         if avici_dag_df.empty:
             avici_dag_df = None
 
         _error_metrics = [k for k, _, _ in ERROR_SPECS]
-        error_df = raw_df[
-            raw_df["Metric"].isin(_error_metrics)
-            & raw_df["AxisCategory"].isin(["id", "compound"])
-        ].copy()
-        error_df = error_df[is_fixed_size_task_frame(error_df)]
+        _err_base = raw_df[raw_df["Metric"].isin(_error_metrics)].copy()
+        _err_fixed = _err_base[
+            _err_base["AxisCategory"].isin(["id", "compound"])
+            & is_fixed_size_task_frame(_err_base)
+        ]
+        _err_stress = _err_base[_err_base["DatasetKey"].isin(_stress_key_set)]
+        error_df = pd.concat([_err_fixed, _err_stress], ignore_index=True)
+        error_df = error_df.drop_duplicates()
         if model_filter is not None:
             error_df = error_df[error_df["Model"].isin(model_filter)]
         if error_df.empty:

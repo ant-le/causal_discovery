@@ -14,7 +14,6 @@ from causal_meta.analysis.paper_comparison.reference_data import (
     MODELS,
     SOURCE_AVICI_DIR,
     cross_model_paper_values,
-    source_paper_config_differences,
     source_paper_configs,
 )
 
@@ -97,12 +96,11 @@ def build_hyperparam_comparison(
     """Build per-model DataFrames comparing paper vs our hyperparameters.
 
     Returns ``{model: DataFrame}`` with columns:
-        parameter, paper_value, our_value, match
+        parameter, paper_value, our_value
     """
     from omegaconf import OmegaConf
 
     paper_cfgs = source_paper_configs()
-    diffs = source_paper_config_differences()
     result: dict[str, pd.DataFrame] = {}
 
     for model in MODELS:
@@ -122,24 +120,24 @@ def build_hyperparam_comparison(
 
         # Build a reference JSON that holds the key mapping.
         ref = _load_key_map(model)
+        overrides = _load_config_overrides(model)
 
         rows: list[dict[str, Any]] = []
         for paper_key, paper_value in paper_cfg.items():
             our_key = ref.get(paper_key, paper_key)
             our_value = our_flat.get(our_key, "N/A")
-            match = _values_match(paper_value, our_value)
+            # Fall back to manually specified overrides when YAML has no match.
+            if our_value == "N/A" and paper_key in overrides:
+                our_value = overrides[paper_key]
             rows.append(
                 {
                     "parameter": paper_key,
                     "paper_value": _fmt_value(paper_value),
                     "our_value": _fmt_value(our_value),
-                    "match": match,
                 }
             )
 
         df = pd.DataFrame(rows)
-        # Attach known differences as metadata attribute.
-        df.attrs["known_differences"] = diffs.get(model, [])
         result[model] = df
 
     return result
@@ -153,17 +151,12 @@ def _load_key_map(model: str) -> dict[str, str]:
     return ref.get("source_papers", {}).get(model, {}).get("our_config_key_map", {})
 
 
-def _values_match(paper: Any, ours: Any) -> str:
-    """Return 'yes', 'no', or 'n/a' based on whether values match."""
-    if ours == "N/A" or paper is None:
-        return "n/a"
-    # Compare numeric values with tolerance.
-    try:
-        pf, of = float(paper), float(ours)
-        return "yes" if abs(pf - of) < 1e-9 else "no"
-    except (TypeError, ValueError):
-        pass
-    return "yes" if str(paper) == str(ours) else "no"
+def _load_config_overrides(model: str) -> dict[str, Any]:
+    """Load ``our_config_overrides`` for a model from the reference JSON."""
+    from causal_meta.analysis.paper_comparison.reference_data import load_reference
+
+    ref = load_reference()
+    return ref.get("source_papers", {}).get(model, {}).get("our_config_overrides", {})
 
 
 def _fmt_value(v: Any) -> str:

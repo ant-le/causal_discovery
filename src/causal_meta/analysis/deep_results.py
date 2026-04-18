@@ -901,14 +901,18 @@ def generate_metric_dag_accuracy(
     raw_df: pd.DataFrame,
     output_path: Path,
 ) -> pd.DataFrame:
-    """Scatter of AviCi DAG validity vs. structural metrics (2x3 grid).
+    """Scatter of AviCi DAG-validity gap vs. structural metrics (1x3 grid).
 
-    Top row: sampled DAG validity (valid_dag_pct) vs ne-SID, ne-SHD, Edge F1.
-    Bottom row: thresholded DAG validity (threshold_valid_dag_pct) vs the same.
+    The *validity gap* is defined as
+    ``threshold_valid_dag_pct − valid_dag_pct`` per task family.  A large gap
+    means the posterior-mean graph at p > 0.5 is almost always acyclic even
+    though the individual posterior samples are often cyclic — i.e. the
+    thresholded diagnostic hides substantial posterior uncertainty about
+    cyclicity.
 
     Each dot is one task family (family-level mean), coloured by shift axis
-    category.  Reveals the relationship between DAG-constraint satisfaction
-    and downstream structural accuracy for AviCi specifically.
+    category.  The figure reveals whether families with a large validity gap
+    are also the ones with worse structural accuracy.
     """
     needed = {
         "ne-sid",
@@ -941,23 +945,28 @@ def generate_metric_dag_accuracy(
                 f"Missing '{col}' for metric-DAG accuracy plot."
             )
 
-    # threshold_valid_dag_pct may be absent in some runs — degrade gracefully
     has_threshold = "threshold_valid_dag_pct" in pivot.columns
-    if has_threshold:
-        pivot = pivot.dropna(
-            subset=[
-                "ne-sid",
-                "ne-shd",
-                "e-edgef1",
-                "valid_dag_pct",
-                "threshold_valid_dag_pct",
-            ]
+    if not has_threshold:
+        raise EmptyAnalysisDataError(
+            "Missing 'threshold_valid_dag_pct' — cannot compute validity gap."
         )
-    else:
-        pivot = pivot.dropna(subset=["ne-sid", "ne-shd", "e-edgef1", "valid_dag_pct"])
 
+    pivot = pivot.dropna(
+        subset=[
+            "ne-sid",
+            "ne-shd",
+            "e-edgef1",
+            "valid_dag_pct",
+            "threshold_valid_dag_pct",
+        ]
+    )
     if pivot.empty:
         raise EmptyAnalysisDataError("No data remaining for metric-DAG accuracy plot.")
+
+    # Compute the validity gap (threshold − sampled).
+    pivot["dag_validity_gap"] = (
+        pivot["threshold_valid_dag_pct"] - pivot["valid_dag_pct"]
+    )
 
     _METRIC_PANELS = [
         ("ne-sid", r"ne-SID $\downarrow$"),
@@ -965,46 +974,32 @@ def generate_metric_dag_accuracy(
         ("e-edgef1", r"Edge F1 $\uparrow$"),
     ]
 
-    _DAG_ROWS = [
-        ("valid_dag_pct", "Sampled DAG Validity"),
-    ]
-    if has_threshold:
-        _DAG_ROWS.append(("threshold_valid_dag_pct", "Thresholded DAG Validity"))
-
-    n_rows = len(_DAG_ROWS)
-    fig, axes = plt.subplots(n_rows, 3, figsize=(16, 5 * n_rows), squeeze=False)
-
     from matplotlib.lines import Line2D
 
-    for row_idx, (dag_col, dag_label) in enumerate(_DAG_ROWS):
-        for col_idx, (metric_col, metric_label) in enumerate(_METRIC_PANELS):
-            ax = axes[row_idx, col_idx]
-            for cat in sorted(pivot["AxisCategory"].unique()):
-                cdf = pivot[pivot["AxisCategory"] == cat]
-                ax.scatter(
-                    cdf[dag_col],
-                    cdf[metric_col],
-                    c=_AXIS_COLORS.get(cat, "#aaaaaa"),
-                    marker="o",
-                    label=(
-                        _AXIS_DISPLAY.get(cat, cat)
-                        if row_idx == 0 and col_idx == 0
-                        else None
-                    ),
-                    s=40,
-                    alpha=0.7,
-                    edgecolors="white",
-                    linewidths=0.3,
-                )
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5), squeeze=False)
 
-            ax.set_xlabel(f"{dag_label} %", fontsize=11)
-            ax.set_ylabel(metric_label, fontsize=11)
-            ax.set_title(
-                f"{dag_label} vs. {metric_label}", fontsize=11, fontweight="bold"
+    for col_idx, (metric_col, metric_label) in enumerate(_METRIC_PANELS):
+        ax = axes[0, col_idx]
+        for cat in sorted(pivot["AxisCategory"].unique()):
+            cdf = pivot[pivot["AxisCategory"] == cat]
+            ax.scatter(
+                cdf["dag_validity_gap"],
+                cdf[metric_col],
+                c=_AXIS_COLORS.get(cat, "#aaaaaa"),
+                marker="o",
+                label=(_AXIS_DISPLAY.get(cat, cat) if col_idx == 0 else None),
+                s=40,
+                alpha=0.7,
+                edgecolors="white",
+                linewidths=0.3,
             )
-            ax.grid(True, linestyle="--", alpha=0.4)
 
-    # Compact legend: one entry per shift category
+        ax.set_xlabel("DAG Validity Gap (Threshold − Sampled) %", fontsize=11)
+        ax.set_ylabel(metric_label, fontsize=11)
+        ax.set_title(f"Validity Gap vs. {metric_label}", fontsize=11, fontweight="bold")
+        ax.grid(True, linestyle="--", alpha=0.4)
+
+    # Compact legend: one entry per shift category.
     cat_handles = []
     for cat in sorted(pivot["AxisCategory"].unique()):
         cat_handles.append(
@@ -1028,7 +1023,7 @@ def generate_metric_dag_accuracy(
     )
 
     fig.suptitle(
-        "AviCi: DAG Validity vs. Structural Metrics",
+        "AviCi: DAG Validity Gap vs. Structural Metrics",
         fontsize=14,
         fontweight="bold",
         y=1.05,

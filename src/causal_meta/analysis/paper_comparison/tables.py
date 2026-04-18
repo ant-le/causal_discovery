@@ -150,7 +150,6 @@ def generate_hyperparam_table(
 ) -> None:
     """Write a LaTeX table comparing paper vs our hyperparameters for one model."""
     model_label = PAPER_MODEL_LABELS.get(model, model)
-    diffs = hp_df.attrs.get("known_differences", [])
 
     lines: list[str] = []
     lines.append(r"\begin{table}[h]")
@@ -158,38 +157,23 @@ def generate_hyperparam_table(
     lines.append(r"\small")
     lines.append(
         rf"\caption{{Hyperparameter comparison: {model_label} "
-        r"(source paper vs.\ our configuration).}"
+        r"(source paper vs.\ this thesis).}"
     )
     lines.append(rf"\label{{tab:hp_{model}}}")
-    lines.append(r"\begin{tabular}{llll}")
+    lines.append(r"\resizebox{\textwidth}{!}{%")
+    lines.append(r"\begin{tabular}{lll}")
     lines.append(r"\toprule")
-    lines.append(
-        r"\textbf{Parameter} & \textbf{Paper} & \textbf{Ours} & \textbf{Match} \\"
-    )
+    lines.append(r"\textbf{Parameter} & \textbf{Paper} & \textbf{This Thesis} \\")
     lines.append(r"\midrule")
 
     for _, row in hp_df.iterrows():
         param = str(row["parameter"]).replace("_", r"\_")
         paper_val = str(row["paper_value"]).replace("_", r"\_")
         our_val = str(row["our_value"]).replace("_", r"\_")
-        match = row["match"]
-        match_sym = (
-            r"\cmark" if match == "yes" else r"\xmark" if match == "no" else "---"
-        )
-        lines.append(f"{param} & {paper_val} & {our_val} & {match_sym} \\\\")
+        lines.append(f"{param} & {paper_val} & {our_val} \\\\")
 
     lines.append(r"\bottomrule")
-    lines.append(r"\end{tabular}")
-
-    # Add known differences as footnote if available.
-    if diffs:
-        lines.append(r"\par\vspace{2pt}\footnotesize\textbf{Key differences:}")
-        lines.append(r"\begin{itemize}[nosep,leftmargin=*]")
-        for d in diffs:
-            d_escaped = d.replace("_", r"\_").replace("&", r"\&")
-            lines.append(rf"\item {d_escaped}")
-        lines.append(r"\end{itemize}")
-
+    lines.append(r"\end{tabular}}")
     lines.append(r"\end{table}")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

@@ -212,9 +212,10 @@ class TestHyperparamComparison:
         hp = build_hyperparam_comparison(cfgs)
         for model, df in hp.items():
             assert isinstance(df, pd.DataFrame)
-            assert set(df.columns) == {"parameter", "paper_value", "our_value", "match"}
+            assert set(df.columns) == {"parameter", "paper_value", "our_value"}
 
-    def test_match_column_values(self, tmp_path: Path) -> None:
+    def test_our_value_populated_from_overrides(self, tmp_path: Path) -> None:
+        """Overrides in paper_reference.json should fill N/A values."""
         from causal_meta.analysis.paper_comparison.comparison import (
             build_hyperparam_comparison,
         )
@@ -222,7 +223,8 @@ class TestHyperparamComparison:
         cfgs = _build_configs(tmp_path)
         hp = build_hyperparam_comparison(cfgs)
         for _, df in hp.items():
-            assert df["match"].isin(["yes", "no", "n/a"]).all()
+            # Every row should have a non-empty our_value string.
+            assert (df["our_value"].astype(str) != "").all()
 
 
 class TestAvici3WayDataframe:

@@ -228,15 +228,6 @@ def run_thesis_analysis(
 
     unc_plots.generate_ece_summary_table(raw_df, results_dir / "ece_summary.tex")
 
-    try:
-        gen_tables.generate_distance_regression_table(
-            summary_df, results_dir / "distance_regression.tex"
-        )
-    except Exception:
-        if strict:
-            raise
-        log.warning("Distance regression table generation failed.", exc_info=True)
-
     if skip_posterior:
         log.info("Posterior diagnostics skipped (--skip-posterior).")
     else:
