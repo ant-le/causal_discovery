@@ -45,10 +45,6 @@ def run_thesis_analysis(
     # Output directories under graphics/<chapter>/
     results_dir = thesis_root / thesis_common.GRAPHICS_RESULTS
     results_dir.mkdir(parents=True, exist_ok=True)
-    appendix_a_dir = thesis_root / thesis_common.GRAPHICS_APPENDIX_A
-    appendix_a_dir.mkdir(parents=True, exist_ok=True)
-    appendix_e_dir = thesis_root / thesis_common.GRAPHICS_APPENDIX_E
-    appendix_e_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Methodology figures (Chapter 4) ──────────────────────────────
     methodology_dir = thesis_root / thesis_common.GRAPHICS_METHODOLOGY
@@ -231,10 +227,6 @@ def run_thesis_analysis(
     )
 
     unc_plots.generate_ece_summary_table(raw_df, results_dir / "ece_summary.tex")
-
-    gen_tables.generate_robustness_table(
-        summary_df, appendix_e_dir / "fixed_ood_appendix.tex"
-    )
 
     try:
         gen_tables.generate_distance_regression_table(

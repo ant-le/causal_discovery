@@ -25,10 +25,8 @@ CONFIGS_ROOT = REPO_ROOT / "src" / "causal_meta" / "configs"
 GRAPHICS_ROOT = "graphics"
 GRAPHICS_RESULTS = f"{GRAPHICS_ROOT}/5_Results"
 GRAPHICS_METHODOLOGY = f"{GRAPHICS_ROOT}/4_Methodology"
-GRAPHICS_APPENDIX_A = f"{GRAPHICS_ROOT}/A_ExperimentalSettings"
 GRAPHICS_APPENDIX_B = f"{GRAPHICS_ROOT}/B_ModelConfigurations"
 GRAPHICS_APPENDIX_C = f"{GRAPHICS_ROOT}/C_BenchmarkFamilies"
-GRAPHICS_APPENDIX_E = f"{GRAPHICS_ROOT}/E_ExtendedResults"
 GRAPHICS_APPENDIX_F = f"{GRAPHICS_ROOT}/F_ReproducibilityArtifacts"
 
 

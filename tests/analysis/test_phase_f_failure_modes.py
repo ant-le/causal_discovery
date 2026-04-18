@@ -10,6 +10,7 @@ import pytest
 
 from causal_meta.analysis.diagnostics.failure_modes import (
     FAILURE_MODE_CATEGORIES,
+    _pivot_raw_wide,
     classify_failure_modes,
     failure_mode_fractions,
     ood_category,
@@ -317,6 +318,43 @@ class TestLoadRawTaskDataframe:
     def test_empty_run_dirs(self) -> None:
         df = load_raw_task_dataframe([])
         assert df.empty
+
+
+def test_pivot_raw_wide_preserves_rows_with_missing_enrichment() -> None:
+    """Pivot keeps tasks even when optional enrichment columns are NaN."""
+    rows: list[dict[str, object]] = []
+    for task_idx in range(2):
+        for metric, value in (
+            ("fp_count", 1.0 + task_idx),
+            ("fn_count", 2.0 + task_idx),
+            ("reversed_count", 0.5 + task_idx),
+        ):
+            rows.append(
+                {
+                    "RunID": "run1",
+                    "Model": "AviCi",
+                    "ModelKey": "avici",
+                    "DatasetKey": "ood_graph_sbm_linear_d20_n500",
+                    "Dataset": "OOD-G SBM Linear",
+                    "TaskIdx": task_idx,
+                    "Metric": metric,
+                    "Value": value,
+                    "GraphType": "sbm",
+                    "MechType": "linear",
+                    "NNodes": 20,
+                    "SamplesPerTask": 500,
+                    "SparsityParam": None,
+                    "SpectralDist": 1.2,
+                    "KLDegreeDist": 2.1,
+                }
+            )
+
+    raw_df = pd.DataFrame(rows)
+    wide = _pivot_raw_wide(raw_df)
+
+    assert len(wide) == 2
+    assert set(wide["TaskIdx"].tolist()) == {0, 1}
+    assert {"fp_count", "fn_count", "reversed_count"}.issubset(set(wide.columns))
 
 
 # ── generate_failure_mode_bar (smoke test) ──────────────────────────────

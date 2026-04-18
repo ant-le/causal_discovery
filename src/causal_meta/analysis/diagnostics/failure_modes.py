@@ -74,7 +74,9 @@ def _pivot_raw_wide(raw_df: pd.DataFrame) -> pd.DataFrame:
     if raw_df.empty or "Metric" not in raw_df.columns:
         return pd.DataFrame()
 
-    # Columns that identify a unique task
+    # Use stable task identifiers only. Optional enrichment columns can contain
+    # NaNs for specific shift axes (e.g. ``SparsityParam`` on SBM/WS/GRG), and
+    # including them in the pivot index can silently drop those rows.
     id_cols = [
         c
         for c in (
@@ -84,13 +86,6 @@ def _pivot_raw_wide(raw_df: pd.DataFrame) -> pd.DataFrame:
             "DatasetKey",
             "Dataset",
             "TaskIdx",
-            "GraphType",
-            "MechType",
-            "NNodes",
-            "SamplesPerTask",
-            "SparsityParam",
-            "SpectralDist",
-            "KLDegreeDist",
         )
         if c in raw_df.columns
     ]
@@ -102,6 +97,25 @@ def _pivot_raw_wide(raw_df: pd.DataFrame) -> pd.DataFrame:
         aggfunc="first",
     ).reset_index()
     wide.columns.name = None
+
+    enrichment_cols = [
+        c
+        for c in (
+            "GraphType",
+            "MechType",
+            "NNodes",
+            "SamplesPerTask",
+            "SparsityParam",
+            "SpectralDist",
+            "KLDegreeDist",
+            "MechanismDist",
+        )
+        if c in raw_df.columns
+    ]
+    if enrichment_cols:
+        enrichment = raw_df[id_cols + enrichment_cols].drop_duplicates(subset=id_cols)
+        wide = wide.merge(enrichment, on=id_cols, how="left")
+
     return wide
 
 
