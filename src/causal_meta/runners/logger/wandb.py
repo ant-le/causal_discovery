@@ -123,6 +123,10 @@ class WandbLogger(BaseLogger):
             dir=output_dir,
         )
 
+        self.allowed_metrics: list[str] | None = _get(
+            wandb_cfg, "allowed_metrics", None
+        )
+
         # Store run ID for checkpoint persistence
         self._run_id: Optional[str] = self.run.id if self.run else None
 
@@ -135,10 +139,26 @@ class WandbLogger(BaseLogger):
         self, metrics: Dict[str, float], step: Optional[int] = None
     ) -> None:
         if self.run:
-            if step is not None:
-                self.wandb_module.log(metrics, step=step)
-            else:
-                self.wandb_module.log(metrics)
+            filtered_metrics = metrics
+            if getattr(self, "allowed_metrics", None) is not None:
+                filtered_metrics = {}
+                for k, v in metrics.items():
+                    base_name = k.split("/")[-1]
+                    if base_name.endswith("_sem") or base_name.endswith("_std"):
+                        continue
+
+                    for allowed in self.allowed_metrics:
+                        if allowed in base_name:
+                            if allowed == "valid_dag_pct" and "threshold" in base_name:
+                                continue
+                            filtered_metrics[k] = v
+                            break
+
+            if filtered_metrics:
+                if step is not None:
+                    self.wandb_module.log(filtered_metrics, step=step)
+                else:
+                    self.wandb_module.log(filtered_metrics)
 
     def log_hyperparams(self, params: Dict[str, Any]) -> None:
         if self.run:

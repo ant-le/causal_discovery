@@ -10,6 +10,7 @@ name: "dg_2pretrain_smoke"
 data:
   seeds_val: [1000]
   seeds_test: [2000]
+  inference_n_samples: 8
 
 trainer:
   max_tasks_seen: 64000
@@ -18,7 +19,7 @@ trainer:
   checkpoint_every_n_tasks: 32000
 
 inference:
-  n_samples: 8
+  n_samples: ${data.inference_n_samples}
   cache_compress: false
   cache_n_samples: null
   dibs:

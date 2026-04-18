@@ -183,6 +183,7 @@ def load_family_config(
             )
         samples_per_task_raw = cfg.get("samples_per_task")
         loader_kwargs_raw = cfg.get("loader_kwargs")
+        inference_n_samples_raw = cfg.get("inference_n_samples")
         rw_cfg = configs.RealWorldFamilyConfig(
             name=name,
             loader=str(loader),
@@ -192,6 +193,11 @@ def load_family_config(
             ),
             loader_kwargs=(
                 dict(loader_kwargs_raw) if loader_kwargs_raw is not None else None
+            ),
+            inference_n_samples=(
+                int(inference_n_samples_raw)
+                if inference_n_samples_raw is not None
+                else None
             ),
         )
         rw_cfg.validate()
@@ -220,6 +226,7 @@ def load_family_config(
 
     samples_per_task_raw = cfg.get("samples_per_task")
     noise_type = str(cfg.get("noise_type", "gaussian")).strip()
+    inference_n_samples_raw = cfg.get("inference_n_samples")
     family_cfg = configs.FamilyConfig(
         name=name,
         n_nodes=int(n_nodes_raw),
@@ -229,6 +236,11 @@ def load_family_config(
             int(samples_per_task_raw) if samples_per_task_raw is not None else None
         ),
         noise_type=noise_type,
+        inference_n_samples=(
+            int(inference_n_samples_raw)
+            if inference_n_samples_raw is not None
+            else None
+        ),
     )
     family_cfg.validate()
     return family_cfg
@@ -294,6 +306,7 @@ def load_data_module_config(cfg: Any) -> configs.DataModuleConfig:
         "seeds_val",
         "base_seed",
         "samples_per_task",
+        "inference_n_samples",
         "samples_per_task_obs",
         "samples_per_task_int",
         "use_interventional_training",

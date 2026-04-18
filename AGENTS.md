@@ -1,9 +1,19 @@
 # Agent Guidelines for Causal Meta
 
-This repository is a Hydra-configured Python benchmarking framework under `src/causal_meta` plus a separate Svelte/Vite site in `client/`.
+This repository is a Hydra-configured Python benchmarking framework under `src/causal_meta`.
 
-## 1. Core Expectations
+## 1. Core Expectations & Main Tasks
 - Keep code, experiments, and thesis text aligned.
+- **Main Tasks**:
+  1. Write/update code in `src/causal_meta/`.
+  2. Write the thesis in `paper/final_thesis/`.
+  3. Check the thesis literature in `paper/markdown/`.
+  4. Analyse results in `experiments/thesis_runs/` using the `src/causal_meta/analysis/` scripts, which output directly into the thesis at `paper/final_thesis/graphics/`.
+- **Key Reference Papers**:
+  - AVICI: `paper/markdown/introduction/avici.md`
+  - Meta-learning: `paper/markdown/methdology/meta_learning.md`
+  - DiBS: `paper/markdown/methdology/dibs.md`
+  - BayesDAG: `paper/markdown/methdology/bayesdag.md`
 - Prefer small, local changes over broad rewrites.
 - Respect Hydra/OmegaConf; put defaults in YAML, not inline in Python.
 - Preserve reproducibility: seeds, dataset hashing, cached inference, and DDP behavior are part of the design.
@@ -14,18 +24,18 @@ This repository is a Hydra-configured Python benchmarking framework under `src/c
 - Packaging is defined in `pyproject.toml` with Hatchling.
 - CLI entry point: `causal-meta = causal_meta.main:main`.
 - `pytest` sets `pythonpath = ["src"]`, so run Python tests from the repo root.
-- The only checked-in GitHub Actions workflow builds and deploys `client/`.
 - No `.cursor/rules/`, `.cursorrules`, or `.github/copilot-instructions.md` files were found.
 
 ## 3. Repo Layout
 - `src/causal_meta/datasets`: SCM generation, dataset wrappers, collate utils.
 - `src/causal_meta/models`: AviCi, BCNP, DiBS, BayesDAG, random baseline.
 - `src/causal_meta/runners`: training, inference, evaluation, logging, metrics.
-- `src/causal_meta/analysis`: thesis analysis organized around `rq1`, `rq2`, `rq3`, shared thesis utilities, and appendix generation.
+- `src/causal_meta/analysis`: thesis analysis organized around `rq1`, `rq2`, `rq3`, shared thesis utilities, and appendix generation. Scripts here output to `paper/final_thesis/graphics/`.
 - `src/causal_meta/configs`: Hydra defaults and experiment config groups.
 - `tests/`: pytest suite mirroring the Python package layout.
-- `paper/final_thesis/`: thesis text that may need updates when logic changes.
-- `client/`: Svelte site deployed to GitHub Pages.
+- `paper/final_thesis/`: thesis text that may need updates when logic changes. Contains `graphics/` for analysis output.
+- `paper/markdown/`: thesis literature and reference papers.
+- `experiments/thesis_runs/`: results to be analyzed.
 
 ## 4. Setup and Build Commands
 ### Python environment
@@ -40,8 +50,12 @@ uv build
 uv run causal-meta --config-name default
 uv run causal-meta --config-name dg_2pretrain_smoke model=avici
 export WANDB_MODE=offline
+
+# General analysis (for experiments/runs)
 uv run python -m causal_meta.analysis.run_analysis experiments/runs --strict
-uv run python -m causal_meta.analysis.run_thesis_analysis --input-root experiments/thesis_runs --thesis-root paper/final_thesis
+
+# Thesis analysis - USE --skip-posterior to avoid timeout from posterior graph loading
+uv run python -m causal_meta.analysis.run_thesis_analysis --input-root experiments/thesis_runs --thesis-root paper/final_thesis --skip-posterior
 uv run python -m causal_meta.analysis.run_appendix_generation --thesis-root paper/final_thesis --configs-root src/causal_meta/configs
 ```
 ### Python tests
@@ -52,16 +66,8 @@ uv run pytest tests/runners/test_logger_integration.py::test_pipeline_integratio
 uv run pytest -k checkpointing tests/runners/test_pre_training_checkpointing.py
 uv run pytest -v tests/analysis
 ```
-### Client commands (`client/`)
-```bash
-npm install
-npm run check
-npm run build
-npm run dev
-```
 - Use `uv run pytest path/to/test.py::test_name` as the default quick verification loop.
 - Prefer running Python commands from the repo root.
-- `npm run check` is the only explicit static-check command checked into the repo.
 
 ## 5. Linting and Formatting Reality
 - There is no repo-wide Python Ruff, Black, Flake8, or mypy config checked in.
@@ -133,13 +139,7 @@ npm run dev
 - Keep smoke tests tiny: small models, few steps, low sample counts.
 - When fixing a bug, add the narrowest test that proves the fix.
 
-## 11. Frontend Notes
-- The website in `client/` is a separate Svelte/Vite project with TypeScript checks via `npm run check`.
-- Preserve the established frontend structure and scripts when touching client files.
-- The checked-in CI workflow validates the site by running `npm install` and `npm run build` in `client/`.
-- Do not assume a shared lint setup between the Python and frontend sides.
-
-## 12. Thesis Synchronization
+## 11. Thesis Synchronization
 - Treat code and thesis text as one system.
 - If you change logic in `src/`, check whether `paper/final_thesis/` also needs updates.
 - Likely mapping:
@@ -150,12 +150,12 @@ npm run dev
   - thesis-wide interpretation / limitations -> `paper/final_thesis/sections/6_Conclusion.tex`
 - In your report, explicitly state which thesis sections may be affected.
 
-## 13. Cluster and Release Notes
+## 12. Cluster and Release Notes
 - Cluster launchers under `scripts/` are part of the repo's operational contract.
 - If you change cluster, bootstrap, or distributed launch behavior, verify the full command path, not just local imports.
 - For cluster-readiness changes, commit and push before claiming the workflow is ready for GPU execution.
 
-## 14. Practical Defaults
+## 13. Practical Defaults
 - Start from the repo root for Python work.
 - Preserve unrelated local worktree changes.
 - Match surrounding file style before introducing new abstractions.

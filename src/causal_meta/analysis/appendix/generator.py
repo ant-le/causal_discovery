@@ -79,7 +79,7 @@ def _write_table(
     resize: bool = False,
     font_size: str = r"\footnotesize",
 ) -> None:
-    lines = [r"\begin{table}[t]", r"\centering"]
+    lines = [r"\begin{table}[h]", r"\centering"]
     if font_size:
         lines.append(font_size)
     lines.append(rf"\caption{{{caption}}}")

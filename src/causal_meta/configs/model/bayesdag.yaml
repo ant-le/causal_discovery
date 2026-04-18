@@ -20,7 +20,7 @@ sinkhorn_n_iter: 300
 # Noise scale parameters — matched to official SynTReN config.
 scale_noise: 0.01
 scale_noise_p: 0.1
-batch_size: 512
+batch_size: 256
 max_epochs: 400
 
 standardize_data_mean: false
@@ -44,6 +44,20 @@ device: "auto"
 # Per-family profiles.  Families not listed here fall back to the
 # top-level defaults above.  Only variant, lambda_sparse, num_chains,
 # scale_noise, and scale_noise_p are overridable per profile.
+#
+# Profile naming: mechanism (+ optional graph suffix)
+# ID graphs:
+#   - "linear": sparse graphs (ER20, SF1), ~20 edges
+#   - "linear_er40": medium density ~40 edges
+#   - "linear_er60": dense ~60 edges
+#   - "linear_sf2": hub-based ~40 edges
+#   - "linear_sf3": hub-based ~60 edges
+#   - "neuralnet": MLP mechanism (struggles with all graphs)
+#   - "gpcde": GP mechanism
+# OOD graphs:
+#   - "linear_sbm": block model ~moderate density
+#   - "linear_ws": small-world ~moderate density
+#   - "linear_grg": geometric ~moderate density
 profile_overrides:
   linear:
     variant: "linear"
@@ -51,9 +65,144 @@ profile_overrides:
     num_chains: 20
     scale_noise: 0.01
     scale_noise_p: 1.0
+  linear_er40:
+    variant: "linear"
+    lambda_sparse: 150.0
+    num_chains: 20
+    scale_noise: 0.01
+    scale_noise_p: 1.0
+  linear_er60:
+    variant: "linear"
+    lambda_sparse: 75.0
+    num_chains: 20
+    scale_noise: 0.01
+    scale_noise_p: 1.0
+  linear_sf2:
+    variant: "linear"
+    lambda_sparse: 150.0
+    num_chains: 20
+    scale_noise: 0.01
+    scale_noise_p: 1.0
+  linear_sf3:
+    variant: "linear"
+    lambda_sparse: 75.0
+    num_chains: 20
+    scale_noise: 0.01
+    scale_noise_p: 1.0
+  linear_sbm:
+    variant: "linear"
+    lambda_sparse: 150.0
+    num_chains: 20
+    scale_noise: 0.01
+    scale_noise_p: 1.0
+  linear_ws:
+    variant: "linear"
+    lambda_sparse: 150.0
+    num_chains: 20
+    scale_noise: 0.01
+    scale_noise_p: 1.0
+  linear_grg:
+    variant: "linear"
+    lambda_sparse: 150.0
+    num_chains: 20
+    scale_noise: 0.01
+    scale_noise_p: 1.0
+  neuralnet:
+    variant: "nonlinear"
+    lambda_sparse: 75.0
+    num_chains: 10
+    scale_noise: 0.01
+    scale_noise_p: 0.1
+  neuralnet_er40:
+    variant: "nonlinear"
+    lambda_sparse: 50.0
+    num_chains: 10
+    scale_noise: 0.01
+    scale_noise_p: 0.1
+  neuralnet_er60:
+    variant: "nonlinear"
+    lambda_sparse: 30.0
+    num_chains: 10
+    scale_noise: 0.01
+    scale_noise_p: 0.1
+  neuralnet_sf2:
+    variant: "nonlinear"
+    lambda_sparse: 75.0
+    num_chains: 10
+    scale_noise: 0.01
+    scale_noise_p: 0.1
+  neuralnet_sf3:
+    variant: "nonlinear"
+    lambda_sparse: 75.0
+    num_chains: 10
+    scale_noise: 0.01
+    scale_noise_p: 0.1
+  neuralnet_sbm:
+    variant: "nonlinear"
+    lambda_sparse: 50.0
+    num_chains: 10
+    scale_noise: 0.01
+    scale_noise_p: 0.1
+  neuralnet_ws:
+    variant: "nonlinear"
+    lambda_sparse: 50.0
+    num_chains: 10
+    scale_noise: 0.01
+    scale_noise_p: 0.1
+  neuralnet_grg:
+    variant: "nonlinear"
+    lambda_sparse: 50.0
+    num_chains: 10
+    scale_noise: 0.01
+    scale_noise_p: 0.1
   gpcde:
     variant: "nonlinear"
     lambda_sparse: 300.0
+    num_chains: 10
+    scale_noise: 0.01
+    scale_noise_p: 0.1
+  gpcde_er40:
+    variant: "nonlinear"
+    lambda_sparse: 150.0
+    num_chains: 10
+    scale_noise: 0.01
+    scale_noise_p: 0.1
+  gpcde_er60:
+    variant: "nonlinear"
+    lambda_sparse: 75.0
+    num_chains: 10
+    scale_noise: 0.01
+    scale_noise_p: 0.1
+  gpcde_sf2:
+    variant: "nonlinear"
+    lambda_sparse: 150.0
+    num_chains: 10
+    scale_noise: 0.01
+    scale_noise_p: 0.1
+  gpcde_sf3:
+    variant: "nonlinear"
+    lambda_sparse: 75.0
+    num_chains: 10
+    scale_noise: 0.01
+    scale_noise_p: 0.1
+  # OOD graphs: moderate density, use gpcde_er40-like lambda.
+  # Also serves as fallback for OOD mechanism + OOD graph combinations
+  # (e.g. periodic_sbm -> gpcde_sbm via compute_fallback_keys).
+  gpcde_sbm:
+    variant: "nonlinear"
+    lambda_sparse: 150.0
+    num_chains: 10
+    scale_noise: 0.01
+    scale_noise_p: 0.1
+  gpcde_ws:
+    variant: "nonlinear"
+    lambda_sparse: 150.0
+    num_chains: 10
+    scale_noise: 0.01
+    scale_noise_p: 0.1
+  gpcde_grg:
+    variant: "nonlinear"
+    lambda_sparse: 150.0
     num_chains: 10
     scale_noise: 0.01
     scale_noise_p: 0.1

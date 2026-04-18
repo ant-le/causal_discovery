@@ -223,6 +223,7 @@ class FamilyConfig:
     mech_cfg: MechanismConfig
     samples_per_task: Optional[int] = None
     noise_type: str = "gaussian"
+    inference_n_samples: Optional[int] = None
 
     def validate(self) -> None:
         if not self.name:
@@ -256,6 +257,7 @@ class RealWorldFamilyConfig:
     n_nodes: int
     samples_per_task: Optional[int] = None
     loader_kwargs: Optional[Dict[str, str]] = None
+    inference_n_samples: Optional[int] = None
 
     def validate(self) -> None:
         if not self.name:
@@ -290,6 +292,10 @@ class DataModuleConfig:
     base_seed: int = 0
 
     samples_per_task: int = 128
+
+    # Number of posterior graph samples drawn at inference time.
+    # Individual families can override this via their own inference_n_samples.
+    inference_n_samples: int = 100
 
     samples_per_task_obs: Optional[int] = None
 

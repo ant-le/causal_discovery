@@ -13,8 +13,17 @@ from causal_meta.analysis.plots.results import (
 )
 from causal_meta.analysis.generalisation import plots as gen_plots
 from causal_meta.analysis.generalisation import tables as gen_tables
-from causal_meta.analysis.transfer.transfer import generate_transfer_figure
+from causal_meta.analysis.transfer.transfer import (
+    generate_rq2_transfer_figure,
+)
+from causal_meta.analysis.deep_results import (
+    generate_metric_disagreement,
+    generate_metric_dag_accuracy,
+)
 from causal_meta.analysis.diagnostics import posterior as diag_posterior
+from causal_meta.analysis.diagnostics.final_runs import (
+    generate_uncertainty_alignment_heatmap,
+)
 from causal_meta.analysis.uncertainty import plots as unc_plots
 from causal_meta.analysis.utils import EmptyAnalysisDataError
 
@@ -61,29 +70,35 @@ def run_thesis_analysis(
             raise
         log.warning("Degradation heatmap failed.", exc_info=True)
 
+    # ── RQ1: Amortised-only shift figures (AviCi + BCNP, 3-row layout) ──
+    _RQ1_MODELS = ["AviCi", "BCNP"]
     for shift_key in ("graph", "mechanism", "noise"):
-        fig_name = f"shift_{shift_key}.pdf"
+        fig_name = f"rq1_shift_{shift_key}.pdf"
         try:
             gen_plots.generate_shift_figure(
                 raw_df,
                 shift_axis=shift_key,
                 output_path=results_dir / fig_name,
+                model_filter=_RQ1_MODELS,
+                with_avici_dag_row=True,
             )
         except EmptyAnalysisDataError:
             if strict:
                 raise
-            log.warning("Shift figure for '%s' skipped (no data).", shift_key)
+            log.warning("RQ1 shift figure for '%s' skipped (no data).", shift_key)
 
-    # ── Compound shift + stress-test (merged) ────────────────────────
+    # ── RQ1: Amortised compound shift (AviCi + BCNP, 3-row layout) ──
     try:
         gen_plots.generate_compound_and_stress_figure(
             raw_df,
-            output_path=results_dir / "shift_compound.pdf",
+            output_path=results_dir / "rq1_shift_compound.pdf",
+            model_filter=_RQ1_MODELS,
+            with_avici_dag_row=True,
         )
     except Exception:
         if strict:
             raise
-        log.warning("Compound + stress-test figure failed.", exc_info=True)
+        log.warning("RQ1 compound shift figure failed.", exc_info=True)
 
     # ── Valid DAG % shift figure ──────────────────────────────────
     # This figure loads DiBS .pt.gz inference artifacts to compute
@@ -140,12 +155,76 @@ def run_thesis_analysis(
                 score_metric,
             )
 
-    for axis, stem in (("nodes", "node_transfer"), ("samples", "sample_transfer")):
-        generate_transfer_figure(
+    # ── RQ3: Combined 2×4 uncertainty scatter (entropy + NLL) ────────
+    try:
+        unc_plots.generate_uncertainty_scatter_combined(
             raw_df,
-            axis=axis,
-            output_path=results_dir / f"{stem}.pdf",
+            output_path=results_dir / "uncertainty_scatter_combined.pdf",
         )
+    except EmptyAnalysisDataError:
+        if strict:
+            raise
+        log.warning("Combined uncertainty scatter skipped (no data).")
+
+    # ── RQ3: Uncertainty-alignment heatmap + table ───────────────────
+    try:
+        generate_uncertainty_alignment_heatmap(
+            raw_df,
+            output_path=results_dir / "uncertainty_alignment_heatmap.pdf",
+        )
+    except Exception:
+        if strict:
+            raise
+        log.warning("Uncertainty alignment heatmap failed.", exc_info=True)
+
+    # ── RQ2: 2×3 transfer figures (ne-SHD, DAG validity, error decomp) ──
+    for axis, stem in (
+        ("nodes", "rq2_node_transfer"),
+        ("samples", "rq2_sample_transfer"),
+    ):
+        try:
+            generate_rq2_transfer_figure(
+                raw_df,
+                axis=axis,
+                output_path=results_dir / f"{stem}.pdf",
+            )
+        except Exception:
+            if strict:
+                raise
+            log.warning("RQ2 transfer figure for '%s' failed.", axis, exc_info=True)
+
+    # ── RQ2: Worst-task comparison (ne-SID + error decomposition) ────
+    try:
+        gen_plots.generate_rq2_worst_task_comparison(
+            raw_df,
+            output_path=results_dir / "rq2_worst_task_comparison.pdf",
+        )
+    except Exception:
+        if strict:
+            raise
+        log.warning("RQ2 worst-task comparison failed.", exc_info=True)
+
+    # ── RQ2: Metric disagreement (family-level winners only) ─────────
+    try:
+        generate_metric_disagreement(
+            raw_df,
+            results_dir / "metric_disagreement.pdf",
+        )
+    except Exception:
+        if strict:
+            raise
+        log.warning("Metric disagreement figure failed.", exc_info=True)
+
+    # ── RQ2: Metric vs DAG accuracy scatter ──────────────────────────
+    try:
+        generate_metric_dag_accuracy(
+            raw_df,
+            results_dir / "rq2_metric_dag_accuracy.pdf",
+        )
+    except Exception:
+        if strict:
+            raise
+        log.warning("Metric-DAG accuracy figure failed.", exc_info=True)
 
     unc_plots.generate_ood_detection_summary_table(
         raw_df, results_dir / "ood_detection.tex"

@@ -1,5 +1,34 @@
-- change distributed and general setup such that 
-num_samples is still tracked correctly - 
-such that batch sizes and multiple GPUs are also counted 
-and the max_steps flag ensures that models have seen
-and equal amount of samples
+FURTHER STUFF:
+1. Test what seems AI generated
+2. Re-Verify ALL claims and citations
+3. Check plagiarism
+4. Note in code and paper from where stuff was taken
+(eval resembles both BayesDag and Avici)
+5. Explain the difference in output between BCNP and AVICI 
+in more detail in 3_Related_work. I would add an 
+architectural graphic that shows (at least) both decoder 
+architectures
+
+- AVICI produces edge prob matrix -> then samples 
+- BCNP produces DAG samples directly
+
+
+BETTER EXPERIMENT:
+1. Change NumNodes training
+to 15-45 -> ood are 5/10 and 50/55/60
+2. Potentially enhance stress testing if needed
+to provide more of a ladder:
+    
+    - First: Compound Shift with less samples
+    - Second: Compound Shift with more nodes
+    - Third: Compound Shift with less samples and 
+    more nodes
+
+3. Check discrepency between num_samples for explicit
+inference models - why is there an additional 
+parameter?
+
+4. Add better SCM distance measures?
+5. Can you define perfect behavior for Entropy and 
+NILL and then compute the distance between the 
+observed data points and that perfect behavior?

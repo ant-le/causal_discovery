@@ -14,6 +14,7 @@ from causal_meta.analysis.utils import (
     MODEL_COLORS,
     MODEL_MARKERS,
     PAPER_MODEL_LABELS,
+    save_figure_data,
 )
 
 
@@ -132,6 +133,206 @@ def generate_uncertainty_scatter(
     fig.tight_layout(rect=[0, 0, 1, 0.93])
     fig.savefig(output_path, bbox_inches="tight")
     plt.close(fig)
+    save_figure_data(output_path, pivot)
+    return pivot
+
+
+# ── Core models used in the combined scatter (no Random) ───────────
+_CORE_MODELS_ORDERED: tuple[str, ...] = ("AviCi", "BCNP", "DiBS", "BayesDAG")
+
+_CATEGORY_COLORS: dict[str, str] = {
+    "ID": "#2ca02c",
+    "OOD-Graph": "#d62728",
+    "OOD-Mech": "#9467bd",
+    "OOD-Noise": "#8c564b",
+    "OOD-Both": "#e377c2",
+    "OOD-Nodes": "#ff7f0e",
+    "OOD-Samples": "#1f77b4",
+    "OOD": "#17becf",
+}
+
+
+def _add_ideal_tracking_line(
+    ax: plt.Axes,
+    x_vals: pd.Series,
+    y_vals: pd.Series,
+    *,
+    linear: bool = False,
+) -> None:
+    """Draw a reference curve showing the ideal tracking direction.
+
+    When *linear* is ``False`` (default, for entropy vs SID), the reference
+    is a convex power-law ``y = a * x^p`` (p=2), reflecting the causal-
+    cascade amplification between entropy and SID.
+
+    When *linear* is ``True`` (for GraphNLL vs SID), the reference is a
+    straight line ``y = a * x``, because NLL divergence scales approximately
+    linearly with structural error.
+    """
+    x_clean = x_vals.dropna()
+    y_clean = y_vals.dropna()
+    if x_clean.empty or y_clean.empty:
+        return
+    x_hi = float(np.percentile(x_clean, 90))
+    y_hi = float(np.percentile(y_clean, 90))
+    if x_hi <= 0 or y_hi <= 0:
+        return
+
+    x_max = float(x_clean.max()) * 1.05
+    xs = np.linspace(0, x_max, 100)
+
+    if linear:
+        a = y_hi / x_hi
+        ys = a * xs
+    else:
+        p = 2.0
+        a = y_hi / (x_hi**p)
+        ys = a * xs**p
+
+    ax.plot(
+        xs,
+        ys,
+        color="#888888",
+        linestyle=":",
+        linewidth=1.3,
+        alpha=0.7,
+        zorder=0,
+        label="_ideal",  # hidden from legend
+    )
+
+
+def generate_uncertainty_scatter_combined(
+    raw_df: pd.DataFrame,
+    *,
+    output_path: Path,
+) -> pd.DataFrame:
+    """2x4 combined scatter: top row = edge entropy, bottom = GraphNLL.
+
+    Omits the Random baseline and adds an ideal-tracking reference line
+    to each panel.
+    """
+    from scipy.stats import spearmanr
+
+    score_metrics = ("edge_entropy", "graph_nll_per_edge")
+    score_labels = ("Edge Entropy", "Graph NLL / edge")
+
+    needed = {"ne-sid", *score_metrics}
+    subset = raw_df[raw_df["Metric"].isin(needed)].copy()
+    agg = (
+        subset.groupby(["Model", "DatasetKey", "Dataset", "Metric"], dropna=False)[
+            "Value"
+        ]
+        .mean()
+        .reset_index()
+    )
+    pivot = agg.pivot_table(
+        index=["Model", "DatasetKey", "Dataset"], columns="Metric", values="Value"
+    ).reset_index()
+    pivot.columns.name = None
+    for col in ("ne-sid", *score_metrics):
+        if col not in pivot.columns:
+            raise EmptyAnalysisDataError(
+                f"Missing required column for combined scatter: {col}."
+            )
+    pivot = pivot.dropna(subset=["ne-sid"])
+    if pivot.empty:
+        raise EmptyAnalysisDataError("No uncertainty scatter data available.")
+    pivot["OODCategory"] = pivot["DatasetKey"].map(
+        lambda k: ood_category(k, binary=False)
+    )
+
+    models = [m for m in _CORE_MODELS_ORDERED if m in pivot["Model"].unique()]
+    if not models:
+        raise EmptyAnalysisDataError("No core models found for combined scatter.")
+
+    n_models = len(models)
+    fig, axes = plt.subplots(
+        2,
+        n_models,
+        figsize=(5.0 * n_models, 9.5),
+        squeeze=False,
+    )
+
+    all_categories = sorted(pivot["OODCategory"].unique())
+
+    for row_idx, (score_metric, score_label) in enumerate(
+        zip(score_metrics, score_labels)
+    ):
+        row_pivot = pivot.dropna(subset=[score_metric])
+        for col_idx, model in enumerate(models):
+            ax = axes[row_idx, col_idx]
+            model_df = row_pivot[row_pivot["Model"] == model]
+
+            for cat in all_categories:
+                cat_df = model_df[model_df["OODCategory"] == cat]
+                if cat_df.empty:
+                    continue
+                ax.scatter(
+                    cat_df[score_metric],
+                    cat_df["ne-sid"],
+                    c=_CATEGORY_COLORS.get(cat, "#aaaaaa"),
+                    label=cat if row_idx == 0 else "_nolegend_",
+                    s=50,
+                    alpha=0.85,
+                    edgecolors="white",
+                    linewidths=0.4,
+                )
+
+            # Ideal-tracking reference line.
+            # Convex for entropy (row 0), linear for GraphNLL (row 1).
+            _add_ideal_tracking_line(
+                ax,
+                model_df[score_metric],
+                model_df["ne-sid"],
+                linear=(row_idx == 1),
+            )
+
+            # Spearman annotation.
+            if len(model_df) >= 3:
+                rho, p_val = spearmanr(model_df[score_metric], model_df["ne-sid"])
+                if np.isfinite(rho):
+                    p_str = f"p={p_val:.3f}" if p_val >= 0.001 else "p<0.001"
+                    ax.annotate(
+                        f"$\\rho$={rho:.2f} ({p_str})",
+                        xy=(0.03, 0.97),
+                        xycoords="axes fraction",
+                        fontsize=8,
+                        verticalalignment="top",
+                        bbox=dict(boxstyle="round,pad=0.25", fc="white", alpha=0.8),
+                    )
+
+            ax.set_xlabel(score_label, fontsize=9)
+            if col_idx == 0:
+                ax.set_ylabel(
+                    r"Normalized $\mathbb{E}$-SID",
+                    fontsize=9,
+                )
+            else:
+                ax.set_ylabel("")
+            if row_idx == 0:
+                ax.set_title(model, fontsize=12, fontweight="bold")
+            ax.grid(True, linestyle="--", alpha=0.35)
+
+    # Shared legend on top.
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    # Filter out internal labels.
+    keep = [(h, l) for h, l in zip(handles, labels) if not l.startswith("_")]
+    if keep:
+        fig.legend(
+            [h for h, _ in keep],
+            [l for _, l in keep],
+            title="Category",
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncol=len(keep),
+            fontsize=8,
+            frameon=False,
+        )
+
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.savefig(output_path, bbox_inches="tight")
+    plt.close(fig)
+    save_figure_data(output_path, pivot)
     return pivot
 
 
@@ -154,7 +355,7 @@ def generate_ece_summary_table(raw_df: pd.DataFrame, output_path: Path) -> pd.Da
     combined = pd.concat([split_agg, overall_agg], ignore_index=True)
     split_order = ["ID", "OOD", "Overall"]
     lines = [
-        r"\begin{table}[t]",
+        r"\begin{table}[h]",
         r"\centering",
         r"\footnotesize",
         r"\caption{Expected calibration error (ECE) of posterior edge confidence. Lower is better. ID and OOD splits summarize whether edge-confidence calibration degrades under shift.}",
@@ -218,7 +419,7 @@ def generate_ood_detection_summary_table(
         combined = combined.merge(frame, on=["RunID", "Model"], how="outer")
     combined = combined.sort_values("Model")
     lines = [
-        r"\begin{table}[t]",
+        r"\begin{table}[h]",
         r"\centering",
         r"\footnotesize",
         r"\caption{ID--OOD detection performance using posterior uncertainty scores. Higher AUROC/AUPRC is better.}",

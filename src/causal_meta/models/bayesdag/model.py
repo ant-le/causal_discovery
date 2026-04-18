@@ -15,6 +15,7 @@ import torch
 
 from causal_meta.models.base import BaseModel
 from causal_meta.models.factory import register_model
+from causal_meta.runners.utils.explicit_profiles import compute_fallback_keys
 
 log = logging.getLogger(__name__)
 
@@ -90,29 +91,46 @@ class BayesDAGModel(BaseModel):
         if profile_overrides is not None:
             for name, values in profile_overrides.items():
                 self._profile_overrides[str(name).lower()] = dict(values)
+        self._global_override = self._profile_overrides.get("_global", {})
         self._active_profile: str | None = None
 
     def set_inference_profile(self, profile: str | None) -> None:
         """Apply named BayesDAG profile overrides for explicit comparisons.
 
+        Applies global ``_global`` override first, then resolves the best
+        matching specific profile via :func:`compute_fallback_keys` and
+        merges it on top.
+
         Args:
             profile: Profile identifier or ``None`` for defaults.
         """
         profile_key = str(profile).lower() if profile is not None else "default"
-        override = self._profile_overrides.get(profile_key, {})
 
-        self.variant = str(override.get("variant", self._base_profile["variant"]))
+        # Resolve best-matching profile via fallback chain
+        specific_override: dict[str, Any] = {}
+        for key in compute_fallback_keys(profile_key):
+            if key in self._profile_overrides:
+                specific_override = self._profile_overrides[key]
+                break
+
+        # Start with global override, then apply specific profile
+        combined_override = dict(self._global_override)
+        combined_override.update(specific_override)
+
+        self.variant = str(
+            combined_override.get("variant", self._base_profile["variant"])
+        )
         self.lambda_sparse = float(
-            override.get("lambda_sparse", self._base_profile["lambda_sparse"])
+            combined_override.get("lambda_sparse", self._base_profile["lambda_sparse"])
         )
         self.num_chains = int(
-            override.get("num_chains", self._base_profile["num_chains"])
+            combined_override.get("num_chains", self._base_profile["num_chains"])
         )
         self.scale_noise = float(
-            override.get("scale_noise", self._base_profile["scale_noise"])
+            combined_override.get("scale_noise", self._base_profile["scale_noise"])
         )
         self.scale_noise_p = float(
-            override.get("scale_noise_p", self._base_profile["scale_noise_p"])
+            combined_override.get("scale_noise_p", self._base_profile["scale_noise_p"])
         )
         self._active_profile = profile_key
 

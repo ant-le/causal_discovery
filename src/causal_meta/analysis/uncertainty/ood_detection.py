@@ -312,7 +312,7 @@ def generate_ood_detection_table(
         return
 
     lines: list[str] = []
-    lines.append(r"\begin{table}[ht]")
+    lines.append(r"\begin{table}[h]")
     lines.append(r"\centering")
     lines.append(
         r"\caption{OOD detection performance using posterior uncertainty as a"

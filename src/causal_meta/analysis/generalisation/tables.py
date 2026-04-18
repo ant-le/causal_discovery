@@ -56,7 +56,7 @@ def generate_robustness_table(df: pd.DataFrame, output_path: Path) -> None:
 
     # ── Build LaTeX ────────────────────────────────────────────────────
     lines = []
-    lines.append(r"\begin{table}[ht]")
+    lines.append(r"\begin{table}[h]")
     lines.append(r"\centering")
     lines.append(
         r"\caption{Robustness Analysis: normalized structural metrics (normalized $\mathbb{E}$-SHD and normalized $\mathbb{E}$-SID) across in-distribution and OOD datasets. Lower is better.}"
@@ -249,7 +249,7 @@ def generate_distance_regression_table(
 
     # Build LaTeX
     lines: list[str] = []
-    lines.append(r"\begin{table}[ht]")
+    lines.append(r"\begin{table}[h]")
     lines.append(r"\centering")
     lines.append(
         r"\caption{OLS regression of normalized $\mathbb{E}$-SID degradation on distributional"

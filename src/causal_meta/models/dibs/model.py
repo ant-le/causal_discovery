@@ -16,6 +16,7 @@ import torch
 
 from causal_meta.models.base import BaseModel
 from causal_meta.models.factory import register_model
+from causal_meta.runners.utils.explicit_profiles import compute_fallback_keys
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +76,7 @@ class DiBSModel(BaseModel):
         if profile_overrides is not None:
             for name, values in profile_overrides.items():
                 self._profile_overrides[str(name).lower()] = dict(values)
+        self._global_override = self._profile_overrides.get("_global", {})
         self._active_profile: str | None = None
         self._rng_key = None
         self._external_seed_counter = 0
@@ -83,11 +85,25 @@ class DiBSModel(BaseModel):
     def set_inference_profile(self, profile: str | None) -> None:
         """Apply a named DiBS profile override for explicit comparisons.
 
+        Applies global ``_global`` override first, then resolves the best
+        matching specific profile via :func:`compute_fallback_keys` and
+        merges it on top.
+
         Args:
             profile: Profile identifier (for example ``"linear"``) or ``None``.
         """
         profile_key = str(profile).lower() if profile is not None else "default"
-        override = self._profile_overrides.get(profile_key, {})
+
+        # Resolve best-matching profile via fallback chain
+        specific_override: dict[str, Any] = {}
+        for key in compute_fallback_keys(profile_key):
+            if key in self._profile_overrides:
+                specific_override = self._profile_overrides[key]
+                break
+
+        # Start with global override, then apply specific profile
+        combined_override = dict(self._global_override)
+        combined_override.update(specific_override)
 
         prev_state = (
             self.mode,
@@ -97,18 +113,18 @@ class DiBSModel(BaseModel):
             self.n_particles,
         )
 
-        self.mode = str(override.get("mode", self._base_profile["mode"]))
+        self.mode = str(combined_override.get("mode", self._base_profile["mode"]))
         self.alpha = self._optional_float(
-            override.get("alpha", self._base_profile["alpha"])
+            combined_override.get("alpha", self._base_profile["alpha"])
         )
         self.gamma_z = self._optional_float(
-            override.get("gamma_z", self._base_profile["gamma_z"])
+            combined_override.get("gamma_z", self._base_profile["gamma_z"])
         )
         self.gamma_theta = self._optional_float(
-            override.get("gamma_theta", self._base_profile["gamma_theta"])
+            combined_override.get("gamma_theta", self._base_profile["gamma_theta"])
         )
         self.n_particles = self._optional_int(
-            override.get("n_particles", self._base_profile["n_particles"])
+            combined_override.get("n_particles", self._base_profile["n_particles"])
         )
 
         next_state = (

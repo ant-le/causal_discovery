@@ -19,6 +19,10 @@ data:
   # Global default; individual validation/test families can override this.
   samples_per_task: 500
 
+  # Number of posterior graph samples drawn at inference time.
+  # Individual families can override this via their own inference_n_samples.
+  inference_n_samples: 100
+
   seeds_val: [1000, 1001, 1002, 1003, 1004]
   seeds_test:
     [
@@ -1013,7 +1017,10 @@ trainer:
     ood_samples: [ood_samples_]
 
 inference:
-  n_samples: 100
+  # n_samples is now specified via data.inference_n_samples (global default)
+  # and per-family inference_n_samples overrides. The value below serves as a
+  # backward-compatible fallback and feeds cache_n_samples.
+  n_samples: ${data.inference_n_samples}
 
 hydra:
   run:

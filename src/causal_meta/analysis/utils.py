@@ -73,6 +73,53 @@ MODEL_MARKERS: dict[str, str] = {
 }
 """Consistent per-model markers for scatter/line plots."""
 
+# Error-decomposition colours – grayscale palette so that error bars
+# are never confused with the coloured model-identity palette.
+ERROR_COLORS: dict[str, str] = {
+    "FP": "#222222",  # near-black
+    "FN": "#888888",  # medium grey
+    "Reversed": "#cccccc",  # light grey
+}
+"""Consistent grayscale colours for FP / FN / Reversed error components."""
+
+ERROR_SPECS: list[tuple[str, str, str]] = [
+    ("fp_count", "FP", ERROR_COLORS["FP"]),
+    ("fn_count", "FN", ERROR_COLORS["FN"]),
+    ("reversed_count", "Reversed", ERROR_COLORS["Reversed"]),
+]
+"""(metric_key, display_label, colour) triples for error decomposition bars."""
+
+
+# ── CSV companion helper ───────────────────────────────────────────────
+
+
+def save_figure_data(
+    figure_path: str | Path,
+    data: pd.DataFrame,
+    *,
+    suffix: str = ".csv",
+) -> Path | None:
+    """Save the underlying data for a figure as a CSV alongside the PDF.
+
+    The CSV path mirrors *figure_path* with the extension replaced by *suffix*.
+    If *data* is empty the file is **not** written and ``None`` is returned.
+
+    Args:
+        figure_path: Path to the figure file (typically ``.pdf``).
+        data: The DataFrame that backs the figure.
+        suffix: File extension for the data file (default ``".csv"``).
+
+    Returns:
+        The path to the written CSV, or ``None`` if *data* was empty.
+    """
+    if data.empty:
+        return None
+    csv_path = Path(figure_path).with_suffix(suffix)
+    data.to_csv(csv_path, index=False)
+    log.info("Saved figure data (%d rows) to %s", len(data), csv_path)
+    return csv_path
+
+
 # Dataset keys -> human-readable labels
 DATASET_DESCRIPTION_MAP: dict[str, str] = {
     # ── ID: ER × {Linear, MLP, GP} ────────────────────────────────────

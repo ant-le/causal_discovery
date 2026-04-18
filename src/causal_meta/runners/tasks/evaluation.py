@@ -117,6 +117,7 @@ def _build_family_metadata(
     test_family_cfgs: dict[str, FamilyConfig],
     *,
     default_samples_per_task: int | None = None,
+    default_inference_n_samples: int | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Build a dataset_key -> metadata map for all evaluation families."""
     result: dict[str, dict[str, Any]] = {}
@@ -132,6 +133,10 @@ def _build_family_metadata(
             "graph_type": _extract_graph_type(fcfg),
             "mech_type": _extract_mech_type(fcfg),
         }
+        family_ins = getattr(fcfg, "inference_n_samples", None)
+        entry["inference_n_samples"] = (
+            int(family_ins) if family_ins is not None else default_inference_n_samples
+        )
         sp = _extract_sparsity_param(fcfg)
         if sp is not None:
             entry["sparsity_param"] = sp
@@ -403,9 +408,22 @@ def run(
         and getattr(dm_config, "samples_per_task", None) is not None
     ):
         default_samples_per_task = int(dm_config.samples_per_task)
+
+    # Global default for posterior graph samples to draw.
+    # Priority: data.inference_n_samples > inference.n_samples > 100
+    default_inference_n_samples: int
+    if (
+        dm_config is not None
+        and getattr(dm_config, "inference_n_samples", None) is not None
+    ):
+        default_inference_n_samples = int(dm_config.inference_n_samples)
+    else:
+        default_inference_n_samples = int(cfg.inference.get("n_samples", 100))
+
     family_metadata = _build_family_metadata(
         test_family_cfgs,
         default_samples_per_task=default_samples_per_task,
+        default_inference_n_samples=default_inference_n_samples,
     )
     family_distances = getattr(data_module, "family_distances", {}) or {}
 
@@ -418,7 +436,6 @@ def run(
     all_summary_metrics = {}
     all_raw_metrics = {}
 
-    n_samples = int(cfg.inference.get("n_samples", 100))
     auc_num_shuffles = int(cfg.inference.get("auc_num_shuffles", 1000))
     auc_balance_classes = bool(cfg.inference.get("auc_balance_classes", True))
     auc_seed = int(cfg.inference.get("auc_seed", 0))
@@ -458,17 +475,6 @@ def run(
     cache_dir = cfg.inference.get("cache_dir", None)
     inference_root = resolve_inference_root(cfg, output_dir)
     cache_compress, cache_dtype, cache_n_samples_cfg = cache_settings(cfg)
-    cache_n_samples = cache_n_samples_cfg
-    if cache_n_samples is not None and cache_n_samples < n_samples:
-        if rank == 0:
-            log.warning(
-                "cache_n_samples (%d) is smaller than inference.n_samples (%d); "
-                "overriding cache_n_samples to %d so written artifacts preserve all evaluated samples.",
-                cache_n_samples,
-                n_samples,
-                n_samples,
-            )
-        cache_n_samples = n_samples
     suffix = cache_suffix(compress=cache_compress)
 
     model_name = get_model_name(cfg, model_unwrapped_raw)
@@ -479,6 +485,31 @@ def run(
 
         test_families = getattr(data_module, "test_families", {}) or {}
         family = test_families.get(name)
+
+        # Resolve per-family inference n_samples: prefer per-family config,
+        # fall back to the global default (data.inference_n_samples or
+        # inference.n_samples).
+        family_cfg = test_family_cfgs.get(name)
+        family_n_samples = getattr(family_cfg, "inference_n_samples", None)
+        n_samples = (
+            int(family_n_samples)
+            if family_n_samples is not None
+            else default_inference_n_samples
+        )
+
+        # Adjust cache_n_samples for this family's n_samples.
+        cache_n_samples = cache_n_samples_cfg
+        if cache_n_samples is not None and cache_n_samples < n_samples:
+            if rank == 0:
+                log.warning(
+                    "cache_n_samples (%d) is smaller than n_samples (%d) for dataset '%s'; "
+                    "overriding cache_n_samples to %d so written artifacts preserve all evaluated samples.",
+                    cache_n_samples,
+                    n_samples,
+                    name,
+                    n_samples,
+                )
+            cache_n_samples = n_samples
 
         metrics_handler.reset()
         scm_metrics_handler.reset()
@@ -575,9 +606,9 @@ def run(
             "output_dir": str(output_dir),
             "inference_root": str(inference_root.expanduser().resolve()),
             "inference_layout": "model_dataset" if cache_dir else "dataset",
-            "inference_n_samples": int(n_samples),
+            "inference_n_samples": int(default_inference_n_samples),
             "cache_n_samples": (
-                int(cache_n_samples) if cache_n_samples is not None else None
+                int(cache_n_samples_cfg) if cache_n_samples_cfg is not None else None
             ),
             "batch_size_test": batch_size_test,
             "batch_size_test_interventional": batch_size_test_interventional,

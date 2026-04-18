@@ -32,7 +32,6 @@ DEFAULT_VALIDATION_METRICS = (
     "ne-sid",
     "ne-shd",
     "valid_dag_pct",
-    "threshold_valid_dag_pct",
 )
 DEFAULT_VALIDATION_GROUP_PREFIXES = {
     "id": ("id_",),
