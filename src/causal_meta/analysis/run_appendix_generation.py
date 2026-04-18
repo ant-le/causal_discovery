@@ -27,6 +27,15 @@ def main() -> None:
         default="src/causal_meta/configs",
         help="Hydra configs root used as the appendix source.",
     )
+    parser.add_argument(
+        "--input-root",
+        type=str,
+        default=None,
+        help=(
+            "Thesis-runs root (e.g. experiments/thesis_runs). "
+            "When provided, also regenerates Appendix F paper-comparison tables."
+        ),
+    )
     args = parser.parse_args()
 
     thesis_root = Path(args.thesis_root)
@@ -35,6 +44,13 @@ def main() -> None:
     log.info(
         "Generated %d appendix snippet files under %s", len(generated), thesis_root
     )
+
+    if args.input_root is not None:
+        from causal_meta.analysis.paper_comparison import generate_paper_comparison
+
+        input_root = Path(args.input_root)
+        log.info("Generating Appendix F paper-comparison tables from %s", input_root)
+        generate_paper_comparison(input_root, thesis_root, configs_root)
 
 
 if __name__ == "__main__":

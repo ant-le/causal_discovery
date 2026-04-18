@@ -327,15 +327,25 @@ def generate_ood_detection_table(
     )
     lines.append(r"\midrule")
 
+    # Best values for bold highlighting.
+    best_auroc = float(detection_df["AUROC"].max())
+    best_auprc = float(detection_df["AUPRC"].max())
+
     for _, row in detection_df.iterrows():
         model_label = str(row["Model"])
         run_id = row.get("RunID")
         if run_id is not None and str(run_id).strip() and str(run_id).lower() != "nan":
             model_label = f"{model_label} [{run_id}]"
         model_tex = model_label.replace("_", r"\_")
+        auroc_s = f"{row['AUROC']:.3f}"
+        auprc_s = f"{row['AUPRC']:.3f}"
+        if abs(float(row["AUROC"]) - best_auroc) < 1e-9:
+            auroc_s = r"\textbf{" + auroc_s + "}"
+        if abs(float(row["AUPRC"]) - best_auprc) < 1e-9:
+            auprc_s = r"\textbf{" + auprc_s + "}"
         lines.append(
             f"{model_tex} & {row['ScoreMetric']}"
-            f" & {row['AUROC']:.3f} & {row['AUPRC']:.3f}"
+            f" & {auroc_s} & {auprc_s}"
             f" & {row['N_ID']} & {row['N_OOD']} \\\\"
         )
 

@@ -452,12 +452,22 @@ def generate_explicit_advantage_table(
         r"\midrule",
     ]
 
+    # Best per numeric column for bold highlighting.
+    best_amort = float(better["BestAmortized"].min())
+    best_explicit = float(better["BestExplicit"].min())
+    best_delta = float(better["ExplicitAdvantage"].min())
+
+    def _bf(val: float, ref: float, fmt: str) -> str:
+        s = f"{val:{fmt}}"
+        return r"\textbf{" + s + "}" if abs(val - ref) < 1e-9 else s
+
     for _, row in better.iterrows():
         family = str(row["DatasetLongLabel"]).replace("_", r"\_")
         axis = AXIS_LABELS.get(str(row["AxisCategory"]), str(row["AxisCategory"]))
         lines.append(
-            f"{family} & {axis} & {row['BestAmortized']:.3f}"
-            f" & {row['BestExplicit']:.3f} & {row['ExplicitAdvantage']:.3f}"
+            f"{family} & {axis} & {_bf(row['BestAmortized'], best_amort, '.3f')}"
+            f" & {_bf(row['BestExplicit'], best_explicit, '.3f')}"
+            f" & {_bf(row['ExplicitAdvantage'], best_delta, '.3f')}"
             f" & {row['CombinedDistance']:.2f} \\\\",
         )
 

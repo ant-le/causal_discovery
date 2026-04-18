@@ -468,6 +468,1151 @@ def _generate_graph_shift_panels(
     return result
 
 
+# ── ID baseline restriction helpers ────────────────────────────────────
+
+
+def _restrict_id_to_anchor(
+    subset: pd.DataFrame, *, mech_key: str | None, graph_code: str | None
+) -> pd.DataFrame:
+    """Keep only the ID dataset matching the given mechanism and graph anchor.
+
+    For mechanism shift panels, ``mech_key`` is ``None`` (mechanism is OOD),
+    so we match only on graph.  For noise shift, both are set.
+    """
+    id_mask = subset["AxisCategory"] == "id"
+
+    def _keep(dk: str) -> bool:
+        if graph_code is not None and graph_code_of(dk) != graph_code:
+            return False
+        if mech_key is not None and id_mechanism_of(dk) != mech_key:
+            return False
+        return True
+
+    keep_id = id_mask & subset["DatasetKey"].map(_keep)
+    return subset[keep_id | ~id_mask].copy()
+
+
+def _restrict_to_graph_anchor(subset: pd.DataFrame, graph_code: str) -> pd.DataFrame:
+    """Keep only rows whose graph code matches *graph_code*.
+
+    Unlike :func:`_restrict_id_to_anchor`, this filters **all** rows (ID and
+    OOD alike), ensuring mechanism-shift families with different graph anchors
+    are not mixed in summary panels that use a single representative anchor.
+    """
+    return subset[
+        subset["DatasetKey"].map(lambda dk: graph_code_of(dk) == graph_code)
+    ].copy()
+
+
+def _restrict_id_to_er_linear(subset: pd.DataFrame) -> pd.DataFrame:
+    """Keep only the ``id_linear_er*`` dataset as the ID baseline.
+
+    Legacy helper kept for backward compatibility; prefers the more
+    general :func:`_restrict_id_to_anchor` for new code.
+    """
+    return _restrict_id_to_anchor(subset, mech_key="linear", graph_code=None)
+
+
+# ── Mechanism-shift multi-panel helpers (one panel per graph anchor) ───
+
+_MECH_SHIFT_GRAPH_ANCHORS: list[str] = ["er20", "er60", "sf2"]
+"""Graph anchors used for mechanism-shift panels."""
+
+
+def _mech_shift_label(dataset_key: str) -> str:
+    """Short mechanism label for mechanism-shift panels.
+
+    OOD-mechanism datasets return the OOD mechanism name (e.g. ``"Periodic"``).
+    ID datasets return the ID mechanism with ``(ID)`` suffix.
+    """
+    from causal_meta.analysis.utils import MECH_DESCRIPTION_MAP
+
+    dk = dataset_key.lower()
+    body = re.sub(r"_d\d+_n\d+$", "", dk)
+
+    if dk.startswith("ood_mech_"):
+        # Strip prefix and graph anchor to get mechanism code
+        remainder = body[len("ood_mech_") :]
+        # Remove trailing graph anchor
+        for code in sorted(GRAPH_ANCHOR_LABELS.keys(), key=len, reverse=True):
+            if remainder.endswith(f"_{code}"):
+                remainder = remainder[: -len(code) - 1]
+                break
+        return MECH_DESCRIPTION_MAP.get(remainder, remainder.replace("_", " ").title())
+
+    # ID datasets — show mechanism name
+    for mech_key in ("neuralnet", "gpcde", "linear"):
+        if f"_{mech_key}" in body:
+            return f"{MECH_DESCRIPTION_MAP.get(mech_key, mech_key)} (ID)"
+
+    return dataset_key
+
+
+def _generate_mech_shift_panels(
+    subset: pd.DataFrame,
+    metric_name: str,
+    axis_title: str,
+    output_path: Path,
+    *,
+    model_filter: Sequence[str] | None = None,
+    avici_dag_df: pd.DataFrame | None = None,
+    error_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Generate a multi-panel mechanism shift figure, one column per graph anchor.
+
+    Three-row layout when auxiliary data is supplied:
+      Row 0 (top):    AviCi DAG validity (sampled + thresholded).
+      Row 1 (middle): Primary metric (E-SID / NE-SID).
+      Row 2 (bottom): Error decomposition (FP / FN / Reversed).
+    """
+    subset = subset.copy()
+    subset["_graph_anchor"] = subset["DatasetKey"].map(mech_shift_graph_anchor)
+    subset.loc[subset["AxisCategory"] == "id", "_graph_anchor"] = subset.loc[
+        subset["AxisCategory"] == "id", "DatasetKey"
+    ].map(graph_code_of)
+
+    anchors = [
+        a for a in _MECH_SHIFT_GRAPH_ANCHORS if a in subset["_graph_anchor"].unique()
+    ]
+    if not anchors:
+        return pd.DataFrame()
+
+    has_dag = avici_dag_df is not None and not avici_dag_df.empty
+    has_err = error_df is not None and not error_df.empty
+
+    n_panels = len(anchors)
+    models = _resolve_models(model_filter)
+    n_models = len(models)
+
+    # Tag auxiliary DataFrames with the same anchor.
+    dag_sub: pd.DataFrame | None = None
+    if has_dag:
+        dag_sub = avici_dag_df.copy()
+        dag_sub["_graph_anchor"] = dag_sub["DatasetKey"].map(mech_shift_graph_anchor)
+        dag_sub.loc[dag_sub["AxisCategory"] == "id", "_graph_anchor"] = dag_sub.loc[
+            dag_sub["AxisCategory"] == "id", "DatasetKey"
+        ].map(graph_code_of)
+    err_sub: pd.DataFrame | None = None
+    if has_err:
+        err_sub = error_df.copy()
+        err_sub["_graph_anchor"] = err_sub["DatasetKey"].map(mech_shift_graph_anchor)
+        err_sub.loc[err_sub["AxisCategory"] == "id", "_graph_anchor"] = err_sub.loc[
+            err_sub["AxisCategory"] == "id", "DatasetKey"
+        ].map(graph_code_of)
+
+    # Build row structure: DAG (optional) | metric | error (optional).
+    height_ratios: list[float] = []
+    row_names: list[str] = []
+    if has_dag:
+        height_ratios.append(1.2)
+        row_names.append("dag")
+    height_ratios.append(3.0)
+    row_names.append("metric")
+    if has_err:
+        height_ratios.append(1.5)
+        row_names.append("error")
+    n_rows = len(row_names)
+
+    fig, axes = plt.subplots(
+        n_rows,
+        n_panels,
+        figsize=(5.0 * n_panels, sum(height_ratios) * 1.1 + 1.5),
+        sharex="col",
+        sharey=False,
+        squeeze=False,
+        gridspec_kw={"height_ratios": height_ratios},
+    )
+
+    metric_row = row_names.index("metric")
+    dag_row = row_names.index("dag") if has_dag else None
+    err_row = row_names.index("error") if has_err else None
+
+    all_agg: list[pd.DataFrame] = []
+
+    for panel_idx, anchor in enumerate(anchors):
+        ax = axes[metric_row, panel_idx]
+        ood_mask = (subset["AxisCategory"] == "mechanism") & (
+            subset["_graph_anchor"] == anchor
+        )
+        id_mask = (subset["AxisCategory"] == "id") & (subset["_graph_anchor"] == anchor)
+        panel_data = subset[ood_mask | id_mask]
+
+        if panel_data.empty:
+            for r in range(n_rows):
+                axes[r, panel_idx].set_visible(False)
+            continue
+
+        agg = (
+            panel_data.groupby(
+                ["Model", "DatasetKey", "Dataset", "AxisCategory"], dropna=False
+            )["Value"]
+            .agg(Mean="mean", SEM=metric_sem)
+            .reset_index()
+        )
+        agg["DatasetLabel"] = agg["DatasetKey"].map(_mech_shift_label)
+        agg["_sort"] = agg["AxisCategory"].map({"id": 0}).fillna(1)
+        agg = agg.sort_values(["_sort", "DatasetLabel"]).drop(columns=["_sort"])
+        all_agg.append(agg)
+
+        datasets = list(agg["DatasetLabel"].unique())
+        axis_lookup = (
+            agg[["DatasetLabel", "AxisCategory"]]
+            .drop_duplicates()
+            .set_index("DatasetLabel")["AxisCategory"]
+            .to_dict()
+        )
+        n_datasets = len(datasets)
+        width = 0.6
+        offset_step = width / max(n_models, 1)
+        x_base = np.arange(n_datasets)
+        id_count = sum(1 for ds in datasets if axis_lookup.get(ds) == "id")
+
+        # ── Metric row ────────────────────────────────────────────────
+        for model_idx, model in enumerate(models):
+            model_agg = agg[agg["Model"] == model]
+            xs: list[float] = []
+            means: list[float] = []
+            sems: list[float] = []
+            for i, ds in enumerate(datasets):
+                row = model_agg[model_agg["DatasetLabel"] == ds]
+                if row.empty:
+                    continue
+                offset = (model_idx - n_models / 2 + 0.5) * offset_step
+                xs.append(float(x_base[i]) + offset)
+                means.append(float(row.iloc[0]["Mean"]))
+                sems.append(float(row.iloc[0]["SEM"]))
+            if xs:
+                ax.errorbar(
+                    xs,
+                    means,
+                    yerr=sems,
+                    fmt=MODEL_MARKERS.get(model, "o"),
+                    label=model if panel_idx == 0 else None,
+                    color=_model_color(model),
+                    capsize=3,
+                    markersize=7,
+                    alpha=0.9,
+                )
+
+        anchor_label = GRAPH_ANCHOR_LABELS.get(anchor, anchor.upper())
+        # Column header on the topmost row (dag if present, else metric).
+        axes[0, panel_idx].set_title(
+            f"Graph: {anchor_label}", fontsize=11, fontweight="bold"
+        )
+        ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+        if panel_idx == 0:
+            ylabel = (
+                r"Normalized $\mathbb{E}$-SID $\downarrow$"
+                if metric_name == "ne-sid"
+                else r"$\mathbb{E}$-SID $\downarrow$"
+            )
+            ax.set_ylabel(ylabel, fontsize=11)
+
+        if 0 < id_count < len(datasets):
+            ax.axvspan(-0.5, id_count - 0.5, color="#f2f2f2", alpha=0.35, zorder=0)
+            ax.axvline(id_count - 0.5, color="#999999", linestyle=":", linewidth=1.0)
+
+        # ── DAG row (top) ─────────────────────────────────────────────
+        if dag_row is not None:
+            ood_dag = (dag_sub["AxisCategory"] == "mechanism") & (
+                dag_sub["_graph_anchor"] == anchor
+            )
+            id_dag = (dag_sub["AxisCategory"] == "id") & (
+                dag_sub["_graph_anchor"] == anchor
+            )
+            dag_panel = (
+                dag_sub[ood_dag | id_dag] if dag_sub is not None else pd.DataFrame()
+            )
+            _plot_dag_row_panel(
+                axes[dag_row, panel_idx],
+                dag_panel,
+                datasets,
+                x_base,
+                _mech_shift_label,
+                panel_idx=panel_idx,
+                id_count=id_count,
+            )
+
+        # ── Error row (bottom) ────────────────────────────────────────
+        if err_row is not None:
+            ood_err = (err_sub["AxisCategory"] == "mechanism") & (
+                err_sub["_graph_anchor"] == anchor
+            )
+            id_err = (err_sub["AxisCategory"] == "id") & (
+                err_sub["_graph_anchor"] == anchor
+            )
+            err_panel = (
+                err_sub[ood_err | id_err] if err_sub is not None else pd.DataFrame()
+            )
+            _plot_error_row_panel(
+                axes[err_row, panel_idx],
+                err_panel,
+                datasets,
+                x_base,
+                models,
+                _mech_shift_label,
+                panel_idx=panel_idx,
+                id_count=id_count,
+            )
+
+    # Shared legend on top
+    handles, labels = axes[metric_row, 0].get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            title="Model",
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncol=len(labels),
+            fontsize=9,
+            frameon=False,
+        )
+
+    fig.suptitle(axis_title, fontsize=13, fontweight="bold", y=1.02)
+    fig.tight_layout(rect=[0, 0, 1, 0.92])
+    fig.savefig(output_path, bbox_inches="tight")
+    plt.close(fig)
+
+    result = pd.concat(all_agg, ignore_index=True) if all_agg else pd.DataFrame()
+    save_figure_data(output_path, result)
+    return result
+
+
+# ── Noise-shift multi-panel helpers (one panel per anchor) ─────────────
+
+_NOISE_SHIFT_ANCHORS: list[tuple[str, str]] = [
+    ("linear", "er20"),
+    ("neuralnet", "sf2"),
+]
+"""(mechanism, graph_code) anchors used for noise-shift panels."""
+
+
+def _noise_shift_label(dataset_key: str) -> str:
+    """Short noise label for noise-shift panels.
+
+    Returns ``"Laplace"``, ``"Uniform"``, or ``"Gaussian (ID)"``.
+    """
+    dk = dataset_key.lower()
+    body = re.sub(r"_d\d+_n\d+$", "", dk)
+
+    if dk.startswith("ood_noise_"):
+        remainder = body[len("ood_noise_") :]
+        # First token is the noise type
+        noise_type = remainder.split("_")[0]
+        return noise_type.title()
+
+    # ID baseline
+    return "Gaussian (ID)"
+
+
+def _generate_noise_shift_panels(
+    subset: pd.DataFrame,
+    metric_name: str,
+    axis_title: str,
+    output_path: Path,
+    *,
+    model_filter: Sequence[str] | None = None,
+    avici_dag_df: pd.DataFrame | None = None,
+    error_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Generate a multi-panel noise shift figure, one column per anchor.
+
+    Three-row layout when auxiliary data is supplied:
+      Row 0 (top):    AviCi DAG validity (sampled + thresholded).
+      Row 1 (middle): Primary metric (E-SID / NE-SID).
+      Row 2 (bottom): Error decomposition (FP / FN / Reversed).
+    """
+    subset = subset.copy()
+    subset["_noise_anchor"] = subset["DatasetKey"].map(noise_shift_anchor)
+    id_mask = subset["AxisCategory"] == "id"
+    subset.loc[id_mask, "_noise_anchor"] = subset.loc[id_mask, "DatasetKey"].map(
+        lambda dk: (
+            (id_mechanism_of(dk), graph_code_of(dk))
+            if id_mechanism_of(dk) is not None
+            else None
+        )
+    )
+
+    present_anchors = [
+        a
+        for a in _NOISE_SHIFT_ANCHORS
+        if a in set(subset["_noise_anchor"].dropna().tolist())
+    ]
+    if not present_anchors:
+        return pd.DataFrame()
+
+    has_dag = avici_dag_df is not None and not avici_dag_df.empty
+    has_err = error_df is not None and not error_df.empty
+
+    n_panels = len(present_anchors)
+    models = _resolve_models(model_filter)
+    n_models = len(models)
+
+    def _tag_noise_anchor(df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
+        df["_noise_anchor"] = df["DatasetKey"].map(noise_shift_anchor)
+        _id = df["AxisCategory"] == "id"
+        df.loc[_id, "_noise_anchor"] = df.loc[_id, "DatasetKey"].map(
+            lambda dk: (
+                (id_mechanism_of(dk), graph_code_of(dk))
+                if id_mechanism_of(dk) is not None
+                else None
+            )
+        )
+        return df
+
+    dag_sub = _tag_noise_anchor(avici_dag_df) if has_dag else None
+    err_sub = _tag_noise_anchor(error_df) if has_err else None
+
+    # Build row structure: DAG (optional) | metric | error (optional).
+    height_ratios: list[float] = []
+    row_names: list[str] = []
+    if has_dag:
+        height_ratios.append(1.2)
+        row_names.append("dag")
+    height_ratios.append(3.0)
+    row_names.append("metric")
+    if has_err:
+        height_ratios.append(1.5)
+        row_names.append("error")
+    n_rows = len(row_names)
+
+    fig, axes = plt.subplots(
+        n_rows,
+        n_panels,
+        figsize=(5.0 * n_panels, sum(height_ratios) * 1.1 + 1.5),
+        sharex="col",
+        sharey=False,
+        squeeze=False,
+        gridspec_kw={"height_ratios": height_ratios},
+    )
+
+    metric_row = row_names.index("metric")
+    dag_row = row_names.index("dag") if has_dag else None
+    err_row = row_names.index("error") if has_err else None
+
+    all_agg: list[pd.DataFrame] = []
+
+    for panel_idx, anchor in enumerate(present_anchors):
+        ax = axes[metric_row, panel_idx]
+        panel_data = subset[subset["_noise_anchor"] == anchor]
+
+        if panel_data.empty:
+            for r in range(n_rows):
+                axes[r, panel_idx].set_visible(False)
+            continue
+
+        agg = (
+            panel_data.groupby(
+                ["Model", "DatasetKey", "Dataset", "AxisCategory"], dropna=False
+            )["Value"]
+            .agg(Mean="mean", SEM=metric_sem)
+            .reset_index()
+        )
+        agg["DatasetLabel"] = agg["DatasetKey"].map(_noise_shift_label)
+        agg["_sort"] = agg["AxisCategory"].map({"id": 0}).fillna(1)
+        agg = agg.sort_values(["_sort", "DatasetLabel"]).drop(columns=["_sort"])
+        all_agg.append(agg)
+
+        datasets = list(agg["DatasetLabel"].unique())
+        axis_lookup = (
+            agg[["DatasetLabel", "AxisCategory"]]
+            .drop_duplicates()
+            .set_index("DatasetLabel")["AxisCategory"]
+            .to_dict()
+        )
+        n_datasets = len(datasets)
+        width = 0.6
+        offset_step = width / max(n_models, 1)
+        x_base = np.arange(n_datasets)
+        id_count = sum(1 for ds in datasets if axis_lookup.get(ds) == "id")
+
+        # ── Metric row ────────────────────────────────────────────────
+        for model_idx, model in enumerate(models):
+            model_agg = agg[agg["Model"] == model]
+            xs: list[float] = []
+            means: list[float] = []
+            sems: list[float] = []
+            for i, ds in enumerate(datasets):
+                row = model_agg[model_agg["DatasetLabel"] == ds]
+                if row.empty:
+                    continue
+                offset = (model_idx - n_models / 2 + 0.5) * offset_step
+                xs.append(float(x_base[i]) + offset)
+                means.append(float(row.iloc[0]["Mean"]))
+                sems.append(float(row.iloc[0]["SEM"]))
+            if xs:
+                ax.errorbar(
+                    xs,
+                    means,
+                    yerr=sems,
+                    fmt=MODEL_MARKERS.get(model, "o"),
+                    label=model if panel_idx == 0 else None,
+                    color=_model_color(model),
+                    capsize=3,
+                    markersize=7,
+                    alpha=0.9,
+                )
+
+        mech_label = ID_MECHANISM_LABELS.get(anchor[0], anchor[0])
+        graph_label = GRAPH_ANCHOR_LABELS.get(anchor[1], anchor[1].upper())
+        # Column header on the topmost row (dag if present, else metric).
+        axes[0, panel_idx].set_title(
+            f"{mech_label} / {graph_label}", fontsize=11, fontweight="bold"
+        )
+        ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+        if panel_idx == 0:
+            ylabel = (
+                r"Normalized $\mathbb{E}$-SID $\downarrow$"
+                if metric_name == "ne-sid"
+                else r"$\mathbb{E}$-SID $\downarrow$"
+            )
+            ax.set_ylabel(ylabel, fontsize=11)
+
+        if 0 < id_count < len(datasets):
+            ax.axvspan(-0.5, id_count - 0.5, color="#f2f2f2", alpha=0.35, zorder=0)
+            ax.axvline(id_count - 0.5, color="#999999", linestyle=":", linewidth=1.0)
+
+        # ── DAG row (top) ─────────────────────────────────────────────
+        if dag_row is not None:
+            dag_panel = (
+                dag_sub[dag_sub["_noise_anchor"] == anchor]
+                if dag_sub is not None
+                else pd.DataFrame()
+            )
+            _plot_dag_row_panel(
+                axes[dag_row, panel_idx],
+                dag_panel,
+                datasets,
+                x_base,
+                _noise_shift_label,
+                panel_idx=panel_idx,
+                id_count=id_count,
+            )
+
+        # ── Error row (bottom) ────────────────────────────────────────
+        if err_row is not None:
+            err_panel = (
+                err_sub[err_sub["_noise_anchor"] == anchor]
+                if err_sub is not None
+                else pd.DataFrame()
+            )
+            _plot_error_row_panel(
+                axes[err_row, panel_idx],
+                err_panel,
+                datasets,
+                x_base,
+                models,
+                _noise_shift_label,
+                panel_idx=panel_idx,
+                id_count=id_count,
+            )
+
+    # Shared legend on top
+    handles, labels = axes[metric_row, 0].get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            title="Model",
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncol=len(labels),
+            fontsize=9,
+            frameon=False,
+        )
+
+    fig.suptitle(axis_title, fontsize=13, fontweight="bold", y=1.02)
+    fig.tight_layout(rect=[0, 0, 1, 0.92])
+    fig.savefig(output_path, bbox_inches="tight")
+    plt.close(fig)
+
+    result = pd.concat(all_agg, ignore_index=True) if all_agg else pd.DataFrame()
+    save_figure_data(output_path, result)
+    return result
+
+
+# ── Compound-shift multi-panel helpers ─────────────────────────────────
+
+
+def _compound_shift_label(dataset_key: str) -> str:
+    """Short label for compound-shift panels.
+
+    OOD-compound datasets show only the OOD mechanism label because the OOD graph
+    is fixed by the panel title. ID representatives show their graph/mechanism
+    anchor with an ``(ID)`` suffix.
+    """
+    dk = dataset_key.lower()
+    body = re.sub(r"_d\d+_n\d+$", "", dk)
+
+    if dk.startswith("ood_both_"):
+        remainder = body[len("ood_both_") :]
+        graph_code = graph_code_of(dk)
+        if graph_code is not None and remainder.startswith(f"{graph_code}_"):
+            remainder = remainder[len(graph_code) + 1 :]
+        return MECH_DESCRIPTION_MAP.get(remainder, remainder.replace("_", " ").title())
+
+    mech_key = id_mechanism_of(dk)
+    graph_code = graph_code_of(dk)
+    if mech_key is None or graph_code is None:
+        return dataset_key
+    mech_label = ID_MECHANISM_LABELS.get(mech_key, mech_key)
+    graph_label = GRAPH_ANCHOR_LABELS.get(graph_code, graph_code.upper())
+    return f"{graph_label} / {mech_label} (ID)"
+
+
+def _compound_shift_sort_key(dataset_key: str) -> tuple[int, int, str]:
+    """Sort ID representatives first, then OOD mechanisms in a stable order."""
+    dk = dataset_key.lower()
+    mech_key = id_mechanism_of(dk)
+    graph_code = graph_code_of(dk)
+    anchor = (mech_key, graph_code)
+
+    if dk.startswith("id_") and anchor in _COMPOUND_ID_REPRESENTATIVES:
+        return (0, _COMPOUND_ID_REPRESENTATIVES.index(anchor), dk)
+
+    if dk.startswith("ood_both_"):
+        body = re.sub(r"_d\d+_n\d+$", "", dk)
+        remainder = body[len("ood_both_") :]
+        ood_graph = graph_code_of(dk)
+        if ood_graph is not None and remainder.startswith(f"{ood_graph}_"):
+            remainder = remainder[len(ood_graph) + 1 :]
+        return (1, _COMPOUND_OOD_MECH_ORDER.get(remainder, 999), dk)
+
+    return (2, 999, dk)
+
+
+def _generate_compound_shift_panels(
+    subset: pd.DataFrame,
+    metric_name: str,
+    axis_title: str,
+    output_path: Path,
+    *,
+    stress_df: pd.DataFrame | None = None,
+    model_filter: Sequence[str] | None = None,
+    avici_dag_df: pd.DataFrame | None = None,
+    error_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Generate a multi-panel compound-shift figure, one column per OOD graph.
+
+    Three-row layout when auxiliary data is supplied:
+      Row 0 (top):    AviCi DAG validity (sampled + thresholded).
+      Row 1 (middle): Primary metric (NE-SID).
+      Row 2 (bottom): Error decomposition (FP / FN / Reversed).
+
+    When *stress_df* is provided the extreme stress-test families are appended
+    after a second vertical divider, showing the ID -> compound -> stress
+    progression in a single figure.
+    """
+    subset = subset.copy()
+    id_mask = subset["AxisCategory"] == "id"
+    keep_id = id_mask & subset["DatasetKey"].map(
+        lambda dk: (
+            (id_mechanism_of(dk), graph_code_of(dk)) in _COMPOUND_ID_REPRESENTATIVES
+        )
+    )
+    subset = subset[keep_id | ~id_mask].copy()
+
+    present_graphs = [
+        graph_code
+        for graph_code in _COMPOUND_OOD_GRAPHS
+        if (
+            (subset["AxisCategory"] == "compound")
+            & subset["DatasetKey"].map(lambda dk: graph_code_of(dk) == graph_code)
+        ).any()
+    ]
+    if not present_graphs:
+        return pd.DataFrame()
+
+    # Build a lookup from graph_code -> stress-test family key
+    stress_by_graph: dict[str, pd.DataFrame] = {}
+    if stress_df is not None and not stress_df.empty:
+        for fam_key in _EXTREME_FAMILIES:
+            gc = graph_code_of(fam_key)
+            if gc is not None:
+                fam_rows = stress_df[stress_df["DatasetKey"] == fam_key]
+                if not fam_rows.empty:
+                    stress_by_graph[gc] = fam_rows
+
+    has_dag = avici_dag_df is not None and not avici_dag_df.empty
+    has_err = error_df is not None and not error_df.empty
+
+    n_panels = len(present_graphs)
+    models = _resolve_models(model_filter)
+    n_models = len(models)
+
+    # Prepare auxiliary DataFrames with the same ID-representative filter.
+    def _filter_compound_id(df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
+        _id = df["AxisCategory"] == "id"
+        _keep = _id & df["DatasetKey"].map(
+            lambda dk: (
+                (id_mechanism_of(dk), graph_code_of(dk)) in _COMPOUND_ID_REPRESENTATIVES
+            )
+        )
+        return df[_keep | ~_id].copy()
+
+    dag_sub = _filter_compound_id(avici_dag_df) if has_dag else None
+    err_sub = _filter_compound_id(error_df) if has_err else None
+
+    # Build row structure: DAG (optional) | metric | error (optional).
+    height_ratios: list[float] = []
+    row_names: list[str] = []
+    if has_dag:
+        height_ratios.append(1.2)
+        row_names.append("dag")
+    height_ratios.append(3.0)
+    row_names.append("metric")
+    if has_err:
+        height_ratios.append(1.5)
+        row_names.append("error")
+    n_rows = len(row_names)
+
+    fig, axes = plt.subplots(
+        n_rows,
+        n_panels,
+        figsize=(6 * n_panels, sum(height_ratios) * 1.1 + 1.5),
+        sharex="col",
+        sharey=False,
+        squeeze=False,
+        gridspec_kw={"height_ratios": height_ratios},
+    )
+
+    metric_row = row_names.index("metric")
+    dag_row = row_names.index("dag") if has_dag else None
+    err_row = row_names.index("error") if has_err else None
+
+    all_agg: list[pd.DataFrame] = []
+
+    for panel_idx, graph_code in enumerate(present_graphs):
+        ax = axes[metric_row, panel_idx]
+        ood_mask = (subset["AxisCategory"] == "compound") & subset["DatasetKey"].map(
+            lambda dk: graph_code_of(dk) == graph_code
+        )
+        panel_data = subset[ood_mask | (subset["AxisCategory"] == "id")].copy()
+
+        if panel_data.empty:
+            for r in range(n_rows):
+                axes[r, panel_idx].set_visible(False)
+            continue
+
+        agg = (
+            panel_data.groupby(
+                ["Model", "DatasetKey", "Dataset", "AxisCategory"], dropna=False
+            )["Value"]
+            .agg(Mean="mean", SEM=metric_sem)
+            .reset_index()
+        )
+        agg["DatasetLabel"] = agg["DatasetKey"].map(_compound_shift_label)
+        agg["FixedConcept"] = GRAPH_ANCHOR_LABELS.get(graph_code, graph_code.upper())
+        agg["SortKey"] = agg["DatasetKey"].map(_compound_shift_sort_key)
+        agg = agg.sort_values("SortKey").drop(columns=["SortKey"])
+
+        # ── Append stress-test rows if present for this graph ─────────
+        stress_agg: pd.DataFrame | None = None
+        if graph_code in stress_by_graph:
+            stress_panel = stress_by_graph[graph_code]
+            stress_agg = (
+                stress_panel.groupby(["Model", "DatasetKey"], dropna=False)["Value"]
+                .agg(Mean="mean", SEM=metric_sem)
+                .reset_index()
+            )
+            stress_agg["AxisCategory"] = "stress"
+            stress_agg["Dataset"] = stress_agg["DatasetKey"]
+            stress_agg["DatasetLabel"] = stress_agg["DatasetKey"].map(
+                lambda dk: _EXTREME_LABELS.get(dk, dk)
+            )
+            stress_agg["FixedConcept"] = GRAPH_ANCHOR_LABELS.get(
+                graph_code, graph_code.upper()
+            )
+            agg = pd.concat([agg, stress_agg], ignore_index=True)
+
+        all_agg.append(agg)
+
+        datasets = list(agg["DatasetLabel"].unique())
+        axis_lookup = (
+            agg[["DatasetLabel", "AxisCategory"]]
+            .drop_duplicates()
+            .set_index("DatasetLabel")["AxisCategory"]
+            .to_dict()
+        )
+        n_datasets = len(datasets)
+        width = 0.6
+        offset_step = width / max(n_models, 1)
+        x_base = np.arange(n_datasets)
+        id_count = sum(1 for ds in datasets if axis_lookup.get(ds) == "id")
+
+        # ── Metric row ────────────────────────────────────────────────
+        for model_idx, model in enumerate(models):
+            model_agg = agg[agg["Model"] == model]
+            xs: list[float] = []
+            means: list[float] = []
+            sems: list[float] = []
+            for i, ds in enumerate(datasets):
+                row = model_agg[model_agg["DatasetLabel"] == ds]
+                if row.empty:
+                    continue
+                offset = (model_idx - n_models / 2 + 0.5) * offset_step
+                xs.append(float(x_base[i]) + offset)
+                means.append(float(row.iloc[0]["Mean"]))
+                sems.append(float(row.iloc[0]["SEM"]))
+            if xs:
+                ax.errorbar(
+                    xs,
+                    means,
+                    yerr=sems,
+                    fmt=MODEL_MARKERS.get(model, "o"),
+                    label=model if panel_idx == 0 else None,
+                    color=_model_color(model),
+                    capsize=3,
+                    markersize=7,
+                    alpha=0.9,
+                )
+
+        # Column header on the topmost row (dag if present, else metric).
+        axes[0, panel_idx].set_title(
+            f"Graph: {GRAPH_ANCHOR_LABELS.get(graph_code, graph_code.upper())}",
+            fontsize=12,
+            fontweight="bold",
+        )
+        ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+        if panel_idx == 0:
+            ylabel = (
+                r"Normalized $\mathbb{E}$-SID $\downarrow$"
+                if metric_name == "ne-sid"
+                else r"$\mathbb{E}$-SID $\downarrow$"
+            )
+            ax.set_ylabel(ylabel, fontsize=12)
+
+        # Grey ID region
+        if 0 < id_count < len(datasets):
+            ax.axvspan(-0.5, id_count - 0.5, color="#f2f2f2", alpha=0.35, zorder=0)
+            ax.axvline(id_count - 0.5, color="#999999", linestyle=":", linewidth=1.0)
+
+        # Stress-test region (light red tint + second divider)
+        if stress_agg is not None and not stress_agg.empty:
+            stress_count = sum(1 for ds in datasets if axis_lookup.get(ds) == "stress")
+            if stress_count > 0:
+                stress_start = n_datasets - stress_count
+                ax.axvspan(
+                    stress_start - 0.5,
+                    n_datasets - 0.5,
+                    color="#ffe0e0",
+                    alpha=0.35,
+                    zorder=0,
+                )
+                ax.axvline(
+                    stress_start - 0.5,
+                    color="#cc4444",
+                    linestyle=":",
+                    linewidth=1.0,
+                )
+
+        # Stress-test dataset keys for this graph (used in DAG/error rows too).
+        stress_keys = (
+            set(stress_by_graph[graph_code]["DatasetKey"].unique())
+            if graph_code in stress_by_graph
+            else set()
+        )
+
+        # ── DAG row (top) ─────────────────────────────────────────────
+        if dag_row is not None:
+            dag_ood = (dag_sub["AxisCategory"] == "compound") & dag_sub[
+                "DatasetKey"
+            ].map(lambda dk: graph_code_of(dk) == graph_code)
+            dag_id = dag_sub["AxisCategory"] == "id"
+            # Include stress-test families for this graph in the DAG row.
+            dag_stress = dag_sub["DatasetKey"].isin(stress_keys)
+            dag_panel = (
+                dag_sub[dag_ood | dag_id | dag_stress]
+                if dag_sub is not None
+                else pd.DataFrame()
+            )
+            _plot_dag_row_panel(
+                axes[dag_row, panel_idx],
+                dag_panel,
+                datasets,
+                x_base,
+                _compound_shift_label,
+                panel_idx=panel_idx,
+                id_count=id_count,
+            )
+
+        # ── Error row (bottom) ────────────────────────────────────────
+        if err_row is not None:
+            err_ood = (err_sub["AxisCategory"] == "compound") & err_sub[
+                "DatasetKey"
+            ].map(lambda dk: graph_code_of(dk) == graph_code)
+            err_id = err_sub["AxisCategory"] == "id"
+            # Include stress-test families for this graph in the error row.
+            err_stress = err_sub["DatasetKey"].isin(stress_keys)
+            err_panel = (
+                err_sub[err_ood | err_id | err_stress]
+                if err_sub is not None
+                else pd.DataFrame()
+            )
+            _plot_error_row_panel(
+                axes[err_row, panel_idx],
+                err_panel,
+                datasets,
+                x_base,
+                models,
+                _compound_shift_label,
+                panel_idx=panel_idx,
+                id_count=id_count,
+            )
+
+    # Shared legend on top
+    handles, labels = axes[metric_row, 0].get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            title="Model",
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncol=len(labels),
+            fontsize=10,
+            frameon=False,
+        )
+
+    fig.suptitle(axis_title, fontsize=14, fontweight="bold", y=1.05)
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.savefig(output_path, bbox_inches="tight")
+    plt.close(fig)
+
+    result = pd.concat(all_agg, ignore_index=True) if all_agg else pd.DataFrame()
+    save_figure_data(output_path, result)
+    return result
+
+
+# ── RQ2: Degradation heatmap ──────────────────────────────────────────
+
+_DEGRADATION_SHIFT_AXES: dict[str, str] = {
+    "graph": "Graph",
+    "mechanism": "Mechanism",
+    "noise": "Noise",
+    "compound": "Compound",
+}
+"""Shift axes included in the RQ2 degradation heatmap."""
+
+
+def _degradation_id_subset(
+    full_df: pd.DataFrame,
+    shift_key: str,
+) -> pd.DataFrame:
+    """Return the ID rows that form the correct baseline for *shift_key*.
+
+    Each shift axis uses a different anchored ID subset so that the
+    degradation ratio isolates only the varied dimension:
+
+    * **graph** -- ID families with Linear mechanism (graph is the only
+      variable in the graph-shift figure).
+    * **mechanism** -- ID families on ER-20 (mechanism is the only variable).
+    * **noise** -- all fixed-size ID families (both anchors participate).
+    * **compound** -- the three representative ID anchor families.
+    * **nodes** -- fixed-size ID families on the two transfer anchors.
+    * **samples** -- same as *nodes*.
+    """
+    id_data = full_df[full_df["AxisCategory"] == "id"].copy()
+
+    if shift_key == "graph":
+        return id_data[
+            id_data["DatasetKey"].map(lambda dk: id_mechanism_of(dk) == "linear")
+        ]
+    if shift_key == "mechanism":
+        return _restrict_to_graph_anchor(id_data, "er20")
+    if shift_key == "compound":
+        return id_data[
+            id_data["DatasetKey"].map(
+                lambda dk: (
+                    (id_mechanism_of(dk), graph_code_of(dk))
+                    in _COMPOUND_ID_REPRESENTATIVES
+                )
+            )
+        ]
+    if shift_key == "stress":
+        # Stress test = compound shift + extreme sizes.
+        # Use the same ID baseline as compound shift.
+        return id_data[
+            id_data["DatasetKey"].map(
+                lambda dk: (
+                    (id_mechanism_of(dk), graph_code_of(dk))
+                    in _COMPOUND_ID_REPRESENTATIVES
+                )
+            )
+        ]
+    if shift_key in ("nodes", "samples"):
+        # Transfer anchors: (linear, er20), (neuralnet, sf2)
+        _TRANSFER_ANCHORS = {("linear", "er20"), ("neuralnet", "sf2")}
+        return id_data[
+            id_data["DatasetKey"].map(
+                lambda dk: (id_mechanism_of(dk), graph_code_of(dk)) in _TRANSFER_ANCHORS
+            )
+        ]
+    # noise and any other: all fixed-size ID
+    return id_data
+
+
+def generate_degradation_heatmap(
+    raw_df: pd.DataFrame,
+    *,
+    output_path: Path,
+    model_filter: Sequence[str] | None = None,
+) -> pd.DataFrame:
+    """Generate a heatmap showing per-model degradation ratio across shift axes.
+
+    Each cell shows ``mean(OOD ne-SID) / mean(ID ne-SID)`` for a given model
+    and shift axis, with the inter-quartile range (IQR) of per-family ratios
+    shown below.  The ID baseline is *anchored per axis* so that each ratio
+    isolates only the varied distributional dimension.
+
+    A ratio of 1.0 means no degradation; higher values indicate worse OOD
+    performance relative to the relevant ID baseline.
+
+    Args:
+        raw_df: Long-format raw task DataFrame.
+        output_path: Path for the output PDF figure.
+        model_filter: If given, only include these model display names.
+
+    Returns:
+        Pivot table (models x shift axes) of degradation ratios.
+    """
+    import matplotlib.colors as mcolors
+
+    metric_name = "ne-sid"
+    subset = raw_df[raw_df["Metric"].eq(metric_name)].copy()
+    # All shift axes in the heatmap use fixed-size tasks.
+    fixed_subset = subset[is_fixed_size_task_frame(subset)]
+    if fixed_subset.empty:
+        log.warning("No ne-sid data for degradation heatmap; skipping.")
+        return pd.DataFrame()
+
+    models = _resolve_models(model_filter)
+
+    rows: list[dict[str, object]] = []
+    for shift_key, shift_label in _DEGRADATION_SHIFT_AXES.items():
+        pool = fixed_subset
+        # Per-axis anchored ID baseline
+        id_data = _degradation_id_subset(fixed_subset, shift_key)
+        id_means = id_data.groupby("Model")["Value"].mean().to_dict()
+        ood_data = pool[pool["AxisCategory"] == shift_key]
+
+        # Per-family OOD means for spread computation
+        ood_family = (
+            ood_data.groupby(["Model", "DatasetKey"])["Value"]
+            .mean()
+            .reset_index()
+            .rename(columns={"Value": "FamilyMean"})
+        )
+
+        for model in models:
+            id_val = id_means.get(model)
+            ood_val = (
+                float(ood_data[ood_data["Model"] == model]["Value"].mean())
+                if not ood_data[ood_data["Model"] == model].empty
+                else None
+            )
+            # Per-family ratios for spread
+            model_families = ood_family[ood_family["Model"] == model]["FamilyMean"]
+            if (
+                id_val is not None
+                and ood_val is not None
+                and id_val > 0
+                and not model_families.empty
+            ):
+                ratio = ood_val / id_val
+                family_ratios = model_families / id_val
+                q1 = float(family_ratios.quantile(0.25))
+                q3 = float(family_ratios.quantile(0.75))
+                iqr = q3 - q1
+            else:
+                ratio = float("nan")
+                iqr = float("nan")
+
+            rows.append(
+                {
+                    "Model": model,
+                    "Shift": shift_label,
+                    "Ratio": ratio,
+                    "IQR": iqr,
+                }
+            )
+
+    result_df = pd.DataFrame(rows)
+    if result_df.empty:
+        log.warning("No data for degradation heatmap; skipping.")
+        return pd.DataFrame()
+
+    pivot = result_df.pivot(index="Model", columns="Shift", values="Ratio")
+    pivot_iqr = result_df.pivot(index="Model", columns="Shift", values="IQR")
+
+    # Reorder rows and columns
+    pivot = pivot.reindex(index=[m for m in models if m in pivot.index])
+    pivot = pivot.reindex(
+        columns=[v for v in _DEGRADATION_SHIFT_AXES.values() if v in pivot.columns]
+    )
+    pivot_iqr = pivot_iqr.reindex(index=pivot.index, columns=pivot.columns)
+
+    fig, ax = plt.subplots(figsize=(6, 3.5))
+
+    # Diverging colormap around 1.0 (no degradation)
+    vmin = max(0.5, float(pivot.min().min()) - 0.1) if not pivot.empty else 0.5
+    vmax = max(float(pivot.max().max()) + 0.1, 1.5) if not pivot.empty else 2.0
+    norm = mcolors.TwoSlopeNorm(vmin=vmin, vcenter=1.0, vmax=vmax)
+    cmap = plt.cm.RdYlGn_r  # red = worse (high ratio), green = good (low ratio)
+
+    im = ax.imshow(
+        pivot.values,
+        aspect="auto",
+        cmap=cmap,
+        norm=norm,
+    )
+    ax.set_xticks(np.arange(len(pivot.columns)))
+    ax.set_xticklabels(pivot.columns, fontsize=11)
+    ax.set_yticks(np.arange(len(pivot.index)))
+    ax.set_yticklabels(pivot.index, fontsize=11)
+
+    # Annotate cells with ratio + IQR spread
+    for i in range(len(pivot.index)):
+        for j in range(len(pivot.columns)):
+            val = pivot.values[i, j]
+            iqr_val = pivot_iqr.values[i, j]
+            if np.isnan(val):
+                text = "--"
+            else:
+                text = f"{val:.2f}"
+                if not np.isnan(iqr_val):
+                    text += f"\n\u00b1{iqr_val:.2f}"
+            ax.text(
+                j,
+                i,
+                text,
+                ha="center",
+                va="center",
+                fontsize=7,
+                fontweight="normal",
+                color="white" if val > (vmin + vmax) / 2 else "black",
+            )
+
+    cbar = fig.colorbar(im, ax=ax, shrink=0.8, pad=0.04)
+    cbar.set_label("OOD / ID ratio", fontsize=10)
+
+    ax.set_title(
+        "Normalized E-SID Degradation Ratio (OOD / ID)",
+        fontsize=12,
+        fontweight="bold",
+        pad=12,
+    )
+    fig.tight_layout()
+    fig.savefig(output_path, bbox_inches="tight")
+    plt.close(fig)
+
+    save_figure_data(output_path, result_df)
+    return pivot
+
+
 # ── RQ2: Worst-task identification and comparison ─────────────────────
 
 
@@ -2282,6 +3427,171 @@ _SUMMARY_TABLE_METRICS: list[tuple[str, str, bool]] = [
     ("ne-shd", r"ne-SHD $\downarrow$", False),
 ]
 """(metric_key, display_label, higher_is_better) for the summary table."""
+
+
+def generate_results_anchor_table(
+    raw_df: pd.DataFrame,
+    output_path: Path,
+    *,
+    model_filter: Sequence[str] | None = None,
+) -> pd.DataFrame:
+    """Generate the anchor overview table (ID vs OOD) for the results chapter.
+
+    Rows = models.  Column groups = ne-SID, ne-SHD, E-Edge F1, Valid DAG (%),
+    each split into ID and OOD sub-columns.  Best per sub-column (excl. Random)
+    is bolded.
+
+    Args:
+        raw_df: Long-format raw task DataFrame with ``AxisCategory`` column.
+        output_path: Where to write the ``.tex`` file.
+        model_filter: If given, restrict to these model display names.
+
+    Returns:
+        Aggregated DataFrame used for the table.
+    """
+    _ANCHOR_METRICS: list[tuple[str, str, bool]] = [
+        ("ne-sid", r"ne-SID $\downarrow$", False),
+        ("ne-shd", r"ne-SHD $\downarrow$", False),
+        ("e-edgef1", r"$\mathbb{E}$-Edge F1 $\uparrow$", True),
+        ("threshold_valid_dag_pct", r"Valid DAG (\%) $\uparrow$", True),
+    ]
+    metric_keys = [m for m, _, _ in _ANCHOR_METRICS]
+    subset = raw_df[raw_df["Metric"].isin(metric_keys)].copy()
+    if subset.empty:
+        log.warning("No data for results anchor table; skipping.")
+        return pd.DataFrame()
+
+    all_models = _resolve_models(model_filter)
+    models = [m for m in all_models if m in subset["Model"].unique()]
+    if not models:
+        log.warning("No models for results anchor table; skipping.")
+        return pd.DataFrame()
+
+    # Split into ID vs OOD (everything that is not "id" or "other")
+    id_mask = subset["AxisCategory"] == "id"
+    ood_mask = ~subset["AxisCategory"].isin(["id", "other"])
+
+    all_agg: list[pd.DataFrame] = []
+    for split_label, mask in [("ID", id_mask), ("OOD", ood_mask)]:
+        pool = subset[mask]
+        if pool.empty:
+            continue
+        agg = (
+            pool.groupby(["Model", "Metric"], dropna=False)["Value"]
+            .agg(Mean="mean", SEM=metric_sem)
+            .reset_index()
+        )
+        agg["Split"] = split_label
+        all_agg.append(agg)
+
+    if not all_agg:
+        return pd.DataFrame()
+
+    combined = pd.concat(all_agg, ignore_index=True)
+
+    # Best per (Split, Metric), excluding Random
+    best_lookup: dict[tuple[str, str], float] = {}
+    non_random = combined[combined["Model"] != "Random"]
+    for _, row in non_random.iterrows():
+        key = (str(row["Split"]), str(row["Metric"]))
+        mean = float(row["Mean"])
+        higher = next(
+            (hib for mk, _, hib in _ANCHOR_METRICS if mk == row["Metric"]),
+            False,
+        )
+        current = best_lookup.get(key)
+        if current is None:
+            best_lookup[key] = mean
+        elif higher and mean > current:
+            best_lookup[key] = mean
+        elif not higher and mean < current:
+            best_lookup[key] = mean
+
+    # ── Build LaTeX ────────────────────────────────────────────────────
+    n_metrics = len(_ANCHOR_METRICS)
+    col_spec = "l " + " ".join(["cc"] * n_metrics)
+    lines: list[str] = []
+    lines.append(r"\begin{table}[h]")
+    lines.append(r"\centering")
+    lines.append(r"\footnotesize")
+    lines.append(
+        r"\caption{Aggregate model performance on in-distribution (ID) and "
+        r"out-of-distribution (OOD) evaluation families. ne-SID and ne-SHD "
+        r"are normalized; Edge F1 and Valid DAG are reported as-is. Values "
+        r"show task-level means $\pm$ standard errors.}"
+    )
+    lines.append(r"\label{tab:results_anchor}")
+    lines.append(r"\resizebox{\textwidth}{!}{%")
+    lines.append(r"\begin{tabular}{" + col_spec + "}")
+    lines.append(r"\toprule")
+
+    # Header row 1: metric group headers
+    header1 = r"\textbf{Model}"
+    col_idx = 2
+    for _, mlabel, _ in _ANCHOR_METRICS:
+        header1 += rf" & \multicolumn{{2}}{{c}}{{\textbf{{{mlabel}}}}}"
+    header1 += r" \\"
+    lines.append(header1)
+
+    # Cmidrules
+    cmidrules = ""
+    col_start = 2
+    for _ in _ANCHOR_METRICS:
+        col_end = col_start + 1
+        cmidrules += rf"\cmidrule(lr){{{col_start}-{col_end}}} "
+        col_start = col_end + 1
+    lines.append(cmidrules)
+
+    # Header row 2: ID / OOD
+    header2 = ""
+    for _ in _ANCHOR_METRICS:
+        header2 += " & ID & OOD"
+    header2 += r" \\"
+    lines.append(header2)
+    lines.append(r"\midrule")
+
+    # Data rows
+    for model in models:
+        row_str = model
+        for metric_key, _, _ in _ANCHOR_METRICS:
+            for split_label in ("ID", "OOD"):
+                cell_row = combined[
+                    (combined["Model"] == model)
+                    & (combined["Metric"] == metric_key)
+                    & (combined["Split"] == split_label)
+                ]
+                if cell_row.empty:
+                    row_str += " & --"
+                    continue
+                mean = float(cell_row.iloc[0]["Mean"])
+                sem = float(cell_row.iloc[0]["SEM"])
+                cell = format_value(mean, sem)
+                best_val = best_lookup.get((split_label, metric_key))
+                if (
+                    best_val is not None
+                    and model != "Random"
+                    and abs(mean - best_val) < 1e-6
+                ):
+                    cell = _bold_if_best(cell, is_best=True)
+                row_str += f" & {cell}"
+        row_str += r" \\"
+        lines.append(row_str)
+
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    lines.append(r"}")
+    lines.append(r"\end{table}")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text("\n".join(lines) + "\n")
+    log.info("Wrote results anchor table to %s", output_path)
+
+    # Also save underlying data as CSV for verification
+    csv_path = output_path.with_suffix(".csv")
+    combined.to_csv(csv_path, index=False)
+    log.info("Wrote results anchor data to %s", csv_path)
+
+    return combined
 
 
 def generate_cross_axis_summary_table(
