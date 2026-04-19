@@ -5,22 +5,26 @@ mechanisms with neural networks. But in Table 3.1, its
 mechanism class is listed as “Nonparametric (GP)”. 
 Both cannot be the operative description at the same time 
 without explanation. This needs correction. 
+-> Look at avici paper to find correct notion
 
-- There is also naming drift around the mechanism family 
-used in training/evaluation:
+- There is also naming drift around the mechanism 
+family used in training/evaluation:
 the text refers to RFF,
 a figure labels something like GPCDE,
-appendices and comparison tables use GP or GP-CDE in some places.
+appendices and comparison tables use GP or GP-CDE 
+in some places.
 -> Rename in Thesis and all grahps to RFF!!!
 
 - checkpoint claim in appendix that best model is chosen based on F1 
--> change it to o.o.d mean sid and adjust the code to reflect that
+-> change it to o.o.d mean sid and adjust the trainign config to reflect that
 
 - in the first results table, also show inference time once and mention
 it in one sentence
 
 - Update the BCNP citation meta_learning (Dhir et al.) from an arXiv 
 preprint to its official publication venue at ICLR 2025
+
+
 
 
 FURTHER STUFF:

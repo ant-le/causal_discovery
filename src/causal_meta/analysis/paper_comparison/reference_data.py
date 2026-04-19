@@ -18,9 +18,9 @@ COMPARABLE_FAMILIES: dict[str, str] = {
     "id_neuralnet_er20_d20_n500": "MLP ER-20",
     "id_neuralnet_er40_d20_n500": "MLP ER-40",
     "id_neuralnet_er60_d20_n500": "MLP ER-60",
-    "id_gpcde_er20_d20_n500": "GP ER-20",
-    "id_gpcde_er40_d20_n500": "GP ER-40",
-    "id_gpcde_er60_d20_n500": "GP ER-60",
+    "id_gpcde_er20_d20_n500": "RFF ER-20",
+    "id_gpcde_er40_d20_n500": "RFF ER-40",
+    "id_gpcde_er60_d20_n500": "RFF ER-60",
 }
 
 MODELS: tuple[str, ...] = ("avici", "bcnp", "dibs", "bayesdag")

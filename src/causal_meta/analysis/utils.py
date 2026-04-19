@@ -205,7 +205,7 @@ GRAPH_DESCRIPTION_MAP: dict[str, str] = {
 MECH_DESCRIPTION_MAP: dict[str, str] = {
     "linear": "Linear",
     "neuralnet": "NeuralNet",
-    "gpcde": "GP",
+    "gpcde": "RFF",
     "periodic": "Periodic",
     "square": "Square",
     "logistic_map": "Logistic Map",

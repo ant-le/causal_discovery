@@ -1242,7 +1242,7 @@ def generate_mechanism_heatmap(
     ax.set_xticklabels(models, fontsize=10, rotation=20, ha="right")
     ax.set_yticks(np.arange(len(mechs)))
     mech_labels = {
-        "gp": "GP (RFF)",
+        "gp": "RFF",
         "linear": "Linear",
         "logistic": "Logistic",
         "mlp": "MLP",

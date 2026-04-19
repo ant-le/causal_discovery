@@ -3521,8 +3521,8 @@ def generate_results_anchor_table(
     """Generate the anchor overview table (ID vs OOD) for the results chapter.
 
     Rows = models.  Column groups = ne-SID, ne-SHD, E-Edge F1, Valid DAG (%),
-    each split into ID and OOD sub-columns.  Best per sub-column (excl. Random)
-    is bolded.
+    each split into ID and OOD sub-columns, plus a single mean inference-time
+    column.  Best per sub-column (excl. Random) is bolded.
 
     Args:
         raw_df: Long-format raw task DataFrame with ``AxisCategory`` column.
@@ -3572,6 +3572,12 @@ def generate_results_anchor_table(
 
     combined = pd.concat(all_agg, ignore_index=True)
 
+    # ── Mean inference time per model (single column, not split) ───────
+    time_df = raw_df[raw_df["Metric"] == "inference_time_s"]
+    time_per_model: dict[str, float] = {}
+    if not time_df.empty:
+        time_per_model = time_df.groupby("Model")["Value"].mean().to_dict()
+
     # Best per (Split, Metric), excluding Random
     best_lookup: dict[tuple[str, str], float] = {}
     non_random = combined[combined["Model"] != "Random"]
@@ -3592,7 +3598,10 @@ def generate_results_anchor_table(
 
     # ── Build LaTeX ────────────────────────────────────────────────────
     n_metrics = len(_ANCHOR_METRICS)
+    has_time = bool(time_per_model)
     col_spec = "l " + " ".join(["cc"] * n_metrics)
+    if has_time:
+        col_spec += " c"
     lines: list[str] = []
     lines.append(r"\begin{table}[h]")
     lines.append(r"\centering")
@@ -3600,8 +3609,9 @@ def generate_results_anchor_table(
     lines.append(
         r"\caption{Aggregate model performance on in-distribution (ID) and "
         r"out-of-distribution (OOD) evaluation families. ne-SID and ne-SHD "
-        r"are normalized; Edge F1 and Valid DAG are reported as-is. Values "
-        r"show task-level means $\pm$ standard errors.}"
+        r"are normalized; Edge F1 and Valid DAG are reported as-is. "
+        r"Inference time is the mean per-task wall-clock time. "
+        r"Values show task-level means $\pm$ standard errors.}"
     )
     lines.append(r"\label{tab:results_anchor}")
     lines.append(r"\resizebox{\textwidth}{!}{%")
@@ -3613,6 +3623,8 @@ def generate_results_anchor_table(
     col_idx = 2
     for _, mlabel, _ in _ANCHOR_METRICS:
         header1 += rf" & \multicolumn{{2}}{{c}}{{\textbf{{{mlabel}}}}}"
+    if has_time:
+        header1 += r" & \textbf{Time (s) $\downarrow$}"
     header1 += r" \\"
     lines.append(header1)
 
@@ -3629,6 +3641,8 @@ def generate_results_anchor_table(
     header2 = ""
     for _ in _ANCHOR_METRICS:
         header2 += " & ID & OOD"
+    if has_time:
+        header2 += " &"
     header2 += r" \\"
     lines.append(header2)
     lines.append(r"\midrule")
@@ -3657,6 +3671,12 @@ def generate_results_anchor_table(
                 ):
                     cell = _bold_if_best(cell, is_best=True)
                 row_str += f" & {cell}"
+        if has_time:
+            t = time_per_model.get(model)
+            if t is not None:
+                row_str += rf" & ${t:.3f}$" if t < 1.0 else rf" & ${t:.1f}$"
+            else:
+                row_str += " & --"
         row_str += r" \\"
         lines.append(row_str)
 
@@ -3782,8 +3802,7 @@ def generate_cross_axis_summary_table(
     lines.append(
         r"\caption{Cross-axis performance summary for the amortised models."
         r" Each cell reports the task-level mean $\pm$ SEM for the indicated"
-        r" metric and shift axis."
-        r" Per-column best values (excluding Random) are \textbf{bolded}.}"
+        r" metric and shift axis.}"
     )
     lines.append(rf"\label{{tab:{label_prefix}cross_axis_summary}}")
 
@@ -3974,8 +3993,7 @@ def generate_structural_summary_table(
         r" Skeleton F1 measures undirected edge recovery,"
         r" Orientation Accuracy measures correct directionality of true"
         r" positives, and Sparsity Ratio shows predicted density relative"
-        r" to ground truth. Per-column best values (excluding Random)"
-        r" are \textbf{bolded} where applicable.}"
+        r" to ground truth.}"
     )
     lines.append(rf"\label{{tab:{label_prefix}structural_summary}}")
     lines.append(r"\resizebox{\textwidth}{!}{%")

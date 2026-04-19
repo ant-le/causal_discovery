@@ -77,7 +77,7 @@ def axis_category(dataset_key: str) -> str:
 ID_MECHANISM_LABELS: dict[str, str] = {
     "linear": "Linear",
     "neuralnet": "MLP",
-    "gpcde": "GP",
+    "gpcde": "RFF",
 }
 """Display names for the three in-distribution mechanism families."""
 

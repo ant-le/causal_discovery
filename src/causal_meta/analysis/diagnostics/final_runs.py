@@ -66,7 +66,7 @@ MECH_ORDER: tuple[str, ...] = (
 MECH_LABELS: dict[str, str] = {
     "linear": "Linear",
     "neuralnet": "MLP",
-    "gpcde": "GP",
+    "gpcde": "RFF",
     "periodic": "Periodic",
     "square": "Square",
     "pnl_tanh": "PNL",

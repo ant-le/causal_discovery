@@ -90,7 +90,7 @@ _MECH_SPECS: list[tuple[str, object, bool]] = [
     ),
     ("MLP", MLPMechanismConfig(hidden_dim=32), True),
     (
-        "GPCDE",
+        "RFF",
         GPMechanismConfig(
             mode="approximate",
             rff_dim=512,
@@ -132,7 +132,7 @@ _DATA_FAMILIES: list[tuple[str, object, object, str, bool]] = [
         True,
     ),
     (
-        "GPCDE + ER-60",
+        "RFF + ER-60",
         ErdosRenyiConfig(sparsity=0.1579),
         GPMechanismConfig(
             mode="approximate",

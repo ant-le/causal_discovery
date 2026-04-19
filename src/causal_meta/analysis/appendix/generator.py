@@ -59,7 +59,7 @@ def _mech_summary(cfg: Mapping[str, Any]) -> str:
     if mech_type == "mlp":
         return f"MLP (h={cfg.get('hidden_dim')})"
     if mech_type == "gp":
-        return f"GP ({cfg.get('mode')}, rff={cfg.get('rff_dim')})"
+        return f"RFF ({cfg.get('mode')}, rff={cfg.get('rff_dim')})"
     if mech_type == "pnl":
         return f"PNL ({cfg.get('nonlinearity_type')})"
     if mech_type == "mixture":
