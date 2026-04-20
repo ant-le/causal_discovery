@@ -520,11 +520,16 @@ class DiBSModel(BaseModel):
             **(inference_kwargs or {}),
         )
 
-        graphs, _ = dibs.sample(
+        sample_result = dibs.sample(
             key=sample_key,
             n_particles=int(n_particles),
             steps=int(steps),
         )
+
+        if isinstance(sample_result, tuple):
+            graphs = sample_result[0]
+        else:
+            graphs = sample_result
 
         graphs_np = np.asarray(graphs)
         graphs_t = torch.from_numpy(graphs_np.copy()).to(device=device)
