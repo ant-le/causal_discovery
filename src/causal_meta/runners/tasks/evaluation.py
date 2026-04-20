@@ -11,7 +11,11 @@ import torch.nn as nn
 from omegaconf import DictConfig
 
 from causal_meta.datasets.data_module import CausalMetaModule
-from causal_meta.datasets.generators.configs import FamilyConfig
+from causal_meta.datasets.generators.configs import (
+    AnyFamilyConfig,
+    FamilyConfig,
+    RealWorldFamilyConfig,
+)
 from causal_meta.datasets.torch_datasets import MetaFixedDataset
 from causal_meta.datasets.utils.normalization import normalize_scm_data
 from causal_meta.runners.logger.base import BaseLogger
@@ -59,8 +63,11 @@ def _prepare_amortized_model_input(
     return input_data, node_mask
 
 
-def _extract_graph_type(family_cfg: FamilyConfig) -> str:
+def _extract_graph_type(family_cfg: AnyFamilyConfig) -> str:
     """Infer the graph type string from a FamilyConfig's graph_cfg."""
+    if isinstance(family_cfg, RealWorldFamilyConfig):
+        return "real_world"
+
     graph_cfg = family_cfg.graph_cfg
     type_attr = getattr(graph_cfg, "type", None)
     if type_attr is not None:
@@ -74,8 +81,11 @@ def _extract_graph_type(family_cfg: FamilyConfig) -> str:
     return "unknown"
 
 
-def _extract_mech_type(family_cfg: FamilyConfig) -> str:
+def _extract_mech_type(family_cfg: AnyFamilyConfig) -> str:
     """Infer the mechanism type string from a FamilyConfig's mech_cfg."""
+    if isinstance(family_cfg, RealWorldFamilyConfig):
+        return "real_world"
+
     mech_cfg = family_cfg.mech_cfg
     type_attr = getattr(mech_cfg, "type", None)
     if type_attr is not None:
@@ -96,8 +106,11 @@ def _extract_mech_type(family_cfg: FamilyConfig) -> str:
     return "unknown"
 
 
-def _extract_sparsity_param(family_cfg: FamilyConfig) -> float | None:
+def _extract_sparsity_param(family_cfg: AnyFamilyConfig) -> float | None:
     """Extract the sparsity-related parameter from a graph config, if available."""
+    if isinstance(family_cfg, RealWorldFamilyConfig):
+        return None
+
     graph_cfg = family_cfg.graph_cfg
     # ER: sparsity or edge_prob
     sparsity = getattr(graph_cfg, "sparsity", None)
@@ -114,7 +127,7 @@ def _extract_sparsity_param(family_cfg: FamilyConfig) -> float | None:
 
 
 def _build_family_metadata(
-    test_family_cfgs: dict[str, FamilyConfig],
+    test_family_cfgs: dict[str, AnyFamilyConfig],
     *,
     default_samples_per_task: int | None = None,
     default_inference_n_samples: int | None = None,
@@ -133,6 +146,8 @@ def _build_family_metadata(
             "graph_type": _extract_graph_type(fcfg),
             "mech_type": _extract_mech_type(fcfg),
         }
+        if isinstance(fcfg, RealWorldFamilyConfig):
+            entry["loader"] = fcfg.loader
         family_ins = getattr(fcfg, "inference_n_samples", None)
         entry["inference_n_samples"] = (
             int(family_ins) if family_ins is not None else default_inference_n_samples

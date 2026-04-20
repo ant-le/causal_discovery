@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import textwrap
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict
 
 import pytest
@@ -576,3 +577,50 @@ def test_real_world_evaluation_metrics_are_plausible(tmp_path: Path) -> None:
 
     # ne-SHD (normalized) should be in [0, 1] or close.
     assert summary["ne-shd_mean"] >= 0
+
+
+def test_real_world_evaluation_writes_family_metadata(tmp_path: Path) -> None:
+    """Evaluation metadata should support real-world family configs."""
+    import json
+
+    from omegaconf import OmegaConf
+
+    from causal_meta.datasets.generators.configs import RealWorldFamilyConfig
+    from causal_meta.runners.tasks.evaluation import run as evaluation_run
+
+    dataset = _make_sachs_like_dataset(n_obs=50, n_nodes=5, n_seeds=1)
+    data_module = _RealWorldDataModule(dataset)
+    data_module.config = SimpleNamespace(
+        test_families={
+            "real_sachs_test": RealWorldFamilyConfig(
+                name="real_sachs_test",
+                loader="sachs",
+                n_nodes=5,
+                inference_n_samples=7,
+            )
+        },
+        samples_per_task=128,
+        inference_n_samples=11,
+    )
+    model = _ExplicitDummyModel()
+
+    cfg = OmegaConf.create(
+        {
+            "name": "test_rw_family_metadata",
+            "inference": {
+                "n_samples": 3,
+                "inil_graph_samples": 1,
+            },
+        }
+    )
+
+    evaluation_run(cfg, model, data_module, output_dir=tmp_path)
+
+    with open(tmp_path / "metrics.json") as f:
+        result = json.load(f)
+
+    family_metadata = result["family_metadata"]["real_sachs_test"]
+    assert family_metadata["graph_type"] == "real_world"
+    assert family_metadata["mech_type"] == "real_world"
+    assert family_metadata["loader"] == "sachs"
+    assert family_metadata["inference_n_samples"] == 7
