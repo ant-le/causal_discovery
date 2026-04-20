@@ -140,6 +140,30 @@ data:
       nonlinearity_type: tanh
       inner_config:
         type: linear
+    pnl_sigmoid: &mech_pnl_sigmoid
+      type: pnl
+      nonlinearity_type: sigmoid
+      inner_config:
+        type: linear
+    pnl_cube: &mech_pnl_cube
+      type: pnl
+      nonlinearity_type: cube
+      inner_config:
+        type: linear
+
+  # ── Density-matched ER controls for OOD graphs ─────────────────────
+  # These ER graphs match the expected edge count of each OOD graph at
+  # d=20, so that topology and density effects can be disentangled.
+  _density_matched_graphs:
+    er_match_sbm: &graph_er_match_sbm
+      type: er
+      sparsity: 0.1342 # matches SBM E[edges]≈25.5 at d=20
+    er_match_ws: &graph_er_match_ws
+      type: er
+      sparsity: 0.2105 # matches WS  E[edges]≈40   at d=20
+    er_match_grg: &graph_er_match_grg
+      type: er
+      sparsity: 0.2147 # matches GRG E[edges]≈40.8 at d=20
 
   # ════════════════════════════════════════════════════════════════════
   #  Training family
@@ -1001,6 +1025,293 @@ data:
       graph_cfg: *graph_sbm
       mech_cfg: *mech_periodic
 
+    # ── I. Mixed-Mechanism Test Families ───────────────────────────────
+    #    Tests whether models exploit the per-node mechanism heterogeneity
+    #    seen during training or break on homogeneous-to-mixed mismatch.
+    #    I-ctrl uses a 50/50 ID-only mixture (Linear+MLP) as a baseline
+    #    so per-node heterogeneity effects can be separated from OOD
+    #    mechanism effects. The remaining families use ID+OOD mixtures.
+    ctrl_mixed_linear_mlp_er20_d20_n500:
+      name: ctrl_mixed_linear_mlp_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg:
+        type: mixture
+        weights: [0.5, 0.5]
+        factories:
+          - *mech_linear
+          - *mech_neuralnet
+
+    ood_mixed_linear_periodic_er20_d20_n500:
+      name: ood_mixed_linear_periodic_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg:
+        type: mixture
+        weights: [0.5, 0.5]
+        factories:
+          - *mech_linear
+          - *mech_periodic
+
+    ood_mixed_mlp_logistic_sf2_d20_n500:
+      name: ood_mixed_mlp_logistic_sf2_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg:
+        type: mixture
+        weights: [0.5, 0.5]
+        factories:
+          - *mech_neuralnet
+          - *mech_logistic_map
+
+    ood_mixed_rff_square_er40_d20_n500:
+      name: ood_mixed_rff_square_er40_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er40
+      mech_cfg:
+        type: mixture
+        weights: [0.5, 0.5]
+        factories:
+          - *mech_gpcde
+          - *mech_square
+
+    ood_mixed_linear_pnl_sf1_d20_n500:
+      name: ood_mixed_linear_pnl_sf1_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf1
+      mech_cfg:
+        type: mixture
+        weights: [0.5, 0.5]
+        factories:
+          - *mech_linear
+          - *mech_pnl_tanh
+
+    # ── J. Density-Matched ER Controls ─────────────────────────────────
+    #    One ER graph per OOD topology, matched on expected edge count,
+    #    so topology vs. density effects can be separated.
+    #    Tested with Linear (simple) and MLP (nonlinear) mechanisms.
+    ctrl_density_er_match_sbm_linear_d20_n500:
+      name: ctrl_density_er_match_sbm_linear_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er_match_sbm
+      mech_cfg: *mech_linear
+
+    ctrl_density_er_match_sbm_neuralnet_d20_n500:
+      name: ctrl_density_er_match_sbm_neuralnet_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er_match_sbm
+      mech_cfg: *mech_neuralnet
+
+    ctrl_density_er_match_ws_linear_d20_n500:
+      name: ctrl_density_er_match_ws_linear_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er_match_ws
+      mech_cfg: *mech_linear
+
+    ctrl_density_er_match_ws_neuralnet_d20_n500:
+      name: ctrl_density_er_match_ws_neuralnet_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er_match_ws
+      mech_cfg: *mech_neuralnet
+
+    ctrl_density_er_match_grg_linear_d20_n500:
+      name: ctrl_density_er_match_grg_linear_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er_match_grg
+      mech_cfg: *mech_linear
+
+    ctrl_density_er_match_grg_neuralnet_d20_n500:
+      name: ctrl_density_er_match_grg_neuralnet_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er_match_grg
+      mech_cfg: *mech_neuralnet
+
+    # ── K. PNL-Sigmoid and PNL-Cube OOD Variants ──────────────────────
+    #    Tests whether PNL degradation is driven by the PNL structure
+    #    itself or by the specific outer nonlinearity (tanh vs sigmoid vs cube).
+    ood_mech_pnl_sigmoid_er20_d20_n500:
+      name: ood_mech_pnl_sigmoid_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_pnl_sigmoid
+
+    ood_mech_pnl_cube_er20_d20_n500:
+      name: ood_mech_pnl_cube_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_pnl_cube
+
+    ood_mech_pnl_sigmoid_sf2_d20_n500:
+      name: ood_mech_pnl_sigmoid_sf2_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_pnl_sigmoid
+
+    ood_mech_pnl_cube_sf2_d20_n500:
+      name: ood_mech_pnl_cube_sf2_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_sf2
+      mech_cfg: *mech_pnl_cube
+
+    # ── L. OOD Noise × OOD Mechanism Interaction ──────────────────────
+    #    Tests whether noise and mechanism shifts interact super-additively.
+    #    Uses ER20 anchor with OOD mechanisms under non-Gaussian noise.
+    ood_noise_mech_laplace_periodic_er20_d20_n500:
+      name: ood_noise_mech_laplace_periodic_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_periodic
+      noise_type: laplace
+
+    ood_noise_mech_uniform_periodic_er20_d20_n500:
+      name: ood_noise_mech_uniform_periodic_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_periodic
+      noise_type: uniform
+
+    ood_noise_mech_laplace_logistic_er20_d20_n500:
+      name: ood_noise_mech_laplace_logistic_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_logistic_map
+      noise_type: laplace
+
+    ood_noise_mech_uniform_logistic_er20_d20_n500:
+      name: ood_noise_mech_uniform_logistic_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_logistic_map
+      noise_type: uniform
+
+    # ── M. Nuanced Stress Tests ────────────────────────────────────────
+    #    Graduated stress tests probing specific failure modes identified
+    #    in prior results: logistic FP explosion, linear DAG collapse at
+    #    scale, and the boundary between interpolation and extrapolation.
+    #
+    #    M1. Logistic map at increasing graph sizes (FP scaling)
+    stress_logistic_er20_d20_n500:
+      name: stress_logistic_er20_d20_n500
+      n_nodes: 20
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_logistic_map
+
+    stress_logistic_er20_d30_n500:
+      name: stress_logistic_er20_d30_n500
+      n_nodes: 30
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_logistic_map
+
+    stress_logistic_er20_d40_n500:
+      name: stress_logistic_er20_d40_n500
+      n_nodes: 40
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_logistic_map
+
+    stress_logistic_er20_d50_n500:
+      name: stress_logistic_er20_d50_n500
+      n_nodes: 50
+      samples_per_task: 500
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_logistic_map
+
+    #    M2. Mechanism shift under low-data regime (mechanism × sample interaction)
+    stress_periodic_er20_d20_n100:
+      name: stress_periodic_er20_d20_n100
+      n_nodes: 20
+      samples_per_task: 100
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_periodic
+
+    stress_periodic_er20_d20_n50:
+      name: stress_periodic_er20_d20_n50
+      n_nodes: 20
+      samples_per_task: 50
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_periodic
+
+    stress_logistic_er20_d20_n100:
+      name: stress_logistic_er20_d20_n100
+      n_nodes: 20
+      samples_per_task: 100
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_logistic_map
+
+    stress_logistic_er20_d20_n50:
+      name: stress_logistic_er20_d20_n50
+      n_nodes: 20
+      samples_per_task: 50
+      graph_cfg: *graph_er20
+      mech_cfg: *mech_logistic_map
+
+    #    M3. OOD graph at training-boundary node count (interpolation edge)
+    stress_sbm_linear_d40_n500:
+      name: stress_sbm_linear_d40_n500
+      n_nodes: 40
+      samples_per_task: 500
+      graph_cfg: *graph_sbm
+      mech_cfg: *mech_linear
+
+    stress_grg_mlp_d40_n500:
+      name: stress_grg_mlp_d40_n500
+      n_nodes: 40
+      samples_per_task: 500
+      graph_cfg: *graph_grg
+      mech_cfg: *mech_neuralnet
+
+    stress_ws_rff_d40_n500:
+      name: stress_ws_rff_d40_n500
+      n_nodes: 40
+      samples_per_task: 500
+      graph_cfg: *graph_ws
+      mech_cfg: *mech_gpcde
+
+    #    M4. Dense OOD graph + hard mechanism + low data (triple stress)
+    stress_grg_logistic_d40_n100:
+      name: stress_grg_logistic_d40_n100
+      n_nodes: 40
+      samples_per_task: 100
+      graph_cfg: *graph_grg
+      mech_cfg: *mech_logistic_map
+
+    stress_ws_periodic_d40_n100:
+      name: stress_ws_periodic_d40_n100
+      n_nodes: 40
+      samples_per_task: 100
+      graph_cfg: *graph_ws
+      mech_cfg: *mech_periodic
+
+    # ── N. Real-World Benchmark ────────────────────────────────────────
+    #    Sachs (11 nodes, 17 edges): classic phosphoprotein signaling
+    #    network. Auto-downloaded on first use.
+    real_sachs:
+      name: real_sachs
+      type: real_world
+      loader: sachs
+      n_nodes: 11
+
 trainer:
   accumulate_grad_batches: 4
   validation_n_samples: 16
@@ -1015,6 +1326,12 @@ trainer:
     ood_both: [ood_both_]
     ood_nodes: [ood_nodes_]
     ood_samples: [ood_samples_]
+    ood_mixed: [ood_mixed_]
+    ood_noise_mech: [ood_noise_mech_]
+    ctrl_mixed: [ctrl_mixed_]
+    ctrl_density: [ctrl_density_]
+    stress: [stress_]
+    real: [real_]
 
 inference:
   # n_samples is now specified via data.inference_n_samples (global default)
@@ -1031,4 +1348,4 @@ hydra:
   output_subdir: null
   sweeper:
     params:
-      model: avici,bcnp,dibs,bayesdag
+      model: avici,bcnp,dibs,bayesdag,random

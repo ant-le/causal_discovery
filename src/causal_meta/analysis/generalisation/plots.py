@@ -2349,6 +2349,383 @@ def generate_compound_and_stress_figure(
     )
 
 
+# ── Compound isolation figure (RQ1) ───────────────────────────────────
+
+_COMPOUND_ISOLATION_TRIPLETS: list[tuple[str, str, str, str]] = [
+    # (id_mech, id_graph, ood_graph, ood_mech)
+    ("neuralnet", "er20", "sbm", "pnl_tanh"),
+    ("neuralnet", "er60", "grg", "periodic"),
+    ("neuralnet", "sf2", "ws", "logistic_map"),
+]
+"""Sparsity-matched compound-isolation triplets.  Each row is
+(id_mechanism, id_graph, ood_graph, ood_mechanism).  The ID mechanism is
+always *neuralnet* (MLP); ID/OOD graph pairs share comparable edge density:
+sparse (ER-20 ≈ SBM), medium (ER-60 ≈ GRG), dense (SF-2 ≈ WS)."""
+
+_ISOLATION_STAGE_LABELS: list[str] = [
+    "ID",
+    "Mech Shift",
+    "Graph Shift",
+    "Compound",
+]
+"""X-axis labels for the four compound-isolation stages."""
+
+_ISOLATION_STAGE_BG: list[str] = [
+    "#f2f2f2",  # ID — grey
+    "#e6f0ff",  # Mech Shift — blue
+    "#e6f0ff",  # Graph Shift — blue
+    "#fff3e6",  # Compound — orange
+]
+"""Per-stage background colour for visual grouping."""
+
+_ISOLATION_SPARSITY_TIER: dict[str, str] = {
+    "er20": "Sparse",
+    "er60": "Medium",
+    "sf2": "Dense",
+}
+
+
+def _isolation_dataset_keys(
+    id_mech: str,
+    id_graph: str,
+    ood_graph: str,
+    ood_mech: str,
+) -> list[str]:
+    """Build the four DatasetKey values for one compound-isolation triplet."""
+    return [
+        f"id_{id_mech}_{id_graph}_d20_n500",
+        f"ood_mech_{ood_mech}_{id_graph}_d20_n500",
+        f"ood_graph_{ood_graph}_{id_mech}_d20_n500",
+        f"ood_both_{ood_graph}_{ood_mech}_d20_n500",
+    ]
+
+
+def _isolation_panel_title(
+    id_mech: str,
+    id_graph: str,
+    ood_graph: str,
+    ood_mech: str,
+) -> str:
+    """Build a descriptive panel title for a compound-isolation triplet."""
+    tier = _ISOLATION_SPARSITY_TIER.get(id_graph, "")
+    id_g = GRAPH_DESCRIPTION_MAP.get(id_graph, id_graph.upper())
+    ood_g = GRAPH_DESCRIPTION_MAP.get(ood_graph, ood_graph.upper())
+    ood_m = MECH_DESCRIPTION_MAP.get(ood_mech, ood_mech)
+    return f"{tier}: {id_g} \u2192 {ood_g} \u00d7 {ood_m}"
+
+
+def generate_compound_isolation_figure(
+    raw_df: pd.DataFrame,
+    *,
+    output_path: Path,
+    model_filter: Sequence[str] | None = None,
+    with_avici_dag_row: bool = False,
+) -> pd.DataFrame:
+    """Generate a 3-panel compound-isolation figure.
+
+    Each panel traces a four-step progression for a single
+    (OOD-graph, OOD-mechanism) pair, anchored to a specific ID family:
+
+        ID  →  Mechanism Shift (only)  →  Graph Shift (only)  →  Compound
+
+    The three panels cover sparse, medium and dense sparsity tiers using
+    sparsity-matched ID/OOD graph topologies, isolating compound
+    interaction from density confounds.
+
+    When *with_avici_dag_row* is ``True`` the figure gains a top row for
+    AviCi DAG-validity rates and a bottom row for FP/FN/Reversed error
+    decomposition (3×3 grid); otherwise a single-row 1×3 metric figure
+    is produced.
+
+    Args:
+        raw_df: Long-format raw task DataFrame.
+        output_path: Path for the output PDF figure.
+        model_filter: If given, only include these model display names.
+        with_avici_dag_row: If True, add DAG-validity top row and error
+            decomposition bottom row.
+
+    Returns:
+        Aggregated DataFrame used for plotting.
+    """
+    metric_name = "ne-sid"
+    models = _resolve_models(model_filter)
+    n_models = len(models)
+    n_panels = len(_COMPOUND_ISOLATION_TRIPLETS)
+    n_stages = len(_ISOLATION_STAGE_LABELS)
+
+    # ── Build per-panel key lists and titles ───────────────────────────
+    panel_keys: list[list[str]] = []
+    panel_titles: list[str] = []
+    for triplet in _COMPOUND_ISOLATION_TRIPLETS:
+        panel_keys.append(_isolation_dataset_keys(*triplet))
+        panel_titles.append(_isolation_panel_title(*triplet))
+
+    all_keys = {k for keys in panel_keys for k in keys}
+
+    # ── Filter metric data ────────────────────────────────────────────
+    metric_df = raw_df[
+        raw_df["Metric"].eq(metric_name) & raw_df["DatasetKey"].isin(all_keys)
+    ].copy()
+    if model_filter is not None:
+        metric_df = metric_df[metric_df["Model"].isin(model_filter)]
+
+    if metric_df.empty:
+        log.warning("No data for compound isolation figure.")
+        return pd.DataFrame()
+
+    present_keys = set(metric_df["DatasetKey"].unique())
+    missing = all_keys - present_keys
+    if missing:
+        log.warning(
+            "Compound isolation: %d/%d dataset keys missing: %s",
+            len(missing),
+            len(all_keys),
+            sorted(missing),
+        )
+
+    # ── Prepare auxiliary DAG + error data ─────────────────────────────
+    avici_dag_df: pd.DataFrame | None = None
+    error_df: pd.DataFrame | None = None
+    if with_avici_dag_row:
+        _dag = raw_df[
+            raw_df["Metric"].isin(["valid_dag_pct", "threshold_valid_dag_pct"])
+            & raw_df["Model"].eq("AviCi")
+            & raw_df["DatasetKey"].isin(all_keys)
+        ].copy()
+        avici_dag_df = _dag if not _dag.empty else None
+
+        _err_metrics = [k for k, _, _ in ERROR_SPECS]
+        _err = raw_df[
+            raw_df["Metric"].isin(_err_metrics) & raw_df["DatasetKey"].isin(all_keys)
+        ].copy()
+        if model_filter is not None:
+            _err = _err[_err["Model"].isin(model_filter)]
+        error_df = _err if not _err.empty else None
+
+    has_dag = avici_dag_df is not None
+    has_err = error_df is not None
+
+    # ── Build row structure ───────────────────────────────────────────
+    height_ratios: list[float] = []
+    row_names: list[str] = []
+    if has_dag:
+        height_ratios.append(1.2)
+        row_names.append("dag")
+    height_ratios.append(3.0)
+    row_names.append("metric")
+    if has_err:
+        height_ratios.append(1.5)
+        row_names.append("error")
+    n_rows = len(row_names)
+
+    fig, axes = plt.subplots(
+        n_rows,
+        n_panels,
+        figsize=(5 * n_panels, sum(height_ratios) * 1.1 + 1.5),
+        sharex="col",
+        sharey=False,
+        squeeze=False,
+        gridspec_kw={"height_ratios": height_ratios},
+    )
+
+    metric_row = row_names.index("metric")
+    dag_row = row_names.index("dag") if has_dag else None
+    err_row = row_names.index("error") if has_err else None
+
+    x_base = np.arange(n_stages)
+    all_agg: list[pd.DataFrame] = []
+
+    for panel_idx, (keys, title) in enumerate(zip(panel_keys, panel_titles)):
+        key_to_stage: dict[str, str] = dict(zip(keys, _ISOLATION_STAGE_LABELS))
+        key_to_idx: dict[str, int] = {k: i for i, k in enumerate(keys)}
+
+        # Closure must capture the current dict via default arg.
+        def _label_fn(dk: str, _m: dict[str, str] = key_to_stage) -> str:
+            return _m.get(dk, dk)
+
+        # ── Metric row ────────────────────────────────────────────────
+        ax = axes[metric_row, panel_idx]
+        panel_metric = metric_df[metric_df["DatasetKey"].isin(keys)]
+
+        if panel_metric.empty:
+            for r in range(n_rows):
+                axes[r, panel_idx].set_visible(False)
+            continue
+
+        agg = (
+            panel_metric.groupby(["Model", "DatasetKey", "Dataset"], dropna=False)[
+                "Value"
+            ]
+            .agg(Mean="mean", SEM=metric_sem)
+            .reset_index()
+        )
+        agg["StageLabel"] = agg["DatasetKey"].map(key_to_stage)
+        agg["StageIdx"] = agg["DatasetKey"].map(key_to_idx)
+        agg["PanelTitle"] = title
+        all_agg.append(agg)
+
+        width = 0.5
+        offset_step = width / max(n_models, 1)
+
+        for model_idx, model in enumerate(models):
+            model_agg = agg[agg["Model"] == model].sort_values("StageIdx")
+            if model_agg.empty:
+                continue
+            offset = (model_idx - n_models / 2 + 0.5) * offset_step
+            color = _model_color(model)
+            marker = MODEL_MARKERS.get(model, "o")
+
+            xs = [
+                float(x_base[int(row["StageIdx"])]) + offset
+                for _, row in model_agg.iterrows()
+            ]
+            means = model_agg["Mean"].tolist()
+            sems = model_agg["SEM"].tolist()
+
+            if xs:
+                # Connecting line (subtle)
+                ax.plot(
+                    xs,
+                    means,
+                    color=color,
+                    linestyle="--",
+                    linewidth=1.2,
+                    alpha=0.5,
+                    zorder=3,
+                )
+                # Markers with error bars
+                ax.errorbar(
+                    xs,
+                    means,
+                    yerr=sems,
+                    fmt=marker,
+                    label=model if panel_idx == 0 else None,
+                    color=color,
+                    capsize=4,
+                    markersize=8,
+                    alpha=0.9,
+                    zorder=4,
+                )
+
+        # ── Additive reference indicator at compound stage ────────────
+        compound_x = float(x_base[3])  # stage index 3 = "Compound"
+        for model_idx, model in enumerate(models):
+            model_agg = agg[agg["Model"] == model].sort_values("StageIdx")
+            if model_agg.empty:
+                continue
+            offset = (model_idx - n_models / 2 + 0.5) * offset_step
+            color = _model_color(model)
+
+            stage_means: dict[int, float] = dict(
+                zip(model_agg["StageIdx"].astype(int), model_agg["Mean"])
+            )
+            if {0, 1, 2, 3}.issubset(stage_means):
+                additive = stage_means[1] + stage_means[2] - stage_means[0]
+                ax.plot(
+                    compound_x + offset,
+                    additive,
+                    marker="D",
+                    markersize=7,
+                    markerfacecolor="none",
+                    markeredgecolor=color,
+                    markeredgewidth=1.8,
+                    zorder=5,
+                    label="Additive ref."
+                    if panel_idx == 0 and model_idx == 0
+                    else None,
+                )
+
+        ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+        if panel_idx == 0:
+            ax.set_ylabel(r"Normalized $\mathbb{E}$-SID $\downarrow$", fontsize=12)
+
+        # Panel title on the topmost row.
+        axes[0, panel_idx].set_title(title, fontsize=11, fontweight="bold")
+
+        # ── DAG row ───────────────────────────────────────────────────
+        if dag_row is not None and avici_dag_df is not None:
+            dag_panel = avici_dag_df[avici_dag_df["DatasetKey"].isin(keys)]
+            _plot_dag_row_panel(
+                axes[dag_row, panel_idx],
+                dag_panel,
+                _ISOLATION_STAGE_LABELS,
+                x_base,
+                _label_fn,
+                panel_idx=panel_idx,
+                id_count=0,
+                stress_count=0,
+            )
+
+        # ── Error row ─────────────────────────────────────────────────
+        if err_row is not None and error_df is not None:
+            err_panel = error_df[error_df["DatasetKey"].isin(keys)]
+            _plot_error_row_panel(
+                axes[err_row, panel_idx],
+                err_panel,
+                _ISOLATION_STAGE_LABELS,
+                x_base,
+                models,
+                _label_fn,
+                panel_idx=panel_idx,
+                id_count=0,
+                stress_count=0,
+            )
+
+        # ── Stage shading for all rows in this panel ──────────────────
+        for row_idx in range(n_rows):
+            cur_ax = axes[row_idx, panel_idx]
+            for stage_idx, bg in enumerate(_ISOLATION_STAGE_BG):
+                cur_ax.axvspan(
+                    stage_idx - 0.5,
+                    stage_idx + 0.5,
+                    color=bg,
+                    alpha=0.35,
+                    zorder=0,
+                )
+            for stage_idx in range(1, n_stages):
+                cur_ax.axvline(
+                    stage_idx - 0.5,
+                    color="#999999",
+                    linestyle=":",
+                    linewidth=1.0,
+                    zorder=1,
+                )
+
+    # ── X tick labels on bottom row ───────────────────────────────────
+    bottom_row = n_rows - 1
+    for pi in range(n_panels):
+        axes[bottom_row, pi].set_xticks(x_base)
+        axes[bottom_row, pi].set_xticklabels(
+            _ISOLATION_STAGE_LABELS,
+            fontsize=9,
+            ha="center",
+        )
+
+    # ── Shared legend ─────────────────────────────────────────────────
+    handles, labels = axes[metric_row, 0].get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            title="Model",
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncol=len(labels),
+            fontsize=10,
+            frameon=False,
+        )
+
+    fig.suptitle("Compound Shift Isolation", fontsize=14, fontweight="bold", y=1.05)
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.savefig(output_path, bbox_inches="tight")
+    plt.close(fig)
+
+    result = pd.concat(all_agg, ignore_index=True) if all_agg else pd.DataFrame()
+    save_figure_data(output_path, result)
+    log.info("Saved compound isolation figure to %s", output_path)
+    return result
+
+
 # ── Shift-progression figure (ID → Single → Compound → Stress) ────────
 
 _PROGRESSION_STAGES: list[tuple[str, str, list[str]]] = [

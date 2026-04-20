@@ -2,6 +2,8 @@
 
 defaults:
   - dg_2pretrain_multimodel
+  - override /inference/dibs: smoke
+  - override /inference/bayesdag: smoke
   - _self_
 
 name: "dg_2pretrain_smoke"
@@ -22,14 +24,6 @@ inference:
   n_samples: ${data.inference_n_samples}
   cache_compress: false
   cache_n_samples: null
-  dibs:
-    steps: 50
-    n_particles: 8
-  bayesdag:
-    max_epochs: 5
-    num_chains: 2
-    batch_size: 512
-    external_timeout_s: 600
 
 hydra:
   run:

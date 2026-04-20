@@ -220,8 +220,10 @@ def generate_appendix_artifacts(thesis_root: Path, configs_root: Path) -> list[s
     benchmark_cfg = _load_yaml(configs_root / "dg_2pretrain_multimodel.yaml")
     avici_cfg = _load_yaml(configs_root / "model" / "avici.yaml")
     bcnp_cfg = _load_yaml(configs_root / "model" / "bcnp.yaml")
-    dibs_cfg = _load_yaml(configs_root / "model" / "dibs.yaml")
-    bayesdag_cfg = _load_yaml(configs_root / "model" / "bayesdag.yaml")
+    dibs_cfg = _load_yaml(configs_root / "inference" / "dibs" / "paper_faithful.yaml")
+    bayesdag_cfg = _load_yaml(
+        configs_root / "inference" / "bayesdag" / "paper_faithful.yaml"
+    )
     random_cfg = _load_yaml(configs_root / "model" / "random.yaml")
 
     generated: list[str] = []
@@ -237,7 +239,7 @@ def generate_appendix_artifacts(thesis_root: Path, configs_root: Path) -> list[s
         ],
         [
             "DiBS",
-            f"mode={dibs_cfg.get('mode')}; steps={dibs_cfg.get('steps')}; particles={dibs_cfg.get('n_particles')}; timeout={dibs_cfg.get('external_timeout_s')}s",
+            f"default_mode={dibs_cfg.get('mode')}; steps={dibs_cfg.get('steps')}; particles=d20:30,d50:10; timeout={dibs_cfg.get('external_timeout_s')}s",
         ],
         [
             "BayesDAG",
@@ -250,7 +252,7 @@ def generate_appendix_artifacts(thesis_root: Path, configs_root: Path) -> list[s
     ]
     _write_table(
         dir_b / "model_configurations_table.tex",
-        caption="Model-specific configurations derived from the Hydra model YAML files.",
+        caption="Model-specific configurations derived from the Hydra model and inference YAML files.",
         label="tab:appendix_model_configurations",
         headers=["Model", "Configuration summary"],
         rows=model_rows,

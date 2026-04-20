@@ -6,6 +6,8 @@ defaults:
   - model: avici
   - trainer: default
   - inference: default
+  - override /inference/dibs: smoke
+  - override /inference/bayesdag: smoke
   - _self_
 
 # Minimal default config for installed usage (
@@ -23,14 +25,6 @@ inference:
   n_samples: 8
   cache_compress: false
   cache_n_samples: null
-  dibs:
-    steps: 50
-    n_particles: 8
-  bayesdag:
-    max_epochs: 1
-    num_chains: 2
-    sinkhorn_n_iter: 200
-    external_timeout_s: 600
 
 hydra:
   run:

@@ -37,6 +37,7 @@ DEFAULT_VALIDATION_GROUP_PREFIXES = {
     "id": ("id_",),
     "ood_graph": ("ood_graph_",),
     "ood_mech": ("ood_mech_",),
+    "ood_noise": ("ood_noise_",),
     "ood_both": ("ood_both_",),
     "ood_nodes": ("ood_nodes_",),
     "ood_samples": ("ood_samples_",),
@@ -123,6 +124,21 @@ def run(
     weight_decay = float(cfg.trainer.get("weight_decay", 1e-4))
     betas = _maybe_parse_betas(cfg.trainer.get("optimizer_betas", None))
     optimizer_eps = _maybe_parse_eps(cfg.trainer.get("optimizer_eps", None))
+    global_tasks_per_step = _global_tasks_per_step(
+        train_batch_size=train_batch_size,
+        accumulate_grad_batches=accumulate_grad_batches,
+        world_size=world_size,
+    )
+
+    if bool(cfg.trainer.get("lr_scale_with_global_batch_sqrt", False)):
+        lr_reference = float(cfg.trainer.get("lr_reference_global_tasks_per_step", 1.0))
+        if lr_reference <= 0:
+            raise ValueError(
+                "trainer.lr_reference_global_tasks_per_step must be > 0 when "
+                "lr_scale_with_global_batch_sqrt=true"
+            )
+        lr = lr * math.sqrt(global_tasks_per_step / lr_reference)
+
     optimizer_kwargs: dict[str, Any] = {"lr": lr, "weight_decay": weight_decay}
     if betas is not None:
         optimizer_kwargs["betas"] = betas
@@ -132,11 +148,6 @@ def run(
         optimizer_kwargs["fused"] = bool(cfg.trainer.get("optimizer_fused", True))
     optimizer = optim.AdamW(model.parameters(), **optimizer_kwargs)
 
-    global_tasks_per_step = _global_tasks_per_step(
-        train_batch_size=train_batch_size,
-        accumulate_grad_batches=accumulate_grad_batches,
-        world_size=world_size,
-    )
     scheduler = _build_scheduler(
         optimizer,
         cfg,
@@ -176,8 +187,16 @@ def run(
     validation_selection_metric = str(
         cfg.trainer.get("validation_selection_metric", "mean_id_e-edgef1")
     )
+    validation_selection_mode = _validation_selection_mode_from_config(cfg)
 
-    best_val_metric = float("-inf")
+    best_val_metric = (
+        float("-inf")
+        if _should_maximize_selection_metric(
+            validation_selection_metric,
+            validation_selection_mode,
+        )
+        else float("inf")
+    )
     step = 0
     tasks_seen = 0
 
@@ -452,14 +471,21 @@ def run(
                     if aggregate_payload:
                         logger.log_metrics(aggregate_payload, step=tasks_seen)
 
-                current_metric = val_metrics.get(
-                    validation_selection_metric,
-                    val_metrics.get(
-                        "mean_id_e-edgef1",
-                        val_metrics.get("mean_e-edgef1", 0.0),
-                    ),
+                current_metric_name, current_metric = (
+                    _resolve_validation_selection_metric(
+                        val_metrics,
+                        validation_selection_metric,
+                    )
                 )
-                if current_metric > best_val_metric:
+                maximize_metric = _should_maximize_selection_metric(
+                    current_metric_name,
+                    validation_selection_mode,
+                )
+                if _is_metric_improved(
+                    current_metric,
+                    best_val_metric,
+                    maximize=maximize_metric,
+                ):
                     best_val_metric = current_metric
                     save_checkpoint(
                         cfg,
@@ -477,7 +503,11 @@ def run(
                         accumulate_grad_batches=accumulate_grad_batches,
                         wandb_run_id=logger.run_id if logger else None,
                     )
-                    log.info(f"New best model saved! E-F1: {best_val_metric:.4f}")
+                    log.info(
+                        "New best model saved! %s: %.4f",
+                        current_metric_name,
+                        best_val_metric,
+                    )
             next_val_tasks = _advance_task_threshold(
                 next_val_tasks,
                 val_check_interval_tasks,
@@ -754,9 +784,10 @@ def _build_scheduler(
     scheduler_type = str(cfg.trainer.get("scheduler", "cosine")).lower()
     if scheduler_type in {"none", "off", "false"}:
         return None
-    if scheduler_type not in {"cosine"}:
+    if scheduler_type not in {"cosine", "multistep"}:
         raise ValueError(
-            f"trainer.scheduler must be one of: cosine, none. Got '{scheduler_type}'."
+            "trainer.scheduler must be one of: cosine, multistep, none. "
+            f"Got '{scheduler_type}'."
         )
 
     if global_tasks_per_step < 1:
@@ -782,12 +813,36 @@ def _build_scheduler(
         )
 
     warmup_steps = max(0, min(warmup_steps, max(0, max_steps - 1)))
-    if warmup_steps <= 0:
-        return optim.lr_scheduler.CosineAnnealingLR(
+    if scheduler_type == "cosine":
+        base_scheduler: Any = optim.lr_scheduler.CosineAnnealingLR(
             optimizer,
-            T_max=max(1, t_max),
+            T_max=max(1, t_max if warmup_steps <= 0 else t_max - warmup_steps),
             eta_min=eta_min,
         )
+    else:
+        raw_milestones = cfg.trainer.get("scheduler_milestones_tasks", [])
+        milestone_steps = sorted(
+            {
+                max(1, math.ceil(int(task) / float(global_tasks_per_step)))
+                for task in raw_milestones
+                if int(task) > 0
+            }
+        )
+        if warmup_steps > 0:
+            milestone_steps = [
+                max(1, step - warmup_steps)
+                for step in milestone_steps
+                if step > warmup_steps
+            ]
+        gamma = float(cfg.trainer.get("scheduler_gamma", 0.1))
+        base_scheduler = optim.lr_scheduler.MultiStepLR(
+            optimizer,
+            milestones=milestone_steps,
+            gamma=gamma,
+        )
+
+    if warmup_steps <= 0:
+        return base_scheduler
 
     start_factor = float(cfg.trainer.get("scheduler_warmup_start_factor", 1e-3))
     start_factor = min(max(start_factor, 1e-8), 1.0)
@@ -799,18 +854,68 @@ def _build_scheduler(
         total_iters=warmup_steps,
     )
 
-    cosine_t_max = max(1, t_max - warmup_steps)
-    cosine = optim.lr_scheduler.CosineAnnealingLR(
-        optimizer,
-        T_max=cosine_t_max,
-        eta_min=eta_min,
-    )
-
     return optim.lr_scheduler.SequentialLR(
         optimizer,
-        schedulers=[warmup, cosine],
+        schedulers=[warmup, base_scheduler],
         milestones=[warmup_steps],
     )
+
+
+def _validation_selection_mode_from_config(cfg: DictConfig) -> str:
+    mode = str(cfg.trainer.get("validation_selection_mode", "auto")).lower()
+    if mode not in {"auto", "min", "max"}:
+        raise ValueError(
+            "trainer.validation_selection_mode must be one of: auto, min, max."
+        )
+    return mode
+
+
+def _resolve_validation_selection_metric(
+    val_metrics: Mapping[str, float],
+    requested_metric: str,
+) -> tuple[str, float]:
+    if requested_metric in val_metrics:
+        return requested_metric, float(val_metrics[requested_metric])
+    if "mean_id_e-edgef1" in val_metrics:
+        return "mean_id_e-edgef1", float(val_metrics["mean_id_e-edgef1"])
+    if "mean_e-edgef1" in val_metrics:
+        return "mean_e-edgef1", float(val_metrics["mean_e-edgef1"])
+    return requested_metric, 0.0
+
+
+def _should_maximize_selection_metric(metric_name: str, mode: str) -> bool:
+    normalized_mode = str(mode).lower()
+    if normalized_mode == "max":
+        return True
+    if normalized_mode == "min":
+        return False
+
+    metric_name_l = str(metric_name).lower()
+    minimize_tokens = (
+        "sid",
+        "shd",
+        "nll",
+        "loss",
+        "error",
+        "rmse",
+        "mae",
+        "mse",
+    )
+    maximize_tokens = ("f1", "auc", "acc", "precision", "recall", "pct", "score")
+    if any(token in metric_name_l for token in minimize_tokens):
+        return False
+    if any(token in metric_name_l for token in maximize_tokens):
+        return True
+    return True
+
+
+def _is_metric_improved(
+    current_metric: float,
+    best_metric: float,
+    *,
+    maximize: bool,
+) -> bool:
+    return current_metric > best_metric if maximize else current_metric < best_metric
 
 
 def _adamw_supports_fused() -> bool:

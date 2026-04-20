@@ -83,9 +83,9 @@ def run_thesis_analysis(
                 raise
             log.warning("RQ1 shift figure for '%s' skipped (no data).", shift_key)
 
-    # ── RQ1: Amortised compound shift (AviCi + BCNP, 3-row layout) ──
+    # ── RQ1: Compound isolation (AviCi + BCNP, 3-row layout) ──────────
     try:
-        gen_plots.generate_compound_and_stress_figure(
+        gen_plots.generate_compound_isolation_figure(
             raw_df,
             output_path=results_dir / "rq1_shift_compound.pdf",
             model_filter=_RQ1_MODELS,
@@ -94,7 +94,7 @@ def run_thesis_analysis(
     except Exception:
         if strict:
             raise
-        log.warning("RQ1 compound shift figure failed.", exc_info=True)
+        log.warning("RQ1 compound isolation figure failed.", exc_info=True)
 
     # ── Valid DAG % shift figure ──────────────────────────────────
     # This figure loads DiBS .pt.gz inference artifacts to compute

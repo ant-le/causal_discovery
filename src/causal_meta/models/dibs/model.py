@@ -67,6 +67,8 @@ class DiBSModel(BaseModel):
 
         self._base_profile = {
             "mode": mode,
+            "steps": steps,
+            "use_marginal": use_marginal,
             "alpha": alpha,
             "gamma_z": gamma_z,
             "gamma_theta": gamma_theta,
@@ -107,6 +109,7 @@ class DiBSModel(BaseModel):
 
         prev_state = (
             self.mode,
+            self.use_marginal,
             self.alpha,
             self.gamma_z,
             self.gamma_theta,
@@ -114,6 +117,10 @@ class DiBSModel(BaseModel):
         )
 
         self.mode = str(combined_override.get("mode", self._base_profile["mode"]))
+        self.steps = int(combined_override.get("steps", self._base_profile["steps"]))
+        self.use_marginal = bool(
+            combined_override.get("use_marginal", self._base_profile["use_marginal"])
+        )
         self.alpha = self._optional_float(
             combined_override.get("alpha", self._base_profile["alpha"])
         )
@@ -129,6 +136,7 @@ class DiBSModel(BaseModel):
 
         next_state = (
             self.mode,
+            self.use_marginal,
             self.alpha,
             self.gamma_z,
             self.gamma_theta,

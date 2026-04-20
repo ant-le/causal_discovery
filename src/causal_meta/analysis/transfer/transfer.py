@@ -299,7 +299,7 @@ def generate_rq2_transfer_figure(
 
     Layout: 3 rows × N columns (one per transfer anchor):
       row 0 (top)    – DAG validity % (AviCi + DiBS, sampled & thresholded)
-      row 1 (middle) – ne-SHD (lower is better, all models)
+      row 1 (middle) – ne-SID (lower is better, all models)
       row 2 (bottom) – Error decomposition (stacked FP / FN / Reversed)
 
     Args:
@@ -323,9 +323,9 @@ def generate_rq2_transfer_figure(
         suptitle = "Sample-Count Transfer"
         id_value = _ID_SAMPLE_COUNT
 
-    # Metrics needed: ne-shd for metric row, valid_dag_pct + threshold for
+    # Metrics needed: ne-sid for metric row, valid_dag_pct + threshold for
     # DAG row, fp/fn/reversed for error row.
-    line_metrics = {"ne-shd", "valid_dag_pct", "threshold_valid_dag_pct"}
+    line_metrics = {"ne-sid", "valid_dag_pct", "threshold_valid_dag_pct"}
     error_metrics = {m for m, _, _ in _ERROR_METRICS}
     all_needed = line_metrics | error_metrics
 
@@ -469,18 +469,18 @@ def generate_rq2_transfer_figure(
                     framealpha=0.8,
                 )
 
-        # ── Row 1: ne-SHD (all models) ──────────────────────────────
+        # ── Row 1: ne-SID (all models) ──────────────────────────────
         _plot_transfer_line(
             axes[metric_row, col_idx],
             agg,
-            metric_name="ne-shd",
+            metric_name="ne-sid",
             x_col=x_col,
             x_values=x_values,
             x_to_idx=x_to_idx,
             models=models,
             offset_step=offset_step,
             n_models=n_models,
-            ylabel=r"ne-SHD $\downarrow$",
+            ylabel=r"Normalized $\mathbb{E}$-SID $\downarrow$",
             add_legend=(col_idx == 0),
         )
 

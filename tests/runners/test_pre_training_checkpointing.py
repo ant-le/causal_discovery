@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import os
+
+os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
+os.environ.setdefault("TORCH_DISABLE_DYNAMO", "1")
+
 import pytest
 import torch
 from omegaconf import OmegaConf
@@ -8,6 +13,12 @@ from causal_meta.models.base import BaseModel
 from causal_meta.runners.logger.local import LocalLogger
 from causal_meta.runners.tasks.pre_training import _augment_validation_group_metrics
 from causal_meta.runners.tasks.pre_training import _build_scheduler
+from causal_meta.runners.tasks.pre_training import _is_metric_improved
+from causal_meta.runners.tasks.pre_training import _resolve_validation_selection_metric
+from causal_meta.runners.tasks.pre_training import _should_maximize_selection_metric
+from causal_meta.runners.tasks.pre_training import (
+    _validation_selection_mode_from_config,
+)
 from causal_meta.runners.tasks.pre_training import run as pre_training_run
 from causal_meta.runners.tasks.pre_training import save_checkpoint
 
@@ -236,6 +247,54 @@ def test_build_scheduler_with_linear_warmup() -> None:
 
     assert lrs[0] < lrs[1]
     assert lrs[-1] < lrs[1]
+
+
+def test_build_scheduler_multistep_drops_learning_rate() -> None:
+    param = torch.nn.Parameter(torch.tensor(0.0))
+    optimizer = torch.optim.AdamW([param], lr=1e-3)
+    cfg = OmegaConf.create(
+        {
+            "trainer": {
+                "scheduler": "multistep",
+                "max_tasks_seen": 10,
+                "scheduler_milestones_tasks": [5],
+                "scheduler_gamma": 0.1,
+                "scheduler_warmup_ratio": 0.0,
+            }
+        }
+    )
+
+    scheduler = _build_scheduler(optimizer, cfg)
+    assert isinstance(scheduler, torch.optim.lr_scheduler.MultiStepLR)
+
+    lrs = []
+    for _ in range(6):
+        optimizer.step()
+        scheduler.step()
+        lrs.append(float(optimizer.param_groups[0]["lr"]))
+
+    assert lrs[3] == pytest.approx(1e-3)
+    assert lrs[4] == pytest.approx(1e-4)
+
+
+def test_validation_selection_mode_helpers_support_sid_minimization() -> None:
+    cfg = OmegaConf.create({"trainer": {"validation_selection_mode": "min"}})
+
+    assert _validation_selection_mode_from_config(cfg) == "min"
+    assert _should_maximize_selection_metric("mean_ood_ne-sid", "auto") is False
+    assert _should_maximize_selection_metric("mean_id_e-edgef1", "auto") is True
+    assert _is_metric_improved(0.2, 0.3, maximize=False) is True
+    assert _is_metric_improved(0.3, 0.2, maximize=False) is False
+
+
+def test_resolve_validation_selection_metric_uses_fallback_alias() -> None:
+    metric_name, metric_value = _resolve_validation_selection_metric(
+        {"mean_e-edgef1": 0.4},
+        "mean_ood_ne-sid",
+    )
+
+    assert metric_name == "mean_e-edgef1"
+    assert metric_value == pytest.approx(0.4)
 
 
 def test_augment_validation_group_metrics_adds_id_and_ood_means() -> None:

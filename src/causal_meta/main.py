@@ -7,7 +7,7 @@ from typing import Mapping, cast
 
 import hydra
 import torch
-from omegaconf import DictConfig, open_dict
+from omegaconf import DictConfig, OmegaConf, open_dict
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from causal_meta.datasets.data_module import CausalMetaModule
@@ -27,6 +27,51 @@ from causal_meta.runners.utils.env import log_environment_info
 from causal_meta.runners.utils.seeding import get_experiment_seed, seed_everything
 
 log = logging.getLogger(__name__)
+
+_EXPLICIT_INFERENCE_PARAM_KEYS: dict[str, frozenset[str]] = {
+    "dibs": frozenset(
+        {
+            "mode",
+            "steps",
+            "seed",
+            "use_marginal",
+            "xla_preallocate",
+            "external_process",
+            "external_python",
+            "external_timeout_s",
+            "alpha",
+            "gamma_z",
+            "gamma_theta",
+            "n_particles",
+            "profile_overrides",
+        }
+    ),
+    "bayesdag": frozenset(
+        {
+            "variant",
+            "lambda_sparse",
+            "num_chains",
+            "sinkhorn_n_iter",
+            "scale_noise",
+            "scale_noise_p",
+            "batch_size",
+            "max_epochs",
+            "standardize_data_mean",
+            "standardize_data_std",
+            "save_dir",
+            "sparse_init",
+            "input_perm",
+            "vi_norm",
+            "norm_layers",
+            "res_connection",
+            "external_python",
+            "external_timeout_s",
+            "device",
+            "skip_evaluation",
+            "profile_overrides",
+        }
+    ),
+}
 
 
 # ── Backward-compatible re-export ──────────────────────────────────────
@@ -112,6 +157,106 @@ def _maybe_load_best_checkpoint_for_eval(
     model.load_state_dict(model_state_dict)
     log.info("Loaded best checkpoint for evaluation from %s", checkpoint_path)
     return True
+
+
+def _resolve_explicit_model_inference_params(
+    cfg: DictConfig,
+    model_type: str,
+) -> dict[str, object]:
+    """Resolve explicit-model constructor params from `cfg.inference`.
+
+    Uses model-specific allowlists so scientific/runtime settings for DiBS and
+    BayesDAG live in `inference.<model>` rather than being merged generically
+    into arbitrary model constructors.
+    """
+
+    allowed_keys = _EXPLICIT_INFERENCE_PARAM_KEYS.get(model_type)
+    if allowed_keys is None:
+        return {}
+
+    inference_cfg = cfg.get("inference", {})
+    if not isinstance(inference_cfg, Mapping):
+        return {}
+
+    selected = inference_cfg.get(model_type)
+    if not isinstance(selected, Mapping):
+        legacy_explicit = inference_cfg.get("explicit", {})
+        if isinstance(legacy_explicit, Mapping):
+            nested = legacy_explicit.get(model_type)
+            if isinstance(nested, Mapping):
+                selected = nested
+
+    if not isinstance(selected, Mapping):
+        return {}
+
+    return {
+        str(key): (
+            OmegaConf.to_container(value, resolve=False)
+            if isinstance(value, DictConfig)
+            else value
+        )
+        for key, value in selected.items()
+        if str(key) in allowed_keys
+    }
+
+
+def _apply_model_specific_trainer_profile(cfg_obj: DictConfig) -> None:
+    """Overlay a model-specific trainer profile while preserving explicit overrides.
+
+    The selected profile is taken from ``model.trainer_profile``. Values in the
+    current ``cfg.trainer`` that still match ``trainer/default.yaml`` are
+    replaced by the profile values, while values already overridden by the root
+    config (for example smoke-task reductions) are preserved.
+    """
+
+    model_cfg = getattr(cfg_obj, "model", None)
+    trainer_cfg = getattr(cfg_obj, "trainer", None)
+    if model_cfg is None or trainer_cfg is None:
+        return
+
+    profile_name = getattr(model_cfg, "trainer_profile", None)
+    if profile_name in {None, "", "default"}:
+        return
+
+    trainer_dir = Path(__file__).resolve().parent / "configs" / "trainer"
+    default_path = trainer_dir / "default.yaml"
+    profile_path = trainer_dir / f"{profile_name}.yaml"
+    if not profile_path.exists():
+        raise FileNotFoundError(
+            f"Unknown trainer profile '{profile_name}' at {profile_path}"
+        )
+
+    baseline = OmegaConf.to_container(OmegaConf.load(default_path), resolve=False)
+    profile = OmegaConf.to_container(OmegaConf.load(profile_path), resolve=False)
+    current = OmegaConf.to_container(trainer_cfg, resolve=False)
+
+    def _merge_over_baseline(base: object, prof: object, cur: object) -> object:
+        if not isinstance(prof, dict):
+            if base == cur:
+                return prof
+            return cur
+
+        base_dict = base if isinstance(base, dict) else {}
+        cur_dict = cur if isinstance(cur, dict) else {}
+        merged: dict[str, object] = dict(cur_dict)
+        for key, prof_value in prof.items():
+            base_value = base_dict.get(key)
+            current_has_key = key in cur_dict
+            current_value = cur_dict.get(key)
+            if isinstance(prof_value, dict):
+                merged[key] = _merge_over_baseline(
+                    base_value,
+                    prof_value,
+                    current_value,
+                )
+                continue
+            if (not current_has_key) or current_value == base_value:
+                merged[key] = prof_value
+        return merged
+
+    merged_trainer = _merge_over_baseline(baseline, profile, current)
+    with open_dict(cfg_obj):
+        cfg_obj.trainer = OmegaConf.create(merged_trainer)
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="default")
@@ -225,6 +370,7 @@ def run_pipeline(cfg: DictConfig) -> None:
     _validate_experiment_config(cfg)
     _maybe_fill_model_num_nodes(cfg)
     _expand_shared_architecture(cfg)
+    _apply_model_specific_trainer_profile(cfg)
     maybe_fill_edge_prior(cfg)
 
     # 1. Distributed setup
@@ -315,29 +461,16 @@ def run_pipeline(cfg: DictConfig) -> None:
                 if k not in {"trainer", "inference", "arch"}
             }
 
-            # Keep BayesDAG side outputs inside the run folder by default.
-            model_type_for_defaults = str(model_params.get("type", "")).lower()
-            if model_type_for_defaults == "bayesdag" and "save_dir" not in model_params:
-                model_params["save_dir"] = str(base_output_dir / "bayesdag_output")
-
-            # For explicit inference models, allow moving model hyperparameters into
-            # the inference block. Preferred: `inference.<model_type>.*`.
-            # Backward-compatible: `inference.explicit.<model_type>.*`.
             model_type = str(model_params.get("type", "")).lower()
-            inference_cfg = cfg.get("inference", {})
-            override = None
-            if isinstance(inference_cfg, Mapping):
-                direct = inference_cfg.get(model_type)
-                if isinstance(direct, Mapping):
-                    override = direct
-                else:
-                    explicit = inference_cfg.get("explicit", {})
-                    if isinstance(explicit, Mapping):
-                        nested = explicit.get(model_type)
-                        if isinstance(nested, Mapping):
-                            override = nested
-            if isinstance(override, Mapping):
-                model_params.update(dict(override))
+            explicit_override = _resolve_explicit_model_inference_params(
+                cfg,
+                model_type,
+            )
+            if explicit_override:
+                model_params.update(explicit_override)
+
+            if model_type == "bayesdag" and "save_dir" not in model_params:
+                model_params["save_dir"] = str(base_output_dir / "bayesdag_output")
 
             model = ModelFactory.create(model_params)
 

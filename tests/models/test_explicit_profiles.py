@@ -10,7 +10,9 @@ from causal_meta.runners.utils.explicit_profiles import (
     apply_explicit_profile,
     compute_fallback_keys,
     infer_explicit_profile,
+    nearest_paper_node_bucket,
     strip_graph_suffix,
+    strip_node_bucket_suffix,
 )
 
 
@@ -28,6 +30,18 @@ def test_strip_graph_suffix_no_suffix() -> None:
     assert strip_graph_suffix("logistic") == "logistic"
 
 
+def test_strip_node_bucket_suffix_known() -> None:
+    assert strip_node_bucket_suffix("linear_er40_d20") == "linear_er40"
+    assert strip_node_bucket_suffix("gpcde_d50") == "gpcde"
+
+
+def test_nearest_paper_node_bucket() -> None:
+    assert nearest_paper_node_bucket(10) == "d20"
+    assert nearest_paper_node_bucket(30) == "d20"
+    assert nearest_paper_node_bucket(35) == "d50"
+    assert nearest_paper_node_bucket(60) == "d50"
+
+
 # ── compute_fallback_keys ────────────────────────────────────────────
 
 
@@ -36,7 +50,12 @@ def test_fallback_keys_id_mechanism_no_suffix() -> None:
 
 
 def test_fallback_keys_id_mechanism_with_suffix() -> None:
-    assert compute_fallback_keys("gpcde_er40") == ["gpcde_er40", "gpcde"]
+    assert compute_fallback_keys("gpcde_er40_d20") == [
+        "gpcde_er40_d20",
+        "gpcde_d20",
+        "gpcde_er40",
+        "gpcde",
+    ]
 
 
 def test_fallback_keys_ood_mechanism_no_suffix() -> None:
@@ -44,18 +63,26 @@ def test_fallback_keys_ood_mechanism_no_suffix() -> None:
 
 
 def test_fallback_keys_ood_mechanism_with_suffix() -> None:
-    assert compute_fallback_keys("logistic_er40") == [
+    assert compute_fallback_keys("logistic_er40_d20") == [
+        "logistic_er40_d20",
+        "logistic_d20",
         "logistic_er40",
         "logistic",
+        "gpcde_er40_d20",
+        "gpcde_d20",
         "gpcde_er40",
         "gpcde",
     ]
 
 
 def test_fallback_keys_ood_mechanism_ood_graph() -> None:
-    assert compute_fallback_keys("periodic_sbm") == [
+    assert compute_fallback_keys("periodic_sbm_d50") == [
+        "periodic_sbm_d50",
+        "periodic_d50",
         "periodic_sbm",
         "periodic",
+        "gpcde_sbm_d50",
+        "gpcde_d50",
         "gpcde_sbm",
         "gpcde",
     ]
@@ -65,36 +92,47 @@ def test_fallback_keys_ood_mechanism_ood_graph() -> None:
 
 
 def test_infer_explicit_profile_from_dataset_name() -> None:
-    assert infer_explicit_profile("id_linear_er20", None) == "linear"
-    assert infer_explicit_profile("id_neuralnet_er40", None) == "neuralnet_er40"
-    assert infer_explicit_profile("id_gpcde_er60", None) == "gpcde_er60"
+    assert infer_explicit_profile("id_linear_er20_d20_n500", None) == "linear_d20"
+    assert (
+        infer_explicit_profile("id_neuralnet_er40_d20_n500", None)
+        == "neuralnet_er40_d20"
+    )
+    assert infer_explicit_profile("id_gpcde_er60_d60_n500", None) == "gpcde_er60_d50"
 
 
 def test_infer_explicit_profile_ood_mechanism_preserves_name() -> None:
     """OOD mechanisms are no longer remapped to gpcde."""
-    assert infer_explicit_profile("ood_mech_periodic_er20_d20_n500", None) == "periodic"
+    assert (
+        infer_explicit_profile("ood_mech_periodic_er20_d20_n500", None)
+        == "periodic_d20"
+    )
     assert (
         infer_explicit_profile("ood_mech_periodic_er40_d20_n500", None)
-        == "periodic_er40"
+        == "periodic_er40_d20"
     )
     assert (
         infer_explicit_profile("ood_mech_logistic_map_er60_d20_n500", None)
-        == "logistic_er60"
+        == "logistic_er60_d20"
     )
-    assert infer_explicit_profile("ood_mech_pnl_tanh_sf2_d20_n500", None) == "pnl_sf2"
-    assert infer_explicit_profile("ood_mech_square_sf3_d20_n500", None) == "square_sf3"
+    assert (
+        infer_explicit_profile("ood_mech_pnl_tanh_sf2_d20_n500", None) == "pnl_sf2_d20"
+    )
+    assert (
+        infer_explicit_profile("ood_mech_square_sf3_d20_n500", None) == "square_sf3_d20"
+    )
 
 
 def test_infer_explicit_profile_ood_both() -> None:
     """OOD graph + OOD mechanism stress tests."""
     assert (
-        infer_explicit_profile("ood_both_sbm_periodic_d20_n500", None) == "periodic_sbm"
+        infer_explicit_profile("ood_both_sbm_periodic_d20_n500", None)
+        == "periodic_sbm_d20"
     )
     assert (
         infer_explicit_profile("ood_both_grg_logistic_map_d60_n50", None)
-        == "logistic_grg"
+        == "logistic_grg_d50"
     )
-    assert infer_explicit_profile("ood_both_ws_pnl_tanh_d60_n50", None) == "pnl_ws"
+    assert infer_explicit_profile("ood_both_ws_pnl_tanh_d60_n50", None) == "pnl_ws_d50"
 
 
 def test_infer_explicit_profile_from_family_mechanism_fallback() -> None:
@@ -106,7 +144,9 @@ def test_infer_explicit_profile_from_family_mechanism_fallback() -> None:
     family = SimpleNamespace(mechanism_factory=GPMechanismFactory())
     # Name has no known mechanism keyword but "periodic" is in there — will match
     # the keyword check first, so use a name with no keyword at all:
-    assert infer_explicit_profile("unknown_dataset_er40", family) == "gpcde_er40"
+    assert (
+        infer_explicit_profile("unknown_dataset_er40_d20", family) == "gpcde_er40_d20"
+    )
 
 
 # ── apply_explicit_profile ───────────────────────────────────────────
@@ -132,13 +172,17 @@ def test_dibs_profile_override_updates_hyperparameters() -> None:
     model = DiBSModel(
         num_nodes=5,
         mode="nonlinear",
+        steps=1000,
+        use_marginal=False,
         alpha=0.02,
         gamma_z=5.0,
         gamma_theta=1000.0,
         n_particles=32,
         profile_overrides={
-            "linear": {
+            "linear_d20": {
                 "mode": "linear",
+                "steps": 3000,
+                "use_marginal": True,
                 "alpha": 0.2,
                 "gamma_z": 5.0,
                 "gamma_theta": 500.0,
@@ -147,9 +191,11 @@ def test_dibs_profile_override_updates_hyperparameters() -> None:
         },
     )
 
-    model.set_inference_profile("linear")
+    model.set_inference_profile("linear_d20")
 
     assert model.mode == "linear"
+    assert model.steps == 3000
+    assert model.use_marginal is True
     assert model.alpha == 0.2
     assert model.gamma_z == 5.0
     assert model.gamma_theta == 500.0
@@ -176,7 +222,7 @@ def test_dibs_fallback_ood_mechanism_uses_mechanism_profile() -> None:
         },
     )
 
-    model.set_inference_profile("logistic_er40")
+    model.set_inference_profile("logistic_er40_d20")
 
     # Should use 'logistic' profile (step 2), NOT 'gpcde_er40' (step 3)
     assert model.alpha == 0.08
@@ -184,13 +230,13 @@ def test_dibs_fallback_ood_mechanism_uses_mechanism_profile() -> None:
 
 
 def test_dibs_fallback_ood_mechanism_falls_to_id_when_no_mechanism_profile() -> None:
-    """If no mechanism profile exists, fall to gpcde_er40."""
+    """If no mechanism profile exists, fall to the nearest paper-backed ID profile."""
     model = DiBSModel(
         num_nodes=5,
         alpha=0.05,
         gamma_z=5.0,
         profile_overrides={
-            "gpcde_er40": {
+            "gpcde_d20": {
                 "mode": "nonlinear",
                 "alpha": 0.05,
                 "gamma_z": 10.0,
@@ -198,9 +244,9 @@ def test_dibs_fallback_ood_mechanism_falls_to_id_when_no_mechanism_profile() -> 
         },
     )
 
-    model.set_inference_profile("periodic_er40")
+    model.set_inference_profile("periodic_er40_d20")
 
-    # No 'periodic' or 'periodic_er40' profile → falls to gpcde_er40
+    # No periodic profile → falls to gpcde_d20 before graph-specific density hints.
     assert model.gamma_z == 10.0
 
 
@@ -261,7 +307,7 @@ def test_bayesdag_fallback_ood_mechanism_uses_density_profile() -> None:
         },
     )
 
-    model.set_inference_profile("logistic_er40")
+    model.set_inference_profile("logistic_er40_d20")
 
     # No 'logistic_er40' or 'logistic' → falls to 'gpcde_er40'
     assert model.lambda_sparse == 150.0

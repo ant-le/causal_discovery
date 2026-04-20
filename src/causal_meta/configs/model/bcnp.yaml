@@ -2,6 +2,7 @@
 
 type: "bcnp"
 id: "bcnp"
+trainer_profile: "bcnp"
 
 # RQ1-sized transformer (section 4.2 scale).
 d_model: 512

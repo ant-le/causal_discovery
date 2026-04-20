@@ -1,0 +1,113 @@
+# @package _global_
+#
+# Ablation study: expanded training distribution.
+#
+# This config inherits the full benchmark test suite from
+# dg_2pretrain_multimodel but replaces the training family with an
+# expanded source distribution that includes:
+#   - All 9 graph generators (ER20/40/60, SF1/2/3 + SBM, WS, GRG)
+#   - All 7 mechanism families (Linear, MLP, RFF + Periodic, Square,
+#     Logistic Map, PNL-tanh)
+#
+# Note: noise types are NOT expanded (training uses Gaussian only,
+# matching the base config).  Prior results showed noise shift is
+# benign, so expanding noise coverage is omitted to keep the ablation
+# focused on graph and mechanism axes.
+#
+# The goal is to test whether expanding the training support to cover
+# previously-OOD families closes the generalization gap on the hardest
+# OOD tasks, or whether the difficulty is intrinsic to the task rather
+# than a training-coverage issue.
+#
+# Only the amortized models (AviCi, BCNP) are swept, since explicit
+# methods do not use the training family.
+
+defaults:
+  - dg_2pretrain_multimodel
+  - _self_
+
+name: "dg_2pretrain_ablation_expanded"
+
+data:
+  # ── Expanded training family ──────────────────────────────────────
+  # All 9 graph generators × all 7 mechanisms (Gaussian noise only).
+  # Node counts kept at {10, 20, 30, 40}, sample count at 500.
+  train_family:
+    name: source_expanded_all_graphs_mechs_noise
+    graph_cfg:
+      type: mixture
+      weights:
+        [0.1111, 0.1111, 0.1111, 0.1111, 0.1111, 0.1111, 0.1111, 0.1111, 0.1112]
+      generators:
+        - type: er
+          sparsity: 0.0526
+        - type: er
+          sparsity: 0.1053
+        - type: er
+          sparsity: 0.1579
+        - type: sf
+          m: 1
+        - type: sf
+          m: 2
+        - type: sf
+          m: 3
+        - type: sbm
+          n_blocks: 4
+          p_intra: 0.6
+          p_inter: 0.01
+        - type: ws
+          k: 4
+          p: 0.3
+        - type: grg
+          radius: 0.3
+          dim: 2
+    mech_cfg:
+      type: mixture
+      weights: [0.1429, 0.1429, 0.1429, 0.1429, 0.1429, 0.1429, 0.1426]
+      factories:
+        - type: linear
+          weight_scale: 10.0
+          noise_concentration: 2.0
+          noise_rate: 2.0
+        - type: mlp
+          hidden_dim: 32
+        - type: gp
+          mode: approximate
+          rff_dim: 512
+          num_kernels: 4
+          length_scale_range: [0.1, 10.0]
+          variance_range: [0.1, 10.0]
+        - type: periodic
+          weight_scale: 1.0
+        - type: square
+          weight_scale: 1.0
+          noise_scale: 0.1
+        - type: logistic_map
+          weight_scale: 1.0
+        - type: pnl
+          nonlinearity_type: tanh
+          inner_config:
+            type: linear
+
+  # ── Test subset: hardest OOD families only ────────────────────────
+  # We re-test only the families where the original training showed
+  # the worst degradation, plus stress tests and the real-world
+  # benchmark. The ID anchors are kept for reference.
+  #
+  # NOTE: We intentionally keep all test families from the parent
+  # config so the ablation can be compared family-by-family against
+  # the original. The test suite is inherited unchanged.
+
+hydra:
+  run:
+    dir: ${oc.env:CAUSAL_META_RUN_DIR,experiments/runs/${name}}
+  sweep:
+    dir: ${oc.env:CAUSAL_META_SWEEP_DIR,experiments/runs/${name}}
+    subdir: "${model.id}"
+  output_subdir: null
+  sweeper:
+    params:
+      # Only amortized models need retraining; explicit methods are
+      # unaffected by the training family and can be compared directly
+      # from the main benchmark run.
+      model: avici,bcnp

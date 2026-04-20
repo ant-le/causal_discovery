@@ -2,6 +2,7 @@
 
 type: "avici"
 id: "avici"
+trainer_profile: "avici"
 
 # Reference AVICI backbone defaults from the upstream repository.
 dim: 128
@@ -11,7 +12,7 @@ num_heads: 8
 widening_factor: 4
 dropout: 0.1
 logit_bias_init: -3.0
-cosine_temp_init: 0.0
+cosine_temp_init: 2.0
 mask_diag: true
 
 # Stabilized acyclicity updates for long benchmark runs.

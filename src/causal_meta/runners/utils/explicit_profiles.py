@@ -35,6 +35,7 @@ _GRAPH_TO_SUFFIX: dict[str, str] = {
 
 # Legacy set kept for ``strip_graph_suffix`` (profile-key → mechanism).
 _GRAPH_SUFFIXES = frozenset(s for s in _GRAPH_TO_SUFFIX.values() if s)
+_NODE_BUCKET_SUFFIXES = ("_d20", "_d50")
 
 # OOD mechanisms and their closest ID mechanism for density-fallback.
 _OOD_MECHANISM_FALLBACK: dict[str, str] = {
@@ -57,36 +58,76 @@ def strip_graph_suffix(profile_key: str) -> str:
     return profile_key
 
 
+def strip_node_bucket_suffix(profile_key: str) -> str:
+    """Strip a known paper-backed node bucket suffix from a profile key."""
+    for suffix in _NODE_BUCKET_SUFFIXES:
+        if profile_key.endswith(suffix):
+            return profile_key[: -len(suffix)]
+    return profile_key
+
+
+def nearest_paper_node_bucket(num_nodes: int) -> str:
+    """Map an arbitrary node count to the nearest paper-backed DiBS bucket."""
+    resolved = int(num_nodes)
+    if abs(resolved - 20) < abs(resolved - 50):
+        return "d20"
+    return "d50"
+
+
 def compute_fallback_keys(profile_key: str) -> list[str]:
     """Return profile keys to try, in priority order.
 
     The lookup chain is:
 
-    1. Exact key (e.g. ``"logistic_er40"``).
-    2. Mechanism-only (e.g. ``"logistic"``).
-    3. Closest ID mechanism + graph suffix (e.g. ``"gpcde_er40"``).
-    4. Closest ID mechanism base (e.g. ``"gpcde"``).
+    1. Exact key (for example ``"logistic_er40_d20"``).
+    2. Mechanism + nearest paper-backed node bucket (for example ``"logistic_d20"``).
+    3. Mechanism + graph suffix (for example ``"logistic_er40"``).
+    4. Mechanism-only (for example ``"logistic"``).
+    5. Closest ID mechanism with the same graph / node-bucket context.
+    6. Closest ID mechanism base.
 
-    Steps 3-4 only apply when the mechanism is an OOD mechanism with a
+    Steps 5-6 only apply when the mechanism is an OOD mechanism with a
     known ID fallback (see :data:`_OOD_MECHANISM_FALLBACK`).
     """
-    mech = strip_graph_suffix(profile_key)
-    suffix = profile_key[len(mech) :]
+    node_bucket_key = strip_node_bucket_suffix(profile_key)
+    node_suffix = profile_key[len(node_bucket_key) :]
+    mech = strip_graph_suffix(node_bucket_key)
+    graph_suffix = node_bucket_key[len(mech) :]
 
     keys: list[str] = [profile_key]
 
-    # 2. mechanism-only (only if there was a suffix)
+    if graph_suffix and node_suffix:
+        keys.append(mech + node_suffix)
+        keys.append(mech + graph_suffix)
+    elif node_suffix:
+        keys.append(mech + node_suffix)
+    elif graph_suffix:
+        keys.append(mech + graph_suffix)
+
     if mech != profile_key:
         keys.append(mech)
 
     # 3-4. ID-mechanism fallback for OOD mechanisms
     mapped = _OOD_MECHANISM_FALLBACK.get(mech)
     if mapped is not None:
-        if suffix:
-            keys.append(mapped + suffix)
+        if graph_suffix and node_suffix:
+            keys.append(mapped + graph_suffix + node_suffix)
+            keys.append(mapped + node_suffix)
+            keys.append(mapped + graph_suffix)
+        elif node_suffix:
+            keys.append(mapped + node_suffix)
+        elif graph_suffix:
+            keys.append(mapped + graph_suffix)
         keys.append(mapped)
 
-    return keys
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for key in keys:
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(key)
+    return deduped
 
 
 def _extract_graph_suffix(name_l: str) -> str:
@@ -132,8 +173,9 @@ def infer_explicit_profile(dataset_name: str, family: Any | None) -> str | None:
             the mechanism cannot be inferred from the name alone.
 
     Returns:
-        Profile identifier with mechanism and optional graph-type suffix
-        (e.g., ``"linear_sf2"``, ``"logistic_er40"``), or ``None``.
+        Profile identifier with mechanism, optional graph-type suffix, and
+        optional nearest paper-backed node bucket suffix
+        (e.g., ``"linear_d20"``, ``"logistic_er40_d20"``), or ``None``.
     """
     name_l = dataset_name.lower()
 
@@ -161,7 +203,12 @@ def infer_explicit_profile(dataset_name: str, family: Any | None) -> str | None:
     # Extract graph topology suffix.
     graph_suffix = _extract_graph_suffix(name_l)
 
-    return mech + graph_suffix
+    node_bucket_suffix = ""
+    match = re.search(r"(?:^|_)d(\d+)(?:_|$)", name_l)
+    if match is not None:
+        node_bucket_suffix = "_" + nearest_paper_node_bucket(int(match.group(1)))
+
+    return mech + graph_suffix + node_bucket_suffix
 
 
 def apply_explicit_profile(model: Any, profile: str | None) -> bool:
