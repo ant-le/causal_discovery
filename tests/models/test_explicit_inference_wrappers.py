@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -75,10 +76,12 @@ def test_dibs_external_process_writes_and_reads_samples(
     x = torch.zeros(1, 4, 3)
 
     calls: list[dict[str, object]] = []
+    expected_src_root = str((Path(__file__).resolve().parents[2] / "src").resolve())
 
-    def _fake_run(cmd, check, timeout, env):
+    def _fake_run(cmd, check, timeout, env, capture_output, text):
         _ = check
-        _ = env
+        _ = capture_output
+        _ = text
         config_index = cmd.index("--config") + 1
         input_index = cmd.index("--input") + 1
         with open(cmd[config_index], "r", encoding="utf-8") as handle:
@@ -96,6 +99,7 @@ def test_dibs_external_process_writes_and_reads_samples(
                 "payload": payload,
                 "input_shape": tuple(input_payload["data"].shape),
                 "python": cmd[0],
+                "pythonpath": env["PYTHONPATH"],
             }
         )
 
@@ -112,6 +116,37 @@ def test_dibs_external_process_writes_and_reads_samples(
     assert payload["n_particles"] == 7
     assert payload["num_nodes"] == 3
     assert calls[0]["input_shape"] == (4, 3)
+    assert str(calls[0]["pythonpath"]).split(":", maxsplit=1)[0] == expected_src_root
+
+
+def test_dibs_external_process_surfaces_subprocess_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = DiBSModel(
+        num_nodes=3,
+        external_process=True,
+    )
+    x = torch.zeros(1, 4, 3)
+
+    def _fake_run(cmd, check, timeout, env, capture_output, text):
+        _ = cmd
+        _ = check
+        _ = timeout
+        _ = env
+        _ = capture_output
+        _ = text
+        raise subprocess.CalledProcessError(
+            returncode=1,
+            cmd=cmd,
+            stderr="ModuleNotFoundError: No module named 'dibs'",
+        )
+
+    monkeypatch.setattr("causal_meta.models.dibs.model.subprocess.run", _fake_run)
+
+    with pytest.raises(RuntimeError, match="ModuleNotFoundError") as exc_info:
+        _ = model.sample(x)
+
+    assert "causal_meta package" in str(exc_info.value)
 
 
 def test_bayesdag_wrapper_requires_dependency() -> None:

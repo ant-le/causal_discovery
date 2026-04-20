@@ -319,6 +319,15 @@ class DiBSModel(BaseModel):
                 # Ensure JAX in the subprocess initialises the CUDA/GPU
                 # backend instead of silently falling back to CPU.
                 env.setdefault("JAX_PLATFORMS", "cuda,cpu")
+                # Allow a dedicated DiBS/JAX environment to import this checkout
+                # without requiring causal_meta to be installed into that env.
+                src_root = Path(__file__).resolve().parents[3]
+                existing_pythonpath = env.get("PYTHONPATH")
+                env["PYTHONPATH"] = (
+                    f"{src_root}{os.pathsep}{existing_pythonpath}"
+                    if existing_pythonpath
+                    else str(src_root)
+                )
 
                 try:
                     subprocess.run(
@@ -326,15 +335,32 @@ class DiBSModel(BaseModel):
                         check=True,
                         timeout=self.external_timeout_s,
                         env=env,
+                        capture_output=True,
+                        text=True,
                     )
                 except FileNotFoundError as exc:
                     raise RuntimeError(
                         f"DiBS external inference could not launch Python executable: {python_path}"
                     ) from exc
                 except subprocess.CalledProcessError as exc:
+                    detail_blocks = []
+                    for stream_name, stream_value in (
+                        ("stdout", exc.stdout),
+                        ("stderr", exc.stderr),
+                    ):
+                        stream_text = (stream_value or "").strip()
+                        if stream_text:
+                            if len(stream_text) > 4000:
+                                stream_text = stream_text[-4000:]
+                            detail_blocks.append(f"{stream_name}:\n{stream_text}")
+                    detail_suffix = (
+                        "\n\n" + "\n\n".join(detail_blocks) if detail_blocks else ""
+                    )
                     raise RuntimeError(
-                        "DiBS external inference failed. Ensure the selected Python "
-                        "environment has 'dibs-lib' and JAX installed."
+                        "DiBS external inference failed using "
+                        f"{python_path} (exit code {exc.returncode}). Ensure the selected "
+                        "Python environment has 'dibs-lib', JAX, and access to the "
+                        f"causal_meta package.{detail_suffix}"
                     ) from exc
                 except subprocess.TimeoutExpired as exc:
                     raise RuntimeError(
