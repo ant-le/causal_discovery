@@ -488,10 +488,12 @@ def run_pipeline(cfg: DictConfig) -> None:
 
             if is_distributed:
                 use_cuda_ddp = dist_ctx.device.type == "cuda"
+                ddp_find_unused_parameters = model_type == "bcnp"
                 model = DDP(
                     model,
                     device_ids=[local_rank] if use_cuda_ddp else None,
                     output_device=local_rank if use_cuda_ddp else None,
+                    find_unused_parameters=ddp_find_unused_parameters,
                 )
 
             # 5/6. Pre-training (amortized models only)
