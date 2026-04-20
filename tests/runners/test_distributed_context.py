@@ -17,3 +17,17 @@ def test_distributed_context_setup_requires_torchrun_env(monkeypatch):
     with pytest.raises(ValueError):
         _ = DistributedContext.setup()
 
+
+def test_distributed_context_setup_ignores_slurm_only_env(monkeypatch):
+    monkeypatch.setenv("SLURM_PROCID", "1")
+    monkeypatch.setenv("SLURM_NTASKS", "4")
+    monkeypatch.setenv("SLURM_LOCALID", "1")
+    for key in ("RANK", "WORLD_SIZE", "LOCAL_RANK", "MASTER_ADDR", "MASTER_PORT"):
+        monkeypatch.delenv(key, raising=False)
+
+    ctx = DistributedContext.setup()
+
+    assert ctx.is_distributed is False
+    assert ctx.rank == 0
+    assert ctx.world_size == 1
+    assert ctx.local_rank == 1

@@ -47,9 +47,16 @@ def _maybe_disable_torch_compile_optimizer_wrapper() -> None:
             pass
 
 
-_maybe_disable_torch_compile_optimizer_wrapper()
+def bootstrap_runtime() -> None:
+    """Apply optional runtime patches needed by the executable entrypoints."""
+
+    _maybe_disable_torch_compile_optimizer_wrapper()
+
 
 try:
     __version__ = version("causal_meta")
 except PackageNotFoundError:
     __version__ = "0.0.0-unknown"
+
+
+__all__ = ["__version__", "bootstrap_runtime"]
