@@ -5,6 +5,7 @@ import inspect
 import logging
 import math
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence, cast
 
@@ -21,11 +22,23 @@ from causal_meta.models.base import BaseModel
 from causal_meta.runners.logger.base import BaseLogger
 from causal_meta.runners.metrics.graph import Metrics
 from causal_meta.runners.tasks.utils import infer_device, unwrap_model
-from causal_meta.runners.utils.artifacts import get_model_name, resolve_output_dir
+from causal_meta.runners.utils.artifacts import resolve_output_dir
 from causal_meta.runners.utils.distributed import DistributedContext
 from causal_meta.runners.utils.seeding import get_experiment_seed
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _TrainingPlan:
+    train_batch_size: int
+    accumulate_grad_batches: int
+    global_tasks_per_step: int
+    max_optimizer_steps: int
+    log_every_n_steps: int
+    val_check_interval_steps: int
+    checkpoint_every_n_steps: int
+
 
 DEFAULT_VALIDATION_METRICS = (
     "e-edgef1",
@@ -83,17 +96,22 @@ def run(
     # Device is already set in pipe.py, but we can double check or get it from model
     device = infer_device(model, dist_ctx)
 
-    # 2. Data
-    # train_dataloader handles DDP seeding internally
-    train_loader = data_module.train_dataloader()
-
-    train_batch_size = int(getattr(cfg.data, "batch_size_train", 1))
-    if train_batch_size < 1:
+    train_batch_size_cap = int(getattr(cfg.data, "batch_size_train", 1))
+    if train_batch_size_cap < 1:
         raise ValueError("data.batch_size_train must be >= 1")
 
-    accumulate_grad_batches = int(cfg.trainer.get("accumulate_grad_batches", 1))
-    if accumulate_grad_batches < 1:
-        raise ValueError("trainer.accumulate_grad_batches must be >= 1")
+    training_plan = _resolve_training_plan(
+        cfg,
+        max_per_device_batch_size=train_batch_size_cap,
+        world_size=world_size,
+    )
+    train_batch_size = training_plan.train_batch_size
+    accumulate_grad_batches = training_plan.accumulate_grad_batches
+    global_tasks_per_step = training_plan.global_tasks_per_step
+
+    # 2. Data
+    # train_dataloader handles DDP seeding internally
+    train_loader = data_module.train_dataloader(batch_size_override=train_batch_size)
 
     # Unwrap model for attribute access
     model_unwrapped = unwrap_model(model)
@@ -106,11 +124,22 @@ def run(
             f"{total_params:,}",
             f"{trainable_params:,}",
         )
+        log.info(
+            "Training plan | batch/device=%d | grad_accum=%d | global_tasks/step=%d | max_steps=%d",
+            train_batch_size,
+            accumulate_grad_batches,
+            global_tasks_per_step,
+            training_plan.max_optimizer_steps,
+        )
         if logger:
             logger.log_hyperparams(
                 {
                     "model/total_parameters": total_params,
                     "model/trainable_parameters": trainable_params,
+                    "trainer/train_batch_size_per_device": train_batch_size,
+                    "trainer/accumulate_grad_batches": accumulate_grad_batches,
+                    "trainer/global_tasks_per_step": global_tasks_per_step,
+                    "trainer/max_optimizer_steps": training_plan.max_optimizer_steps,
                 }
             )
 
@@ -124,20 +153,6 @@ def run(
     weight_decay = float(cfg.trainer.get("weight_decay", 1e-4))
     betas = _maybe_parse_betas(cfg.trainer.get("optimizer_betas", None))
     optimizer_eps = _maybe_parse_eps(cfg.trainer.get("optimizer_eps", None))
-    global_tasks_per_step = _global_tasks_per_step(
-        train_batch_size=train_batch_size,
-        accumulate_grad_batches=accumulate_grad_batches,
-        world_size=world_size,
-    )
-
-    if bool(cfg.trainer.get("lr_scale_with_global_batch_sqrt", False)):
-        lr_reference = float(cfg.trainer.get("lr_reference_global_tasks_per_step", 1.0))
-        if lr_reference <= 0:
-            raise ValueError(
-                "trainer.lr_reference_global_tasks_per_step must be > 0 when "
-                "lr_scale_with_global_batch_sqrt=true"
-            )
-        lr = lr * math.sqrt(global_tasks_per_step / lr_reference)
 
     optimizer_kwargs: dict[str, Any] = {"lr": lr, "weight_decay": weight_decay}
     if betas is not None:
@@ -148,11 +163,7 @@ def run(
         optimizer_kwargs["fused"] = bool(cfg.trainer.get("optimizer_fused", True))
     optimizer = optim.AdamW(model.parameters(), **optimizer_kwargs)
 
-    scheduler = _build_scheduler(
-        optimizer,
-        cfg,
-        global_tasks_per_step=global_tasks_per_step,
-    )
+    scheduler = _build_scheduler(optimizer, cfg)
 
     amp_enabled = bool(cfg.trainer.get("amp", False)) and device.type == "cuda"
     amp_dtype_name = str(cfg.trainer.get("amp_dtype", "bf16")).lower()
@@ -166,12 +177,13 @@ def run(
         raise ValueError("trainer.amp_dtype must be one of: bf16, fp16")
 
     # 4. Training Loop
-    max_tasks_seen = int(cfg.trainer.max_tasks_seen)
-    if max_tasks_seen < 1:
-        raise ValueError("trainer.max_tasks_seen must be >= 1")
-    log_every_n_tasks = int(cfg.trainer.get("log_every_n_tasks", 100))
-    val_check_interval_tasks = int(cfg.trainer.get("val_check_interval_tasks", 1000))
-    regulariser_update_interval = int(cfg.trainer.get("regulariser_update_interval", 0))
+    max_optimizer_steps = training_plan.max_optimizer_steps
+    log_every_n_steps = training_plan.log_every_n_steps
+    val_check_interval_steps = training_plan.val_check_interval_steps
+    checkpoint_every_n_steps = training_plan.checkpoint_every_n_steps
+    regulariser_update_interval = int(
+        cfg.trainer.get("regulariser_update_interval_steps", 0)
+    )
     grad_clip_norm = float(cfg.trainer.get("grad_clip_norm", 1.0))
     validation_n_samples = int(
         cfg.trainer.get(
@@ -205,7 +217,6 @@ def run(
 
     # Determine output directory
     output_dir = resolve_output_dir(cfg, output_dir)
-    model_name = get_model_name(cfg, model)
 
     path = output_dir / "checkpoints"
     if rank == 0:
@@ -239,6 +250,17 @@ def run(
 
         if rank == 0:
             log.info(f"Resumed at step {step}")
+
+        saved_global_tasks_per_step = int(
+            checkpoint.get("train_stream_global_tasks_per_step", global_tasks_per_step)
+        )
+        if saved_global_tasks_per_step != global_tasks_per_step and rank == 0:
+            log.warning(
+                "Checkpoint global_tasks_per_step=%d differs from current global_tasks_per_step=%d; "
+                "training data stream resume will be best-effort.",
+                saved_global_tasks_per_step,
+                global_tasks_per_step,
+            )
 
         saved_world_size = int(checkpoint.get("train_stream_world_size", world_size))
         if saved_world_size != world_size and rank == 0:
@@ -276,7 +298,7 @@ def run(
         tasks_seen = int(
             checkpoint.get(
                 "tasks_seen",
-                start_step * saved_world_size * saved_batch_size * saved_accum,
+                start_step * saved_global_tasks_per_step,
             )
         )
         if rank == 0:
@@ -301,16 +323,13 @@ def run(
                 f"batch_size_train={train_batch_size}, accumulate_grad_batches={accumulate_grad_batches})."
             )
 
-    checkpoint_every_n_tasks = int(
-        cfg.trainer.get("checkpoint_every_n_tasks", val_check_interval_tasks)
-    )
-    next_log_tasks = _next_task_threshold(tasks_seen, log_every_n_tasks)
-    next_val_tasks = _next_task_threshold(tasks_seen, val_check_interval_tasks)
-    next_checkpoint_tasks = _next_task_threshold(tasks_seen, checkpoint_every_n_tasks)
+    next_log_step = _next_step_threshold(step, log_every_n_steps)
+    next_val_step = _next_step_threshold(step, val_check_interval_steps)
+    next_checkpoint_step = _next_step_threshold(step, checkpoint_every_n_steps)
 
     train_iter = iter(train_loader)
 
-    while tasks_seen < max_tasks_seen:
+    while step < max_optimizer_steps:
         model.train()
         optimizer.zero_grad(set_to_none=True)
 
@@ -390,9 +409,9 @@ def run(
 
         # Logging
         if (
-            log_every_n_tasks > 0
-            and next_log_tasks is not None
-            and tasks_seen >= next_log_tasks
+            log_every_n_steps > 0
+            and next_log_step is not None
+            and step >= next_log_step
         ):
             loss_value = _reduce_loss_for_logging(loss_accum, world_size)
             if rank == 0:
@@ -403,7 +422,7 @@ def run(
                     else "nan"
                 )
                 log_str = (
-                    f"Tasks {tasks_seen:,}/{max_tasks_seen:,} | Step {step} | Loss: {loss_value:.4f} | "
+                    f"Step {step:,}/{max_optimizer_steps:,} | Tasks {tasks_seen:,} | Loss: {loss_value:.4f} | "
                     f"LR: {current_lr:.6g} | GradNorm: {grad_norm_str}"
                 )
                 log.info(log_str)
@@ -418,22 +437,23 @@ def run(
                                 if grad_norm_value is not None
                                 else float("nan")
                             ),
+                            "train/tasks_seen": float(tasks_seen),
                             "train/global_tasks_per_step": float(global_tasks_per_step),
                             "train/optimizer_step": float(step),
                         },
-                        step=tasks_seen,
+                        step=step,
                     )
-            next_log_tasks = _advance_task_threshold(
-                next_log_tasks,
-                log_every_n_tasks,
-                tasks_seen,
+            next_log_step = _advance_step_threshold(
+                next_log_step,
+                log_every_n_steps,
+                step,
             )
 
         # Validation
         if (
-            val_check_interval_tasks > 0
-            and next_val_tasks is not None
-            and tasks_seen >= next_val_tasks
+            val_check_interval_steps > 0
+            and next_val_step is not None
+            and step >= next_val_step
         ):
             val_metrics = validate(
                 model_unwrapped,
@@ -446,9 +466,9 @@ def run(
 
             if rank == 0:
                 log.info(
-                    "Validation at tasks_seen=%d (step=%d): %s",
-                    tasks_seen,
+                    "Validation at step=%d (tasks_seen=%d): %s",
                     step,
+                    tasks_seen,
                     val_metrics,
                 )
 
@@ -460,7 +480,7 @@ def run(
                             if "/" in k
                         }
                         if per_family_payload:
-                            logger.log_metrics(per_family_payload, step=tasks_seen)
+                            logger.log_metrics(per_family_payload, step=step)
 
                     aggregate_payload = {
                         f"val/{k}": v
@@ -468,7 +488,7 @@ def run(
                         if k.startswith("mean_") and "/" not in k
                     }
                     if aggregate_payload:
-                        logger.log_metrics(aggregate_payload, step=tasks_seen)
+                        logger.log_metrics(aggregate_payload, step=step)
 
                 current_metric_name, current_metric = (
                     _resolve_validation_selection_metric(
@@ -507,17 +527,17 @@ def run(
                         current_metric_name,
                         best_val_metric,
                     )
-            next_val_tasks = _advance_task_threshold(
-                next_val_tasks,
-                val_check_interval_tasks,
-                tasks_seen,
+            next_val_step = _advance_step_threshold(
+                next_val_step,
+                val_check_interval_steps,
+                step,
             )
 
         # Periodic "last" checkpoint (rank 0 only)
         if (
-            checkpoint_every_n_tasks > 0
-            and next_checkpoint_tasks is not None
-            and tasks_seen >= next_checkpoint_tasks
+            checkpoint_every_n_steps > 0
+            and next_checkpoint_step is not None
+            and step >= next_checkpoint_step
         ):
             if rank == 0:
                 save_checkpoint(
@@ -536,10 +556,10 @@ def run(
                     accumulate_grad_batches=accumulate_grad_batches,
                     wandb_run_id=logger.run_id if logger else None,
                 )
-            next_checkpoint_tasks = _advance_task_threshold(
-                next_checkpoint_tasks,
-                checkpoint_every_n_tasks,
-                tasks_seen,
+            next_checkpoint_step = _advance_step_threshold(
+                next_checkpoint_step,
+                checkpoint_every_n_steps,
+                step,
             )
 
     if rank == 0:
@@ -777,8 +797,6 @@ def save_checkpoint(
 def _build_scheduler(
     optimizer: optim.Optimizer,
     cfg: DictConfig,
-    *,
-    global_tasks_per_step: int = 1,
 ) -> Any | None:
     scheduler_type = str(cfg.trainer.get("scheduler", "cosine")).lower()
     if scheduler_type in {"none", "off", "false"}:
@@ -789,27 +807,23 @@ def _build_scheduler(
             f"Got '{scheduler_type}'."
         )
 
-    if global_tasks_per_step < 1:
-        raise ValueError("global_tasks_per_step must be >= 1")
+    max_steps = int(cfg.trainer.max_optimizer_steps)
+    if max_steps < 1:
+        raise ValueError("trainer.max_optimizer_steps must be >= 1")
 
-    max_tasks_seen = int(cfg.trainer.max_tasks_seen)
-    max_steps = max(1, math.ceil(max_tasks_seen / float(global_tasks_per_step)))
-    t_max_tasks = cfg.trainer.get("scheduler_t_max_tasks", None)
-    if t_max_tasks is None:
+    t_max_steps = cfg.trainer.get("scheduler_t_max_steps", None)
+    if t_max_steps is None:
         t_max = max_steps
     else:
-        t_max = max(1, math.ceil(int(t_max_tasks) / float(global_tasks_per_step)))
+        t_max = max(1, int(t_max_steps))
     eta_min = float(cfg.trainer.get("scheduler_eta_min", 0.0))
 
-    warmup_tasks_cfg = cfg.trainer.get("scheduler_warmup_tasks", None)
-    if warmup_tasks_cfg is None:
+    warmup_steps_cfg = cfg.trainer.get("scheduler_warmup_steps", None)
+    if warmup_steps_cfg is None:
         warmup_ratio = float(cfg.trainer.get("scheduler_warmup_ratio", 0.0))
         warmup_steps = int(round(max_steps * max(0.0, warmup_ratio)))
     else:
-        warmup_steps = max(
-            0,
-            math.ceil(int(warmup_tasks_cfg) / float(global_tasks_per_step)),
-        )
+        warmup_steps = max(0, int(warmup_steps_cfg))
 
     warmup_steps = max(0, min(warmup_steps, max(0, max_steps - 1)))
     if scheduler_type == "cosine":
@@ -819,13 +833,9 @@ def _build_scheduler(
             eta_min=eta_min,
         )
     else:
-        raw_milestones = cfg.trainer.get("scheduler_milestones_tasks", [])
+        raw_milestones = cfg.trainer.get("scheduler_milestones_steps", [])
         milestone_steps = sorted(
-            {
-                max(1, math.ceil(int(task) / float(global_tasks_per_step)))
-                for task in raw_milestones
-                if int(task) > 0
-            }
+            {max(1, int(step)) for step in raw_milestones if int(step) > 0}
         )
         if warmup_steps > 0:
             milestone_steps = [
@@ -963,30 +973,81 @@ def _reduce_loss_for_logging(loss: torch.Tensor, world_size: int) -> float:
     return float(loss_value.item())
 
 
-def _global_tasks_per_step(
+def _resolve_training_plan(
+    cfg: DictConfig,
     *,
-    train_batch_size: int,
-    accumulate_grad_batches: int,
+    max_per_device_batch_size: int,
     world_size: int,
-) -> int:
-    return int(train_batch_size) * int(accumulate_grad_batches) * int(world_size)
+) -> _TrainingPlan:
+    if max_per_device_batch_size < 1:
+        raise ValueError("data.batch_size_train must be >= 1")
+    if world_size < 1:
+        raise ValueError("world_size must be >= 1")
+
+    target_global_tasks_per_step = int(cfg.trainer.target_global_tasks_per_step)
+    if target_global_tasks_per_step < 1:
+        raise ValueError("trainer.target_global_tasks_per_step must be >= 1")
+    if target_global_tasks_per_step < world_size:
+        raise ValueError(
+            "trainer.target_global_tasks_per_step must be >= world_size to keep at least one task per device."
+        )
+
+    max_train_batch_size = min(
+        max_per_device_batch_size,
+        target_global_tasks_per_step // world_size,
+    )
+    for train_batch_size in range(max_train_batch_size, 0, -1):
+        microbatch_global = train_batch_size * world_size
+        if target_global_tasks_per_step % microbatch_global != 0:
+            continue
+
+        accumulate_grad_batches = target_global_tasks_per_step // microbatch_global
+        max_optimizer_steps = int(cfg.trainer.max_optimizer_steps)
+        if max_optimizer_steps < 1:
+            raise ValueError("trainer.max_optimizer_steps must be >= 1")
+        log_every_n_steps = int(cfg.trainer.get("log_every_n_steps", 100))
+        val_check_interval_steps = int(
+            cfg.trainer.get("val_check_interval_steps", 1000)
+        )
+        checkpoint_every_n_steps = int(
+            cfg.trainer.get(
+                "checkpoint_every_n_steps",
+                val_check_interval_steps,
+            )
+        )
+        return _TrainingPlan(
+            train_batch_size=train_batch_size,
+            accumulate_grad_batches=accumulate_grad_batches,
+            global_tasks_per_step=target_global_tasks_per_step,
+            max_optimizer_steps=max_optimizer_steps,
+            log_every_n_steps=log_every_n_steps,
+            val_check_interval_steps=val_check_interval_steps,
+            checkpoint_every_n_steps=checkpoint_every_n_steps,
+        )
+
+    raise ValueError(
+        "trainer.target_global_tasks_per_step must be realizable as "
+        "data.batch_size_train * accumulate_grad_batches * world_size with integer accumulation. "
+        f"Got target_global_tasks_per_step={target_global_tasks_per_step}, "
+        f"data.batch_size_train={max_per_device_batch_size}, world_size={world_size}."
+    )
 
 
-def _next_task_threshold(current_tasks_seen: int, interval: int) -> int | None:
+def _next_step_threshold(current_step: int, interval: int) -> int | None:
     if interval <= 0:
         return None
-    completed_intervals = current_tasks_seen // interval
+    completed_intervals = current_step // interval
     return int((completed_intervals + 1) * interval)
 
 
-def _advance_task_threshold(
+def _advance_step_threshold(
     next_threshold: int | None,
     interval: int,
-    current_tasks_seen: int,
+    current_step: int,
 ) -> int | None:
     if next_threshold is None or interval <= 0:
         return None
-    while next_threshold <= current_tasks_seen:
+    while next_threshold <= current_step:
         next_threshold += interval
     return next_threshold
 

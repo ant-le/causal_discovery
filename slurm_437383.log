@@ -1,0 +1,165 @@
+MASTER_ADDR=a-a100-o-2
+MASTER_PORT=47383
+SLURM_NTASKS=1
+SLURM_JOB_GPUS=6
+SLURM_GPUS_ON_NODE=1
+CUDA_VISIBLE_DEVICES=0
+GPU_DEVICE_ORDINAL=0
+Launching 1 tasks via srun
+[2026-04-20 12:47:00,674][__main__][INFO] - Starting Pipeline...
+[2026-04-20 12:47:00,711][causal_meta.runners.utils.env][INFO] - Environment Report:
+  - causal_meta: 0.3.0 (git: b65ec0b-dirty)
+  - Python: 3.11.14 (Linux 5.14.0-503.19.1.el9_5.x86_64)
+  - PyTorch: 2.10.0+cu128
+  - CUDA Available: True
+  - MPS Available: False
+  - CUDA Device Count: 1
+  - Current Device: NVIDIA A100-SXM4-80GB
+  - SLURM_JOB_ID: 437383
+[2026-04-20 12:47:00,713][__main__][INFO] - Initializing Data Module...
+[2026-04-20 12:47:00,727][__main__][INFO] - === Running Model: dibs ===
+[2026-04-20 12:47:00,727][__main__][INFO] - Initializing WandB Logger...
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /home/anton.lechuga/.netrc.
+wandb: Currently logged in as: lechuga-anton to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run cf6ovxnv
+wandb: Tracking run with wandb version 0.25.0
+wandb: Run data is saved locally in /home/anton.lechuga/causal_discovery/experiments/runs/dibs_437383/wandb/run-20260420_124703-cf6ovxnv
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run dibs_437383_dibs_pid593475
+wandb: ⭐️ View project at https://wandb.ai/lechuga-anton/causal_meta
+wandb: 🚀 View run at https://wandb.ai/lechuga-anton/causal_meta/runs/cf6ovxnv
+[2026-04-20 12:47:04,583][__main__][INFO] - --- Evaluation ---
+[2026-04-20 12:47:04,583][causal_meta.runners.tasks.evaluation][INFO] - Starting evaluation: dibs_437383
+[2026-04-20 12:53:53,896][causal_meta.datasets.data_module][INFO] - Loaded real-world test family 'real_sachs': 11 variables, 853 observations
+[2026-04-20 12:53:53,900][causal_meta.runners.tasks.evaluation][INFO] - Evaluating on id_linear_er20_d20_n500...
+[2026-04-20 12:53:53,901][causal_meta.runners.tasks.evaluation][INFO] - Applying explicit profile 'linear_d20' for dataset 'id_linear_er20_d20_n500'.
+[2026-04-20 12:53:53,901][causal_meta.runners.tasks.evaluation][INFO] - Applying explicit num_nodes=20 for dataset 'id_linear_er20_d20_n500'.
+[2026-04-20 12:53:54,149][causal_meta.runners.tasks.evaluation][INFO] - Evaluation sampling context: dataset=id_linear_er20_d20_n500, device=cuda:0, n_samples=100, mode=external
+[2026-04-20 12:53:54,150][causal_meta.models.dibs.model][INFO] - DiBS sample: mode=external, python=/home/anton.lechuga/causal_discovery/.venv/bin/python, batch_size=1, num_nodes=20, num_samples=100, profile=linear_d20, mode_name=linear, steps=3000, n_particles=30, timeout=3600s
+wandb: updating run metadata
+wandb: uploading output.log; uploading wandb-summary.json; uploading config.yaml
+wandb: uploading summary
+wandb: 🚀 View run dibs_437383_dibs_pid593475 at: https://wandb.ai/lechuga-anton/causal_meta/runs/cf6ovxnv
+wandb: ⭐️ View project at: https://wandb.ai/lechuga-anton/causal_meta
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./experiments/runs/dibs_437383/wandb/run-20260420_124703-cf6ovxnv/logs
+[2026-04-20 12:54:07,415][__main__][ERROR] - Pipeline failed.
+[causal_meta.main][ERROR] Pipeline failed.
+Traceback (most recent call last):
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/models/dibs/model.py", line 333, in _sample_external
+    subprocess.run(
+  File "/home/anton.lechuga/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/anton.lechuga/causal_discovery/.venv/bin/python', '/home/anton.lechuga/causal_discovery/src/causal_meta/models/dibs/external_infer.py', '--config', '/tmp/tmp3geg530l/config_0.json', '--input', '/tmp/tmp3geg530l/input_0.npz']' returned non-zero exit status 1.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/main.py", line 525, in run_pipeline
+    evaluation.run(
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/runners/tasks/evaluation.py", line 549, in run
+    inference_times = _evaluate_explicit_model(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/runners/tasks/evaluation.py", line 256, in _evaluate_explicit_model
+    samples = model.sample(input_data, num_samples=n_samples).to(device)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/models/dibs/model.py", line 200, in sample
+    return self._sample_external(x, num_samples, batch_size=batch_size)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/models/dibs/model.py", line 359, in _sample_external
+    raise RuntimeError(
+RuntimeError: DiBS external inference failed using /home/anton.lechuga/causal_discovery/.venv/bin/python (exit code 1). Ensure the selected Python environment has 'dibs-lib', JAX, and access to the causal_meta package.
+
+stderr:
+INFO:__main__:JAX backend: platform=gpu, devices=['cuda:0']
+INFO:__main__:DiBS external bootstrap: samples=500, num_nodes=20, num_samples=100, mode=linear, steps=3000, n_particles=30
+Traceback (most recent call last):
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/models/dibs/external_infer.py", line 84, in <module>
+    main()
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/models/dibs/external_infer.py", line 65, in main
+    graph_samples = DiBSModel.sample_numpy_array(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/models/dibs/model.py", line 574, in sample_numpy_array
+    graphs_t = cls._sample_from_dibs(
+               ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/models/dibs/model.py", line 515, in _sample_from_dibs
+    dibs = dibs_cls(
+           ^^^^^^^^^
+  File "/home/anton.lechuga/causal_discovery/.venv/lib/python3.11/site-packages/dibs/inference/svgd.py", line 94, in __init__
+    log_joint_prob=likelihood_model.interventional_log_marginal_prob,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'LinearGaussian' object has no attribute 'interventional_log_marginal_prob'. Did you mean: 'interventional_log_joint_prob'?
+Error executing job with overrides: ['model=dibs', 'name=dibs_437383']
+Traceback (most recent call last):
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/models/dibs/model.py", line 333, in _sample_external
+    subprocess.run(
+  File "/home/anton.lechuga/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib/python3.11/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/anton.lechuga/causal_discovery/.venv/bin/python', '/home/anton.lechuga/causal_discovery/src/causal_meta/models/dibs/external_infer.py', '--config', '/tmp/tmp3geg530l/config_0.json', '--input', '/tmp/tmp3geg530l/input_0.npz']' returned non-zero exit status 1.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/main.py", line 553, in <module>
+    main()
+  File "/home/anton.lechuga/causal_discovery/.venv/lib/python3.11/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/home/anton.lechuga/causal_discovery/.venv/lib/python3.11/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/home/anton.lechuga/causal_discovery/.venv/lib/python3.11/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/home/anton.lechuga/causal_discovery/.venv/lib/python3.11/site-packages/hydra/_internal/utils.py", line 223, in run_and_report
+    raise ex
+  File "/home/anton.lechuga/causal_discovery/.venv/lib/python3.11/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+           ^^^^^^
+  File "/home/anton.lechuga/causal_discovery/.venv/lib/python3.11/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+            ^^^^^^^^^^
+  File "/home/anton.lechuga/causal_discovery/.venv/lib/python3.11/site-packages/hydra/_internal/hydra.py", line 132, in run
+    _ = ret.return_value
+        ^^^^^^^^^^^^^^^^
+  File "/home/anton.lechuga/causal_discovery/.venv/lib/python3.11/site-packages/hydra/core/utils.py", line 260, in return_value
+    raise self._return_value
+  File "/home/anton.lechuga/causal_discovery/.venv/lib/python3.11/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+                       ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/main.py", line 264, in main
+    run_pipeline(cfg)
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/main.py", line 525, in run_pipeline
+    evaluation.run(
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/runners/tasks/evaluation.py", line 549, in run
+    inference_times = _evaluate_explicit_model(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/runners/tasks/evaluation.py", line 256, in _evaluate_explicit_model
+    samples = model.sample(input_data, num_samples=n_samples).to(device)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/models/dibs/model.py", line 200, in sample
+    return self._sample_external(x, num_samples, batch_size=batch_size)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/models/dibs/model.py", line 359, in _sample_external
+    raise RuntimeError(
+RuntimeError: DiBS external inference failed using /home/anton.lechuga/causal_discovery/.venv/bin/python (exit code 1). Ensure the selected Python environment has 'dibs-lib', JAX, and access to the causal_meta package.
+
+stderr:
+INFO:__main__:JAX backend: platform=gpu, devices=['cuda:0']
+INFO:__main__:DiBS external bootstrap: samples=500, num_nodes=20, num_samples=100, mode=linear, steps=3000, n_particles=30
+Traceback (most recent call last):
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/models/dibs/external_infer.py", line 84, in <module>
+    main()
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/models/dibs/external_infer.py", line 65, in main
+    graph_samples = DiBSModel.sample_numpy_array(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/models/dibs/model.py", line 574, in sample_numpy_array
+    graphs_t = cls._sample_from_dibs(
+               ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/anton.lechuga/causal_discovery/src/causal_meta/models/dibs/model.py", line 515, in _sample_from_dibs
+    dibs = dibs_cls(
+           ^^^^^^^^^
+  File "/home/anton.lechuga/causal_discovery/.venv/lib/python3.11/site-packages/dibs/inference/svgd.py", line 94, in __init__
+    log_joint_prob=likelihood_model.interventional_log_marginal_prob,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'LinearGaussian' object has no attribute 'interventional_log_marginal_prob'. Did you mean: 'interventional_log_joint_prob'?
+srun: error: a-a100-o-2: task 0: Exited with exit code 1

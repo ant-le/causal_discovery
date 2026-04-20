@@ -295,24 +295,33 @@ def run_pipeline(cfg: DictConfig) -> None:
                     "Missing required config key for amortized models: trainer"
                 )
             trainer = cfg_obj.trainer
-            legacy_step_keys = [
+            legacy_task_keys = [
                 "max_steps",
-                "log_every_n_steps",
+                "max_tasks_seen",
+                "log_every_n_tasks",
                 "val_check_interval",
-                "checkpoint_every_n_steps",
+                "val_check_interval_tasks",
+                "checkpoint_every_n_tasks",
                 "scheduler_t_max",
-                "scheduler_warmup_steps",
+                "scheduler_t_max_tasks",
+                "scheduler_warmup_tasks",
+                "scheduler_milestones_tasks",
+                "lr_scale_with_global_batch_sqrt",
+                "lr_reference_global_tasks_per_step",
+                "accumulate_grad_batches",
+                "regulariser_update_interval",
             ]
             present_legacy_keys = [
-                key for key in legacy_step_keys if hasattr(trainer, key)
+                key for key in legacy_task_keys if hasattr(trainer, key)
             ]
             if present_legacy_keys:
                 raise ValueError(
-                    "Legacy step-based trainer keys are no longer supported: "
-                    f"{present_legacy_keys}. Use max_tasks_seen/log_every_n_tasks/"
-                    "val_check_interval_tasks/checkpoint_every_n_tasks and task-based scheduler keys instead."
+                    "Legacy task-based amortized trainer keys are no longer supported: "
+                    f"{present_legacy_keys}. Use max_optimizer_steps/log_every_n_steps/"
+                    "val_check_interval_steps/checkpoint_every_n_steps, step-based scheduler keys, "
+                    "regulariser_update_interval_steps, and target_global_tasks_per_step instead."
                 )
-            for key in ["lr", "max_tasks_seen"]:
+            for key in ["lr", "max_optimizer_steps", "target_global_tasks_per_step"]:
                 if not hasattr(trainer, key):
                     raise ValueError(f"Missing required trainer key: trainer.{key}")
 

@@ -75,7 +75,8 @@ def test_default_config_selects_avici_trainer_profile() -> None:
     assert cfg.model.trainer_profile == "avici"
     assert cfg.trainer.scheduler == "multistep"
     assert cfg.trainer.validation_selection_mode == "min"
-    assert cfg.trainer.max_tasks_seen == 240
+    assert cfg.trainer.max_optimizer_steps == 30
+    assert cfg.trainer.target_global_tasks_per_step == 32
 
 
 def test_benchmark_config_applies_full_avici_trainer_profile() -> None:
@@ -90,7 +91,8 @@ def test_benchmark_config_applies_full_avici_trainer_profile() -> None:
 
     assert cfg.trainer.scheduler == "multistep"
     assert cfg.trainer.validation_selection_mode == "min"
-    assert cfg.trainer.max_tasks_seen == 16000000
+    assert cfg.trainer.max_optimizer_steps == 500000
+    assert cfg.trainer.target_global_tasks_per_step == 32
 
 
 def test_benchmark_config_applies_full_bcnp_trainer_profile() -> None:
@@ -106,4 +108,5 @@ def test_benchmark_config_applies_full_bcnp_trainer_profile() -> None:
     assert cfg.model.trainer_profile == "bcnp"
     assert cfg.trainer.scheduler == "cosine"
     assert cfg.trainer.validation_selection_mode == "min"
-    assert cfg.trainer.max_tasks_seen == 16000000
+    assert cfg.trainer.max_optimizer_steps == 500000
+    assert cfg.trainer.target_global_tasks_per_step == 32

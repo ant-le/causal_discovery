@@ -45,6 +45,7 @@ class CausalMetaModule:
     def __init__(self, config: DataModuleConfig) -> None:
         """Initialize the module with a DataModuleConfig object."""
         self.config = config
+        self._train_batch_size = int(getattr(config, "batch_size_train", 1))
 
         self.train_family: Optional[SCMFamily] = None
         self.train_families_by_n_nodes: Dict[int, SCMFamily] = {}
@@ -61,8 +62,17 @@ class CausalMetaModule:
 
         self.family_distances: Dict[str, Dict[str, float]] = {}
 
-    def setup(self) -> None:
+    def setup(self, *, train_batch_size_override: int | None = None) -> None:
         """Instantiate datasets, enforce disjointness, and pre-compute stats."""
+        resolved_train_batch_size = (
+            int(train_batch_size_override)
+            if train_batch_size_override is not None
+            else int(getattr(self.config, "batch_size_train", 1))
+        )
+        if resolved_train_batch_size < 1:
+            raise ValueError("data.batch_size_train must be >= 1")
+        self._train_batch_size = resolved_train_batch_size
+
         self.train_family = self._build_family(self.config.train_family)
         configured_train_nodes = [
             int(n) for n in getattr(self.config, "train_n_nodes", []) if int(n) > 0
@@ -142,7 +152,7 @@ class CausalMetaModule:
                 if len(self.train_families_by_n_nodes) > 1
                 else None
             ),
-            batch_size_hint=int(getattr(self.config, "batch_size_train", 1)),
+            batch_size_hint=resolved_train_batch_size,
             samples_per_task_obs=getattr(self.config, "samples_per_task_obs", None),
             samples_per_task_int=int(getattr(self.config, "samples_per_task_int", 0)),
             use_interventional_training=bool(
@@ -201,18 +211,22 @@ class CausalMetaModule:
         self._test_loaders = None
         self._test_interventional_loaders = None
 
-    def train_dataloader(self) -> DataLoader:
+    def train_dataloader(self, *, batch_size_override: int | None = None) -> DataLoader:
         """Return the training DataLoader with GPU optimizations."""
-        if self.train_dataset is None:
-            self.setup()
+        batch_size = (
+            int(batch_size_override)
+            if batch_size_override is not None
+            else int(getattr(self.config, "batch_size_train", 1))
+        )
+        if batch_size < 1:
+            raise ValueError("data.batch_size_train must be >= 1")
+
+        if self.train_dataset is None or batch_size != self._train_batch_size:
+            self.setup(train_batch_size_override=batch_size)
         if self.train_dataset is None:
             raise RuntimeError("Training dataset was not initialized.")
 
         collate_fn = partial(collate_fn_scm, normalize=self.config.normalize_data)
-
-        batch_size = int(getattr(self.config, "batch_size_train", 1))
-        if batch_size < 1:
-            raise ValueError("data.batch_size_train must be >= 1")
         train_dataset = self.train_dataset
 
         return DataLoader(

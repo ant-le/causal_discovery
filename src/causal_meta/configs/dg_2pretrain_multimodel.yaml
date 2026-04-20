@@ -1313,7 +1313,6 @@ data:
       n_nodes: 11
 
 trainer:
-  accumulate_grad_batches: 4
   validation_n_samples: 16
   validation_metrics: [e-edgef1, ne-sid, ne-shd, valid_dag_pct]
   validation_log_per_family: false

@@ -737,6 +737,7 @@ class DiBSModel(BaseModel):
             import jax.numpy as jnp
             from dibs.inference import JointDiBS, MarginalDiBS
             from dibs.target import (
+                make_linear_gaussian_equivalent_model,
                 make_linear_gaussian_model,
                 make_nonlinear_gaussian_model,
             )
@@ -747,10 +748,33 @@ class DiBSModel(BaseModel):
             ) from exc
 
         dibs_cls = MarginalDiBS if use_marginal else JointDiBS
-        make_target = (
-            make_linear_gaussian_model
-            if mode == "linear"
-            else make_nonlinear_gaussian_model
+        make_target = DiBSModel._select_target_factory(
+            mode=mode,
+            use_marginal=use_marginal,
+            make_linear_gaussian_model=make_linear_gaussian_model,
+            make_linear_gaussian_equivalent_model=make_linear_gaussian_equivalent_model,
+            make_nonlinear_gaussian_model=make_nonlinear_gaussian_model,
         )
 
         return jax, jnp, dibs_cls, make_target
+
+    @staticmethod
+    def _select_target_factory(
+        *,
+        mode: str,
+        use_marginal: bool,
+        make_linear_gaussian_model: Callable[..., Any],
+        make_linear_gaussian_equivalent_model: Callable[..., Any],
+        make_nonlinear_gaussian_model: Callable[..., Any],
+    ) -> Callable[..., Any]:
+        if mode == "linear":
+            if use_marginal:
+                return make_linear_gaussian_equivalent_model
+            return make_linear_gaussian_model
+        if mode == "nonlinear":
+            if use_marginal:
+                raise ValueError(
+                    "DiBS marginal inference is only supported for linear Gaussian targets with a BGe score."
+                )
+            return make_nonlinear_gaussian_model
+        raise ValueError("DiBS mode must be 'linear' or 'nonlinear'.")

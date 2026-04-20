@@ -29,7 +29,7 @@ class LocalLogger(BaseLogger):
 
         # Format for console readability
         metric_str = " | ".join(f"{k}: {v:.4f}" for k, v in metrics.items())
-        prefix = f"Tasks {step}: " if step is not None else ""
+        prefix = f"Step {step}: " if step is not None else ""
         log.info(f"{prefix}{metric_str}")
 
     def log_hyperparams(self, params: Dict[str, Any]) -> None:

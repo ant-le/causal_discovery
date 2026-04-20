@@ -32,6 +32,33 @@ def test_dibs_wrapper_dependency_contract() -> None:
             _ = model.sample(x)
 
 
+def test_dibs_select_target_factory_uses_bge_for_linear_marginal() -> None:
+    linear = object()
+    linear_bge = object()
+    nonlinear = object()
+
+    selected = DiBSModel._select_target_factory(
+        mode="linear",
+        use_marginal=True,
+        make_linear_gaussian_model=linear,
+        make_linear_gaussian_equivalent_model=linear_bge,
+        make_nonlinear_gaussian_model=nonlinear,
+    )
+
+    assert selected is linear_bge
+
+
+def test_dibs_select_target_factory_rejects_nonlinear_marginal() -> None:
+    with pytest.raises(ValueError, match="only supported for linear Gaussian"):
+        DiBSModel._select_target_factory(
+            mode="nonlinear",
+            use_marginal=True,
+            make_linear_gaussian_model=object(),
+            make_linear_gaussian_equivalent_model=object(),
+            make_nonlinear_gaussian_model=object(),
+        )
+
+
 def test_dibs_external_python_expands_user_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

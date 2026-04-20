@@ -1,29 +1,22 @@
 # @package trainer
 
-# AVICI paper-style pretraining profile.
+# AVICI benchmark profile within the shared amortized-training schema.
 #
-# Key references from the AVICI appendix:
-# - 300k primal steps
-# - LR drop x0.1 after 200k steps
+# Preserve the AVICI paper's optimizer ratios where possible:
+# - LR drop x0.1 after roughly 2/3 of training
 # - global grad clip norm 1
 # - dual update every 500 primal steps
 
-lr: 3.0e-5
-lr_scale_with_global_batch_sqrt: true
-lr_reference_global_tasks_per_step: 1
-
-# Align amortized-model benchmark budget to 16M sampled tasks.
-max_tasks_seen: 16000000
-log_every_n_tasks: 3200
-val_check_interval_tasks: 160000
-checkpoint_every_n_tasks: 1600000
+# Fix the global task batch at 32 and absorb the AVICI paper's sqrt-batch
+# scaling into a constant AdamW learning rate.
+lr: 1.7e-4
 
 scheduler: multistep
 # Preserve AVICI paper ratio for LR decay (200k / 300k).
-scheduler_milestones_tasks: [10666667]
+scheduler_milestones_steps: [333333]
 scheduler_gamma: 0.1
 scheduler_warmup_ratio: 0.0
 
-regulariser_update_interval: 500
+regulariser_update_interval_steps: 500
 validation_selection_metric: mean_ood_ne-sid
 validation_selection_mode: min

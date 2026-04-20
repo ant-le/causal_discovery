@@ -321,7 +321,9 @@ class DataModuleConfig:
 
     normalize_data: bool = True
 
-    # Batch sizes. Defaults preserve the existing "one task per batch" setup.
+    # Per-device dataloader batch caps.  The amortized trainer derives its
+    # effective batch size and gradient accumulation from these caps together
+    # with trainer.target_global_tasks_per_step.
     batch_size_train: int = 1
     batch_size_val: int = 1
     batch_size_test: int = 1

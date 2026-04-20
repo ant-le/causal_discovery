@@ -75,14 +75,15 @@ class _DummyDataModule:
             }
         ]
 
-    def train_dataloader(self):
+    def train_dataloader(self, *, batch_size_override=None):
+        _ = batch_size_override
         return self._train_batches
 
     def val_dataloader(self):
         return {"val": self._val_batches}
 
 
-def _make_cfg(max_tasks_seen: int = 2) -> OmegaConf:
+def _make_cfg(max_optimizer_steps: int = 2) -> OmegaConf:
     return OmegaConf.create(
         {
             "name": "pretrain_test",
@@ -94,11 +95,11 @@ def _make_cfg(max_tasks_seen: int = 2) -> OmegaConf:
             },
             "trainer": {
                 "lr": 1e-3,
-                "max_tasks_seen": max_tasks_seen,
-                "log_every_n_tasks": 100,
-                "val_check_interval_tasks": 100,
-                "checkpoint_every_n_tasks": 100,
-                "accumulate_grad_batches": 1,
+                "max_optimizer_steps": max_optimizer_steps,
+                "target_global_tasks_per_step": 1,
+                "log_every_n_steps": 100,
+                "val_check_interval_steps": 100,
+                "checkpoint_every_n_steps": 100,
                 "scheduler": "none",
                 "amp": False,
                 "amp_dtype": "bf16",
@@ -109,7 +110,7 @@ def _make_cfg(max_tasks_seen: int = 2) -> OmegaConf:
 
 
 def test_save_checkpoint_contains_stream_resume_metadata(tmp_path) -> None:
-    cfg = _make_cfg(max_tasks_seen=24)
+    cfg = _make_cfg(max_optimizer_steps=24)
     model = _DummyPretrainModel()
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=3)
@@ -146,7 +147,7 @@ def test_save_checkpoint_contains_stream_resume_metadata(tmp_path) -> None:
 
 
 def test_pre_training_run_resumes_model_and_stream_seed(tmp_path) -> None:
-    cfg = _make_cfg(max_tasks_seen=2)
+    cfg = _make_cfg(max_optimizer_steps=2)
     model = _DummyPretrainModel()
     data_module = _DummyDataModule(base_seed=10)
 
@@ -187,9 +188,9 @@ def test_pre_training_run_resumes_model_and_stream_seed(tmp_path) -> None:
     assert last_state["step"] == 2
 
 
-def test_pre_training_logs_progress_on_tasks_seen(tmp_path) -> None:
-    cfg = _make_cfg(max_tasks_seen=2)
-    cfg.trainer.log_every_n_tasks = 1
+def test_pre_training_logs_progress_on_steps(tmp_path) -> None:
+    cfg = _make_cfg(max_optimizer_steps=2)
+    cfg.trainer.log_every_n_steps = 1
     model = _DummyPretrainModel()
     data_module = _DummyDataModule(base_seed=10)
     logger = LocalLogger()
@@ -206,12 +207,12 @@ def test_build_scheduler_none_and_invalid() -> None:
     optimizer = torch.optim.AdamW([param], lr=1e-3)
 
     cfg_none = OmegaConf.create(
-        {"trainer": {"scheduler": "none", "max_tasks_seen": 10}}
+        {"trainer": {"scheduler": "none", "max_optimizer_steps": 10}}
     )
     assert _build_scheduler(optimizer, cfg_none) is None
 
     cfg_invalid = OmegaConf.create(
-        {"trainer": {"scheduler": "linear", "max_tasks_seen": 10}}
+        {"trainer": {"scheduler": "linear", "max_optimizer_steps": 10}}
     )
     try:
         _build_scheduler(optimizer, cfg_invalid)
@@ -228,8 +229,8 @@ def test_build_scheduler_with_linear_warmup() -> None:
         {
             "trainer": {
                 "scheduler": "cosine",
-                "max_tasks_seen": 10,
-                "scheduler_t_max_tasks": 10,
+                "max_optimizer_steps": 10,
+                "scheduler_t_max_steps": 10,
                 "scheduler_warmup_ratio": 0.2,
                 "scheduler_warmup_start_factor": 0.1,
             }
@@ -256,8 +257,8 @@ def test_build_scheduler_multistep_drops_learning_rate() -> None:
         {
             "trainer": {
                 "scheduler": "multistep",
-                "max_tasks_seen": 10,
-                "scheduler_milestones_tasks": [5],
+                "max_optimizer_steps": 10,
+                "scheduler_milestones_steps": [5],
                 "scheduler_gamma": 0.1,
                 "scheduler_warmup_ratio": 0.0,
             }
