@@ -13,6 +13,7 @@ Reference:
 from __future__ import annotations
 
 import csv
+import gzip
 import io
 import logging
 import urllib.request
@@ -70,8 +71,8 @@ SACHS_EDGES: list[tuple[int, int]] = [
 _SACHS_N_NODES = 11
 _SACHS_N_EDGES = 17
 
-# bnlearn data URL (observational-only, tab-separated).
-_SACHS_DATA_URL = "https://www.bnlearn.com/book-crc/code/sachs.data.txt"
+# bnlearn data URL (observational-only, tab-separated, gzip-compressed).
+_SACHS_DATA_URL = "https://www.bnlearn.com/book-crc/code/sachs.data.txt.gz"
 
 # Local cache directory (under package data).
 _CACHE_DIR = Path(__file__).resolve().parent / "_cache"
@@ -92,7 +93,10 @@ def _download_sachs_data(cache_path: Path) -> torch.Tensor:
 
     log.info("Downloading Sachs dataset from %s ...", _SACHS_DATA_URL)
     with urllib.request.urlopen(_SACHS_DATA_URL, timeout=30) as resp:
-        raw = resp.read().decode("utf-8")
+        compressed = resp.read()
+
+    # The upstream file is gzip-compressed.
+    raw = gzip.decompress(compressed).decode("utf-8")
 
     # Parse the tab-separated data.
     reader = csv.reader(io.StringIO(raw), delimiter="\t")

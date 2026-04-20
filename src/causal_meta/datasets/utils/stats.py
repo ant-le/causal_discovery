@@ -15,7 +15,11 @@ MECHANISM_DISTANCE_OBS_SAMPLES = 256
 
 
 def _linear_r2(y: np.ndarray, x: np.ndarray) -> float:
-    """Fit a linear model and return a clipped R^2 score in [0, 1]."""
+    """Fit a linear model and return a clipped R^2 score in [0, 1].
+
+    Returns 0.0 when the data contains non-finite values or the SVD
+    inside ``lstsq`` fails to converge (e.g. chaotic mechanisms).
+    """
     if y.ndim != 1:
         raise ValueError("y must be a 1D array")
     if x.ndim != 2:
@@ -31,7 +35,14 @@ def _linear_r2(y: np.ndarray, x: np.ndarray) -> float:
     )
     y64 = y.astype(np.float64)
 
-    beta, *_ = np.linalg.lstsq(x_design, y64, rcond=None)
+    # Non-finite values (NaN/Inf from chaotic mechanisms) make SVD diverge.
+    if not (np.isfinite(x_design).all() and np.isfinite(y64).all()):
+        return 0.0
+
+    try:
+        beta, *_ = np.linalg.lstsq(x_design, y64, rcond=None)
+    except np.linalg.LinAlgError:
+        return 0.0
     y_hat = x_design @ beta
 
     ss_tot = float(np.sum((y64 - y64.mean()) ** 2))
