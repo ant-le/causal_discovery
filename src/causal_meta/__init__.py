@@ -32,8 +32,14 @@ def _maybe_disable_torch_compile_optimizer_wrapper() -> None:
             def _graph_break() -> None:
                 return None
 
+            class _TraceRules:
+                @staticmethod
+                def clear_lru_cache() -> None:
+                    return None
+
             fake_dynamo.disable = _disable
             fake_dynamo.graph_break = _graph_break
+            fake_dynamo.trace_rules = _TraceRules()
 
             sys.modules.setdefault("torch._dynamo", fake_dynamo)
             torch._dynamo = fake_dynamo
