@@ -10,7 +10,6 @@ import torch
 from omegaconf import DictConfig, OmegaConf, open_dict
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from causal_meta import bootstrap_runtime
 from causal_meta.datasets.data_module import CausalMetaModule
 from causal_meta.models.base import BaseModel
 from causal_meta.models.factory import ModelFactory
@@ -261,18 +260,11 @@ def _apply_model_specific_trainer_profile(cfg_obj: DictConfig) -> None:
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="default")
-def _hydra_main(cfg: DictConfig) -> None:
+def main(cfg: DictConfig) -> None:
     run_pipeline(cfg)
 
 
-def main() -> None:
-    bootstrap_runtime()
-    _hydra_main()
-
-
 def run_pipeline(cfg: DictConfig) -> None:
-    bootstrap_runtime()
-
     # Check for analysis task (e.g. python main.py +task=analysis analysis.target_dir=...)
     if cfg.get("task") == "analysis":
         base_output_dir = resolve_output_dir(cfg)

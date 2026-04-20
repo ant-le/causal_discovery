@@ -18,28 +18,6 @@ def _infer_local_rank() -> int:
     return 0
 
 
-def _infer_rank() -> int:
-    """Infer global rank from torchrun/SLURM environment."""
-    if "RANK" in os.environ:
-        return int(os.environ["RANK"])
-
-    if "SLURM_PROCID" in os.environ:
-        return int(os.environ["SLURM_PROCID"])
-
-    return 0
-
-
-def _infer_world_size() -> int:
-    """Infer world size from torchrun/SLURM environment."""
-    if "WORLD_SIZE" in os.environ:
-        return int(os.environ["WORLD_SIZE"])
-
-    if "SLURM_NTASKS" in os.environ:
-        return int(os.environ["SLURM_NTASKS"])
-
-    return 1
-
-
 def _safe_cuda_local_rank(local_rank: int) -> int:
     """Validate local rank against visible CUDA devices for this process."""
     device_count = torch.cuda.device_count()
@@ -131,59 +109,55 @@ class DistributedContext:
         """
         Initialize torch.distributed if requested by environment variables.
 
-        This uses the default `env://` initialization from an explicit launcher
-        environment such as torchrun or srun. The process does not rewrite
-        `SLURM_*` variables into `RANK`/`WORLD_SIZE`/`LOCAL_RANK`.
+        This uses the default `env://` initialization and supports both torchrun
+        (RANK/WORLD_SIZE/LOCAL_RANK) and SLURM+srun (SLURM_PROCID/
+        SLURM_NTASKS/SLURM_LOCALID).
         """
         if dist.is_available() and dist.is_initialized():
             return cls.current()
 
-        wants_distributed = any(
-            key in os.environ
-            for key in (
-                "LOCAL_RANK",
-                "RANK",
-                "WORLD_SIZE",
-                "SLURM_LOCALID",
-                "SLURM_PROCID",
-                "SLURM_NTASKS",
-            )
+        wants_distributed = (
+            "LOCAL_RANK" in os.environ
+            or "RANK" in os.environ
+            or "SLURM_PROCID" in os.environ
         )
         if not wants_distributed:
             return cls.current()
 
-        rank = _infer_rank()
-        world_size = _infer_world_size()
-        local_rank = _infer_local_rank()
+        if "RANK" not in os.environ and "SLURM_PROCID" in os.environ:
+            os.environ["RANK"] = os.environ["SLURM_PROCID"]
+        if "WORLD_SIZE" not in os.environ and "SLURM_NTASKS" in os.environ:
+            os.environ["WORLD_SIZE"] = os.environ["SLURM_NTASKS"]
+        if "LOCAL_RANK" not in os.environ and "SLURM_LOCALID" in os.environ:
+            os.environ["LOCAL_RANK"] = str(_infer_local_rank())
 
-        missing = [k for k in ("MASTER_ADDR", "MASTER_PORT") if k not in os.environ]
-        if missing:
+        rank_env_present = "LOCAL_RANK" in os.environ or "RANK" in os.environ
+        missing = [
+            k
+            for k in ("RANK", "WORLD_SIZE", "MASTER_ADDR", "MASTER_PORT")
+            if k not in os.environ
+        ]
+        if rank_env_present and missing:
             raise ValueError(
-                "Distributed launch detected but required environment variables are "
-                f"missing: {missing}. Launch with torchrun or srun so rank metadata "
-                "and rendezvous information are provided explicitly. causal_meta reads "
-                "Slurm rank metadata directly but does not rewrite environment variables."
+                "Distributed run detected (LOCAL_RANK/RANK set) but missing required "
+                f"environment variables for env:// init: {missing}."
             )
 
-        if world_size <= 1:
+        if int(os.environ.get("WORLD_SIZE", "1")) <= 1:
             return cls.current()
 
         backend = "nccl" if torch.cuda.is_available() else "gloo"
+        local_rank = _infer_local_rank()
         if torch.cuda.is_available():
             local_rank = _safe_cuda_local_rank(local_rank)
+            os.environ["LOCAL_RANK"] = str(local_rank)
             torch.cuda.set_device(local_rank)
             dist.init_process_group(
                 backend=backend,
-                rank=rank,
-                world_size=world_size,
                 device_id=torch.device(f"cuda:{local_rank}"),
             )
         else:
-            dist.init_process_group(
-                backend=backend,
-                rank=rank,
-                world_size=world_size,
-            )
+            dist.init_process_group(backend=backend)
         dist_ctx = cls.current()
         device = select_device(local_rank=local_rank, is_distributed=True)
         return cls(

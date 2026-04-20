@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from causal_meta.runners.utils.distributed import DistributedContext
@@ -27,3 +29,7 @@ def test_distributed_context_setup_ignores_slurm_only_env(monkeypatch):
 
     with pytest.raises(ValueError, match="MASTER_ADDR"):
         _ = DistributedContext.setup()
+
+    assert "RANK" in os.environ
+    assert "WORLD_SIZE" in os.environ
+    assert "LOCAL_RANK" in os.environ
