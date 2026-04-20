@@ -418,7 +418,6 @@ def run(
                                 if grad_norm_value is not None
                                 else float("nan")
                             ),
-                            "train/tasks_seen": float(tasks_seen),
                             "train/global_tasks_per_step": float(global_tasks_per_step),
                             "train/optimizer_step": float(step),
                         },

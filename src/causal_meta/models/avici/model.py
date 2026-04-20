@@ -319,20 +319,31 @@ class AviciModel(BaseModel):
         raise ValueError("axis must be -1 or -2")
 
     def _acyclicity_spectral_log(self, logmat: torch.Tensor) -> torch.Tensor:
-        u = torch.randn(logmat.shape[:-1], device=logmat.device, dtype=logmat.dtype)
-        v = torch.randn(logmat.shape[:-1], device=logmat.device, dtype=logmat.dtype)
+        # Force full-precision arithmetic.  Under AMP autocast the einsum ops
+        # in the power iteration are silently downcast to bf16/fp16, which
+        # causes catastrophic numerical instability (loss diverging to -1e9).
+        with torch.autocast(device_type=logmat.device.type, enabled=False):
+            logmat = logmat.float()
+            u = torch.randn(
+                logmat.shape[:-1], device=logmat.device, dtype=torch.float32
+            )
+            v = torch.randn(
+                logmat.shape[:-1], device=logmat.device, dtype=torch.float32
+            )
 
-        for _ in range(self.acyclicity_pow_iters):
-            u_new = self._exp_matmul(logmat, u, -2)
-            v_new = self._exp_matmul(logmat, v, -1)
-            u = u_new / u_new.norm(p=2, dim=-1, keepdim=True).clamp_min(1e-12)
-            v = v_new / v_new.norm(p=2, dim=-1, keepdim=True).clamp_min(1e-12)
+            for _ in range(self.acyclicity_pow_iters):
+                u_new = self._exp_matmul(logmat, u, -2)
+                v_new = self._exp_matmul(logmat, v, -1)
+                u = u_new / u_new.norm(p=2, dim=-1, keepdim=True).clamp_min(1e-12)
+                v = v_new / v_new.norm(p=2, dim=-1, keepdim=True).clamp_min(1e-12)
 
-        u = u.detach()
-        v = v.detach()
-        numerator = torch.einsum("...j,...j->...", u, self._exp_matmul(logmat, v, -1))
-        denominator = torch.einsum("...j,...j->...", u, v).clamp_min(1e-12)
-        return numerator / denominator
+            u = u.detach()
+            v = v.detach()
+            numerator = torch.einsum(
+                "...j,...j->...", u, self._exp_matmul(logmat, v, -1)
+            )
+            denominator = torch.einsum("...j,...j->...", u, v).clamp_min(1e-12)
+            return numerator / denominator
 
     def _reduce_regulariser_signal(self, penalty: torch.Tensor) -> torch.Tensor:
         reduced = penalty.detach().to(dtype=torch.float32)
