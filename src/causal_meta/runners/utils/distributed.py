@@ -18,6 +18,28 @@ def _infer_local_rank() -> int:
     return 0
 
 
+def _infer_rank() -> int:
+    """Infer global rank from torchrun/SLURM environment."""
+    if "RANK" in os.environ:
+        return int(os.environ["RANK"])
+
+    if "SLURM_PROCID" in os.environ:
+        return int(os.environ["SLURM_PROCID"])
+
+    return 0
+
+
+def _infer_world_size() -> int:
+    """Infer world size from torchrun/SLURM environment."""
+    if "WORLD_SIZE" in os.environ:
+        return int(os.environ["WORLD_SIZE"])
+
+    if "SLURM_NTASKS" in os.environ:
+        return int(os.environ["SLURM_NTASKS"])
+
+    return 1
+
+
 def _safe_cuda_local_rank(local_rank: int) -> int:
     """Validate local rank against visible CUDA devices for this process."""
     device_count = torch.cuda.device_count()
@@ -117,40 +139,51 @@ class DistributedContext:
             return cls.current()
 
         wants_distributed = any(
-            key in os.environ for key in ("LOCAL_RANK", "RANK", "WORLD_SIZE")
+            key in os.environ
+            for key in (
+                "LOCAL_RANK",
+                "RANK",
+                "WORLD_SIZE",
+                "SLURM_LOCALID",
+                "SLURM_PROCID",
+                "SLURM_NTASKS",
+            )
         )
         if not wants_distributed:
             return cls.current()
 
-        missing = [
-            k
-            for k in ("RANK", "WORLD_SIZE", "MASTER_ADDR", "MASTER_PORT")
-            if k not in os.environ
-        ]
-        if torch.cuda.is_available() and "LOCAL_RANK" not in os.environ:
-            missing.append("LOCAL_RANK")
+        rank = _infer_rank()
+        world_size = _infer_world_size()
+        local_rank = _infer_local_rank()
+
+        missing = [k for k in ("MASTER_ADDR", "MASTER_PORT") if k not in os.environ]
         if missing:
             raise ValueError(
                 "Distributed launch detected but required environment variables are "
                 f"missing: {missing}. Launch with torchrun or srun so rank metadata "
-                "is provided explicitly; causal_meta does not synthesize these values "
-                "from SLURM_* variables."
+                "and rendezvous information are provided explicitly. causal_meta reads "
+                "Slurm rank metadata directly but does not rewrite environment variables."
             )
 
-        if int(os.environ.get("WORLD_SIZE", "1")) <= 1:
+        if world_size <= 1:
             return cls.current()
 
         backend = "nccl" if torch.cuda.is_available() else "gloo"
-        local_rank = _infer_local_rank()
         if torch.cuda.is_available():
             local_rank = _safe_cuda_local_rank(local_rank)
             torch.cuda.set_device(local_rank)
             dist.init_process_group(
                 backend=backend,
+                rank=rank,
+                world_size=world_size,
                 device_id=torch.device(f"cuda:{local_rank}"),
             )
         else:
-            dist.init_process_group(backend=backend)
+            dist.init_process_group(
+                backend=backend,
+                rank=rank,
+                world_size=world_size,
+            )
         dist_ctx = cls.current()
         device = select_device(local_rank=local_rank, is_distributed=True)
         return cls(
